@@ -1,12 +1,15 @@
-import { Tabs } from 'expo-router';
-import { 
-  BarChart3, 
-  ShoppingCart, 
-  Package, 
-  Users, 
-  Wallet 
+import { Link, Tabs } from 'expo-router';
+import {
+  BarChart3,
+  ShoppingCart,
+  Package,
+  Users,
+  Wallet,
+  Settings,
+  Star,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { TouchableOpacity, View } from 'react-native';
 
 export default function TabLayout() {
   const { colors } = useTheme();
@@ -14,7 +17,32 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false,
+        headerShown: true,
+        headerStyle: {
+          backgroundColor: colors.surface,
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        },
+        headerTitleStyle: {
+          color: colors.text,
+          fontFamily: 'Inter-Bold',
+        },
+        headerRight: () => (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingRight: 16 }}>
+            <Link href="/premium" asChild>
+              <TouchableOpacity style={{ marginRight: 16 }}>
+                <Star size={24} color={colors.primary} />
+              </TouchableOpacity>
+            </Link>
+            <Link href="/settings" asChild>
+              <TouchableOpacity>
+                <Settings size={24} color={colors.text} />
+              </TouchableOpacity>
+            </Link>
+          </View>
+        ),
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
