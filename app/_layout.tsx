@@ -13,6 +13,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { OfflineProvider } from '@/contexts/OfflineContext';
+import db from '@/lib/db';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -27,6 +28,8 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    // Initialize local SQLite database on app start
+    db.initDB().catch(err => console.error('Error initializing DB:', err));
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }

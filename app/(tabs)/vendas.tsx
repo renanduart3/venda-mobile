@@ -17,12 +17,15 @@ import {
   ShoppingCart,
   Filter,
   Search,
-  X
+  X,
+  Crown
 } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { isPremium, enablePremium } from '@/lib/premium';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
 interface Product {
@@ -51,6 +54,7 @@ interface Sale {
 
 export default function Vendas() {
   const { colors } = useTheme();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
   
   // New Sale State
@@ -65,6 +69,9 @@ export default function Vendas() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState('all');
+  const [premium, setPremium] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+  const [suggestionsVisible, setSuggestionsVisible] = useState(false);
 
   // Mock products data
   const [products] = useState<Product[]>([
@@ -77,7 +84,17 @@ export default function Vendas() {
 
   useEffect(() => {
     loadSalesHistory();
+    loadPremium();
   }, []);
+
+  const loadPremium = async () => {
+    try {
+      const p = await isPremium();
+      setPremium(p);
+    } catch (e) {
+      console.error('Erro carregando premium', e);
+    }
+  };
 
   const loadSalesHistory = async () => {
     // TODO: Load from local storage and sync with Supabase
@@ -181,6 +198,17 @@ export default function Vendas() {
   };
 
   const openCamera = async () => {
+    if (!premium) {
+      Alert.alert('Premium necessário', 'Escanear produtos por código de barras é uma funcionalidade premium. Deseja ativar o premium agora?', [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Ativar', onPress: async () => {
+          const ok = await enablePremium();
+          if (ok) setPremium(true);
+        } }
+      ]);
+      return;
+    }
+
     if (!cameraPermission?.granted) {
       const { granted } = await requestCameraPermission();
       if (!granted) {
@@ -189,6 +217,50 @@ export default function Vendas() {
       }
     }
     setShowCamera(true);
+  };
+
+  const handleProductSearchSelect = (product: Product) => {
+    addItemToSale(product);
+    setProductSearch('');
+    setSuggestionsVisible(false);
+  };
+
+  const filteredProducts = products.filter(p => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.barcode || '').toLowerCase().includes(q) ||
+      p.id === q
+    );
+  });
+
+  const handleProductSearchSubmit = () => {
+    const q = productSearch.trim();
+    if (!q) return;
+    // if matches exact barcode, add product
+    const byBarcode = products.find(p => p.barcode === q);
+    if (byBarcode) {
+      if (!premium) {
+        Alert.alert('Premium necessário', 'Escanear produtos por código de barras é premium.');
+        return;
+      }
+      addItemToSale(byBarcode);
+      setProductSearch('');
+      setSuggestionsVisible(false);
+      return;
+    }
+
+    // else try by name exact match
+    const byName = products.find(p => p.name.toLowerCase() === q.toLowerCase());
+    if (byName) {
+      addItemToSale(byName);
+      setProductSearch('');
+      setSuggestionsVisible(false);
+      return;
+    }
+
+    setSuggestionsVisible(true);
   };
 
   const styles = StyleSheet.create({
@@ -412,36 +484,46 @@ export default function Vendas() {
 
   const NewSaleTab = () => (
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      {/* Barcode Scanner Button */}
-      <TouchableOpacity style={styles.scanButton} onPress={openCamera}>
+      {/* Barcode Scanner Button (premium only) */}
+      <TouchableOpacity
+        style={[styles.scanButton, !premium && { opacity: 0.6 }]}
+        onPress={openCamera}
+        disabled={!premium}
+      >
         <Camera size={20} color={colors.white} />
         <Text style={styles.scanButtonText}>Escanear Código de Barras</Text>
       </TouchableOpacity>
 
-      {/* Products List */}
-      <Card style={styles.productsList}>
-        <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 12 }}>
-          Selecionar Produtos
-        </Text>
-        {products.map((product) => (
-          <View key={product.id} style={styles.productItem}>
-            <View style={styles.productInfo}>
-              <Text style={styles.productName}>{product.name}</Text>
-              <Text style={styles.productPrice}>R$ {product.price.toFixed(2)}</Text>
-              <Text style={styles.stockInfo}>Estoque: {product.stock}</Text>
-            </View>
-            <TouchableOpacity
-              style={[
-                styles.addButton,
-                product.stock === 0 && styles.addButtonDisabled,
-              ]}
-              onPress={() => addItemToSale(product)}
-              disabled={product.stock === 0}
-            >
-              <Text style={styles.addButtonText}>Adicionar</Text>
-            </TouchableOpacity>
+      {/* If not premium, show a small chip under the scanner that links to premium page */}
+      {!premium && (
+        <TouchableOpacity onPress={() => router.push('/premium')} style={{ alignSelf: 'center', marginBottom: 12 }}>
+            <Card style={{ paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center' }}>
+            <Crown size={14} color={colors.primary} style={{ marginRight: 8 }} />
+            <Text style={{ color: colors.text }}>Assinar Premium</Text>
+          </Card>
+        </TouchableOpacity>
+      )}
+
+      {/* Product search / autocomplete */}
+      <Card style={{ marginBottom: 16 }}>
+        <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 8 }}>Buscar Produtos ou Serviços</Text>
+        <TextInput
+          style={[styles.input, { marginBottom: 8 }]}
+          placeholder="Digite nome, código ou código de barras"
+          placeholderTextColor={colors.textSecondary}
+          value={productSearch}
+          onChangeText={(t) => { setProductSearch(t); setSuggestionsVisible(true); }}
+          onSubmitEditing={handleProductSearchSubmit}
+        />
+        {suggestionsVisible && (
+          <View>
+            {filteredProducts.map(p => (
+              <TouchableOpacity key={p.id} onPress={() => handleProductSearchSelect(p)} style={{ paddingVertical: 8 }}>
+                <Text style={{ color: colors.text }}>{p.name} {p.barcode ? `• ${p.barcode}` : ''}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        ))}
+        )}
       </Card>
 
       {/* Sale Items */}
@@ -576,8 +658,12 @@ export default function Vendas() {
   return (
     <View style={styles.container}>
       <Header title="Vendas" />
-      
-      {/* Tab Selector */}
+      {/* crown icon top-right for non-premium users */}
+      { !premium && (
+        <TouchableOpacity onPress={() => router.push('/premium' as any)} style={{ position: 'absolute', top: 12, right: 12, padding: 6 }}>
+          <Crown size={22} color={colors.primary} />
+        </TouchableOpacity>
+      )}
       <View style={styles.tabSelector}>
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'new' && styles.tabButtonActive]}

@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '@/lib/supabase';
+import db from '@/lib/db';
 
 interface OfflineContextType {
   isOnline: boolean;
   lastSync: Date | null;
-  issyncing: boolean;
+  isSyncing: boolean;
   syncData: () => Promise<void>;
   queueLocalAction: (action: LocalAction) => void;
 }
@@ -66,13 +66,13 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         try {
           switch (action.type) {
             case 'create':
-              await supabase.from(action.table).insert(action.data);
+              await db.insert(action.table, action.data);
               break;
             case 'update':
-              await supabase.from(action.table).update(action.data).eq('id', action.data.id);
+              await db.update(action.table, action.data, 'id = ?', [action.data.id]);
               break;
             case 'delete':
-              await supabase.from(action.table).delete().eq('id', action.data.id);
+              await db.del(action.table, 'id = ?', [action.data.id]);
               break;
           }
         } catch (error) {
@@ -109,7 +109,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     <OfflineContext.Provider value={{
       isOnline,
       lastSync,
-      isSync,
+      isSyncing: isSync,
       syncData,
       queueLocalAction,
     }}>

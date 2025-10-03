@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Bell, Settings, Wifi, WifiOff } from 'lucide-react-native';
+import { Bell, Settings, Wifi, WifiOff, Crown } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useOffline } from '@/contexts/OfflineContext';
-import { router } from 'expo-router';
+import { useRouter } from 'expo-router';
+import { isPremium } from '@/lib/premium';
 
 interface HeaderProps {
   title: string;
@@ -15,6 +16,21 @@ export function Header({ title, showSettings = false }: HeaderProps) {
   const { colors } = useTheme();
   const { unreadCount } = useNotifications();
   const { isOnline } = useOffline();
+  const router = useRouter();
+  const [premium, setPremium] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const p = await isPremium();
+        if (mounted) setPremium(p);
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const styles = StyleSheet.create({
     header: {
@@ -70,16 +86,22 @@ export function Header({ title, showSettings = false }: HeaderProps) {
       
       <View style={styles.rightSection}>
         <View style={styles.connectionIndicator}>
-          {isOnline ? (
-            <Wifi size={16} color={colors.white} />
+          {premium ? (
+            isOnline ? (
+              <Wifi size={16} color={colors.white} />
+            ) : (
+              <WifiOff size={16} color={colors.white} />
+            )
           ) : (
-            <WifiOff size={16} color={colors.white} />
+            <TouchableOpacity onPress={() => router.push('/premium' as any)}>
+              <Crown size={16} color={colors.white} />
+            </TouchableOpacity>
           )}
         </View>
 
         <TouchableOpacity 
-          style={styles.notificationButton}
-          onPress={() => router.push('/notifications')}
+          style={[styles.notificationButton, { padding: 6 }]}
+          onPress={() => router.push('/notifications' as any)}
         >
           <Bell size={24} color={colors.text} />
           {unreadCount > 0 && (
@@ -92,7 +114,7 @@ export function Header({ title, showSettings = false }: HeaderProps) {
         </TouchableOpacity>
 
         {showSettings && (
-          <TouchableOpacity onPress={() => router.push('/settings')}>
+          <TouchableOpacity onPress={() => router.push('/settings' as any)} style={{ padding: 6 }}>
             <Settings size={24} color={colors.text} />
           </TouchableOpacity>
         )}

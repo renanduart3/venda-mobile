@@ -26,6 +26,9 @@ import {useOffline } from '@/contexts/OfflineContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
+import { isPremium, enablePremium, disablePremium } from '@/lib/premium';
+import { exportTableToCSV, importCSV, reportToPDF } from '@/lib/export';
+import { generateSalesReport } from '@/lib/reports';
 
 export default function Settings() {
   const { colors, theme, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
@@ -43,10 +46,21 @@ export default function Settings() {
   });
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const [premium, setPremium] = useState(false);
 
   useEffect(() => {
     loadStoreSettings();
+    loadPremium();
   }, []);
+
+  const loadPremium = async () => {
+    try {
+      const p = await isPremium();
+      setPremium(p);
+    } catch (e) {
+      console.error('Erro carregando premium', e);
+    }
+  };
 
   const loadStoreSettings = async () => {
     // TODO: Load from local storage
@@ -93,6 +107,41 @@ export default function Settings() {
     });
     setPrimaryColor(defaultPrimary);
     setSecondaryColor(defaultSecondary);
+  };
+
+  const handleEnablePremium = async () => {
+    const ok = await enablePremium();
+    if (ok) setPremium(true);
+  };
+
+  const handleDisablePremium = async () => {
+    const ok = await disablePremium();
+    if (ok) setPremium(false);
+  };
+
+  const handleExportCSV = async (table: string) => {
+    try {
+      const path = await exportTableToCSV(table);
+      Alert.alert('Exportado', `CSV salvo: ${path}`);
+    } catch (e: any) {
+      Alert.alert('Erro', e.message || 'Falha ao exportar');
+    }
+  };
+
+  const handleGeneratePDFReport = async () => {
+    try {
+      const data = await generateSalesReport({ period: 'monthly' });
+      // generate simple HTML
+      let html = `<h1>Relatório Mensal</h1><table border="1" style="border-collapse:collapse;width:100%"><tr><th>Período</th><th>Total</th><th>Contagem</th></tr>`;
+      data.forEach((r: any) => {
+        html += `<tr><td>${r.period}</td><td>${r.total.toFixed(2)}</td><td>${r.count}</td></tr>`;
+      });
+      html += `</table>`;
+      const uri = await reportToPDF(html);
+      Alert.alert('Relatório', `PDF gerado: ${uri}`);
+    } catch (e: any) {
+      Alert.alert('Erro', e.message || 'Falha ao gerar PDF');
+    }
   };
 
   const styles = StyleSheet.create({
@@ -462,6 +511,30 @@ export default function Settings() {
                 </Text>
               </View>
             )}
+          </Card>
+        </View>
+
+        {/* Premium */}
+        <View style={styles.section}>
+          <Card>
+            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
+              Premium
+            </Text>
+
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.label}>Status</Text>
+              <Text style={styles.infoValue}>{premium ? 'Ativado' : 'Desativado'}</Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              <Button title="Ativar Premium" onPress={handleEnablePremium} style={{ flex: 1 }} />
+              <Button title="Desativar" onPress={handleDisablePremium} variant="outline" style={{ flex: 1 }} />
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <Button title="Exportar Produtos CSV" onPress={() => handleExportCSV('products')} disabled={!premium} style={{ flex: 1 }} />
+              <Button title="Gerar Relatório (PDF)" onPress={handleGeneratePDFReport} disabled={!premium} variant="outline" style={{ flex: 1 }} />
+            </View>
           </Card>
         </View>
       </ScrollView>
