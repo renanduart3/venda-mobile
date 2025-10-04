@@ -14,6 +14,8 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { OfflineProvider } from '@/contexts/OfflineContext';
 import db from '@/lib/db';
+import { checkSubscriptionFromDatabase } from '@/lib/premium';
+import { initializeIAP } from '@/lib/iap';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -28,8 +30,18 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    // Initialize local SQLite database on app start
-    db.initDB().catch(err => console.error('Error initializing DB:', err));
+    const initializeApp = async () => {
+      try {
+        await db.initDB();
+        await initializeIAP();
+        await checkSubscriptionFromDatabase();
+      } catch (err) {
+        console.error('Error initializing app:', err);
+      }
+    };
+
+    initializeApp();
+
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }
