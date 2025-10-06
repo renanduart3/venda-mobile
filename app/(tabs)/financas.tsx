@@ -709,7 +709,7 @@ export default function Financas() {
 
   return (
     <View style={styles.container}>
-      <Header title="Finanças" />
+      <Header title="Finanças" showSettings />
       
       {/* Tab Selector */}
       <View style={styles.tabSelector}>

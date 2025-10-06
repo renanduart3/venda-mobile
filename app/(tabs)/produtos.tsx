@@ -32,6 +32,8 @@ interface Product {
   min_stock: number;
   barcode?: string;
   image_url?: string;
+  type: 'product' | 'service';
+  description?: string;
   created_at: string;
   updated_at: string;
 }
@@ -51,6 +53,8 @@ export default function Produtos() {
     stock: '',
     min_stock: '',
     barcode: '',
+    type: 'product' as 'product' | 'service',
+    description: '',
   });
 
   useEffect(() => {
@@ -58,51 +62,8 @@ export default function Produtos() {
   }, []);
 
   const loadProducts = async () => {
-    // TODO: Load from local storage and sync with Supabase
-    const mockProducts: Product[] = [
-      {
-        id: '1',
-        name: 'Coca-Cola 350ml',
-        price: 3.50,
-        stock: 50,
-        min_stock: 10,
-        barcode: '123456789',
-        image_url: 'https://images.pexels.com/photos/50593/coca-cola-cold-drink-soft-drink-coke-50593.jpeg?auto=compress&cs=tinysrgb&w=400',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        name: 'Pão de Açúcar',
-        price: 0.50,
-        stock: 100,
-        min_stock: 20,
-        image_url: 'https://images.pexels.com/photos/209206/pexels-photo-209206.jpeg?auto=compress&cs=tinysrgb&w=400',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '3',
-        name: 'Leite Integral 1L',
-        price: 4.80,
-        stock: 5, // Low stock
-        min_stock: 15,
-        image_url: 'https://images.pexels.com/photos/416354/pexels-photo-416354.jpeg?auto=compress&cs=tinysrgb&w=400',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '4',
-        name: 'Sabonete Líquido',
-        price: 8.90,
-        stock: 0, // Out of stock
-        min_stock: 5,
-        image_url: 'https://images.pexels.com/photos/4465831/pexels-photo-4465831.jpeg?auto=compress&cs=tinysrgb&w=400',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-    setProducts(mockProducts);
+    const { mockProducts } = await import('@/lib/mocks');
+    setProducts(mockProducts as Product[]);
   };
 
   const filteredProducts = products.filter(product =>
@@ -119,6 +80,8 @@ export default function Produtos() {
         stock: product.stock.toString(),
         min_stock: product.min_stock.toString(),
         barcode: product.barcode || '',
+        type: product.type || 'product',
+        description: product.description || '',
       });
     } else {
       setEditingProduct(null);
@@ -128,6 +91,8 @@ export default function Produtos() {
         stock: '',
         min_stock: '',
         barcode: '',
+        type: 'product',
+        description: '',
       });
     }
     setShowProductModal(true);
@@ -142,12 +107,19 @@ export default function Produtos() {
       stock: '',
       min_stock: '',
       barcode: '',
+      type: 'product',
+      description: '',
     });
   };
 
   const saveProduct = async () => {
-    if (!formData.name || !formData.price || !formData.stock) {
+    if (!formData.name || !formData.price) {
       Alert.alert('Erro', 'Preencha todos os campos obrigatórios.');
+      return;
+    }
+
+    if (formData.type === 'product' && !formData.stock) {
+      Alert.alert('Erro', 'Produtos precisam ter estoque informado.');
       return;
     }
 
@@ -155,9 +127,11 @@ export default function Produtos() {
       const productData = {
         name: formData.name,
         price: parseFloat(formData.price),
-        stock: parseInt(formData.stock),
-        min_stock: parseInt(formData.min_stock) || 0,
+        stock: formData.type === 'service' ? 0 : parseInt(formData.stock),
+        min_stock: formData.type === 'service' ? 0 : (parseInt(formData.min_stock) || 0),
         barcode: formData.barcode || undefined,
+        type: formData.type,
+        description: formData.description || undefined,
       };
 
       if (editingProduct) {
@@ -410,15 +384,56 @@ export default function Produtos() {
           
           <ScrollView showsVerticalScrollIndicator={false}>
             <View style={styles.formGroup}>
+              <Text style={styles.label}>Tipo *</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.input,
+                    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+                    formData.type === 'product' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                  ]}
+                  onPress={() => setFormData({ ...formData, type: 'product' })}
+                >
+                  <Text style={[{ color: colors.text }, formData.type === 'product' && { color: colors.white }]}>Produto</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.input,
+                    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+                    formData.type === 'service' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                  ]}
+                  onPress={() => setFormData({ ...formData, type: 'service' })}
+                >
+                  <Text style={[{ color: colors.text }, formData.type === 'service' && { color: colors.white }]}>Serviço</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
               <Text style={styles.label}>Nome *</Text>
               <TextInput
                 style={styles.input}
                 value={formData.name}
                 onChangeText={(text) => setFormData({ ...formData, name: text })}
-                placeholder="Nome do produto"
+                placeholder={formData.type === 'service' ? 'Nome do serviço' : 'Nome do produto'}
                 placeholderTextColor={colors.textSecondary}
               />
             </View>
+
+            {formData.type === 'service' && (
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Descrição</Text>
+                <TextInput
+                  style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]}
+                  value={formData.description}
+                  onChangeText={(text) => setFormData({ ...formData, description: text })}
+                  placeholder="Descrição do serviço"
+                  placeholderTextColor={colors.textSecondary}
+                  multiline
+                  numberOfLines={4}
+                />
+              </View>
+            )}
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Preço *</Text>
@@ -432,40 +447,44 @@ export default function Produtos() {
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Quantidade em Estoque *</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.stock}
-                onChangeText={(text) => setFormData({ ...formData, stock: text })}
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="numeric"
-              />
-            </View>
+            {formData.type === 'product' && (
+              <>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Quantidade em Estoque *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.stock}
+                    onChangeText={(text) => setFormData({ ...formData, stock: text })}
+                    placeholder="0"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="numeric"
+                  />
+                </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Estoque Mínimo</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.min_stock}
-                onChangeText={(text) => setFormData({ ...formData, min_stock: text })}
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="numeric"
-              />
-            </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Estoque Mínimo</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.min_stock}
+                    onChangeText={(text) => setFormData({ ...formData, min_stock: text })}
+                    placeholder="0"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="numeric"
+                  />
+                </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Código de Barras</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.barcode}
-                onChangeText={(text) => setFormData({ ...formData, barcode: text })}
-                placeholder="Código de barras"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Código de Barras</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.barcode}
+                    onChangeText={(text) => setFormData({ ...formData, barcode: text })}
+                    placeholder="Código de barras"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+              </>
+            )}
           </ScrollView>
 
           <View style={styles.modalButtons}>
@@ -488,7 +507,7 @@ export default function Produtos() {
 
   return (
     <View style={styles.container}>
-      <Header title="Produtos" />
+      <Header title="Produtos" showSettings />
       
       <View style={styles.content}>
         {/* Controls */}

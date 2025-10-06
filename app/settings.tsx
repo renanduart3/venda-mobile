@@ -27,7 +27,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
 import { isPremium, enablePremium, disablePremium } from '@/lib/premium';
-import { exportTableToCSV, importCSV, reportToPDF } from '@/lib/export';
+import { exportDatabaseToCSV, importDatabaseFromFile, reportToPDF } from '@/lib/export';
 import { generateSalesReport } from '@/lib/reports';
 
 export default function Settings() {
@@ -119,12 +119,21 @@ export default function Settings() {
     if (ok) setPremium(false);
   };
 
-  const handleExportCSV = async (table: string) => {
+  const handleExportDatabase = async () => {
     try {
-      const path = await exportTableToCSV(table);
-      Alert.alert('Exportado', `CSV salvo: ${path}`);
+      const path = await exportDatabaseToCSV();
+      Alert.alert('Exportado', 'Banco de dados exportado com sucesso!');
     } catch (e: any) {
       Alert.alert('Erro', e.message || 'Falha ao exportar');
+    }
+  };
+
+  const handleImportDatabase = async () => {
+    try {
+      const count = await importDatabaseFromFile();
+      Alert.alert('Importado', `${count} registros importados com sucesso!`);
+    } catch (e: any) {
+      Alert.alert('Erro', e.message || 'Falha ao importar');
     }
   };
 
@@ -311,42 +320,6 @@ export default function Settings() {
       </View>
       
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Synchronization */}
-        <View style={styles.section}>
-          <Card>
-            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
-              <RefreshCw size={20} color={colors.primary} />
-              Sincronização
-            </Text>
-            
-            <View style={styles.syncStatus}>
-              {isOnline ? (
-                <Wifi size={16} color={colors.success} />
-              ) : (
-                <WifiOff size={16} color={colors.error} />
-              )}
-              <Text style={[styles.statusText, { 
-                color: isOnline ? colors.success : colors.error 
-              }]}>
-                {isOnline ? 'Online' : 'Offline'}
-              </Text>
-            </View>
-            
-            {lastSync && (
-              <Text style={styles.lastSyncText}>
-                Última sincronização: {lastSync.toLocaleString('pt-BR')}
-              </Text>
-            )}
-            
-            <Button
-              title={isSyncing ? 'Sincronizando...' : 'Sincronizar Agora'}
-              onPress={handleManualSync}
-              disabled={!isOnline || isSyncing}
-              variant="outline"
-            />
-          </Card>
-        </View>
-
         {/* Store Data */}
         <View style={styles.section}>
           <Card>
@@ -532,8 +505,12 @@ export default function Settings() {
             </View>
 
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-              <Button title="Exportar Produtos CSV" onPress={() => handleExportCSV('products')} disabled={!premium} style={{ flex: 1 }} />
-              <Button title="Gerar Relatório (PDF)" onPress={handleGeneratePDFReport} disabled={!premium} variant="outline" style={{ flex: 1 }} />
+              <Button title="Exportar Banco" onPress={handleExportDatabase} disabled={!premium} style={{ flex: 1 }} />
+              <Button title="Importar Banco" onPress={handleImportDatabase} disabled={!premium} variant="outline" style={{ flex: 1 }} />
+            </View>
+
+            <View style={{ marginTop: 8 }}>
+              <Button title="Gerar Relatório (PDF)" onPress={handleGeneratePDFReport} disabled={!premium} variant="outline" />
             </View>
           </Card>
         </View>

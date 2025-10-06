@@ -45,6 +45,8 @@ export async function initDB() {
         min_stock INTEGER,
         barcode TEXT,
         image_url TEXT,
+        type TEXT DEFAULT 'product',
+        description TEXT,
         created_at TEXT,
         updated_at TEXT
       );

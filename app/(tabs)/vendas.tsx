@@ -60,6 +60,8 @@ export default function Vendas() {
   // New Sale State
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerSuggestionsVisible, setCustomerSuggestionsVisible] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'debit' | 'pix'>('credit');
   const [observation, setObservation] = useState('');
   const [showCamera, setShowCamera] = useState(false);
@@ -73,44 +75,41 @@ export default function Vendas() {
   const [productSearch, setProductSearch] = useState('');
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
 
-  // Mock products data
-  const [products] = useState<Product[]>([
-    { id: '1', name: 'Coca-Cola 350ml', price: 3.50, stock: 50, barcode: '123456789' },
-    { id: '2', name: 'Pão de Açúcar', price: 0.50, stock: 100 },
-    { id: '3', name: 'Leite Integral 1L', price: 4.80, stock: 25 },
-  ]);
+  // Mock data
+  const [products, setProducts] = useState<Product[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
 
   const totalSale = saleItems.reduce((sum, item) => sum + item.total, 0);
 
   useEffect(() => {
-    loadSalesHistory();
-    loadPremium();
+    loadData();
   }, []);
 
-  const loadPremium = async () => {
-    try {
-      const p = await isPremium();
-      setPremium(p);
-    } catch (e) {
-      console.error('Erro carregando premium', e);
-    }
+  const loadData = async () => {
+    const { mockProducts, mockCustomers, mockSales } = await import('@/lib/mocks');
+    setProducts(mockProducts as Product[]);
+    setCustomers(mockCustomers);
+    setSales(mockSales as Sale[]);
+
+    const p = await isPremium();
+    setPremium(p);
   };
 
-  const loadSalesHistory = async () => {
-    // TODO: Load from local storage and sync with Supabase
-    const mockSales: Sale[] = [
-      {
-        id: '1',
-        items: [
-          { product: products[0], quantity: 2, total: 7.00 },
-          { product: products[1], quantity: 4, total: 2.00 },
-        ],
-        paymentMethod: 'credit',
-        total: 9.00,
-        timestamp: new Date().toISOString(),
-      },
-    ];
-    setSales(mockSales);
+  const filteredCustomers = customers.filter(c =>
+    c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+    c.phone.includes(customerSearch)
+  );
+
+  const handleCustomerSelect = (customer: any) => {
+    setSelectedCustomer(customer.name);
+    setCustomerSearch(customer.name);
+    setCustomerSuggestionsVisible(false);
+  };
+
+  const handleCustomerSearchChange = (text: string) => {
+    setCustomerSearch(text);
+    setSelectedCustomer(text);
+    setCustomerSuggestionsVisible(text.length > 0);
   };
 
   const addItemToSale = (product: Product) => {
@@ -423,6 +422,34 @@ export default function Vendas() {
       color: colors.text,
       backgroundColor: colors.surface,
     },
+    suggestionsContainer: {
+      position: 'absolute',
+      top: '100%',
+      left: 0,
+      right: 0,
+      borderWidth: 1,
+      borderRadius: 8,
+      marginTop: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    suggestionItem: {
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+    },
+    suggestionText: {
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
+      marginBottom: 2,
+    },
+    suggestionSubtext: {
+      fontSize: 12,
+      fontFamily: 'Inter-Regular',
+    },
     paymentMethods: {
       flexDirection: 'row',
       gap: 8,
@@ -564,13 +591,32 @@ export default function Vendas() {
 
       {/* Sale Form */}
       <View style={styles.saleForm}>
-        <TextInput
-          style={styles.input}
-          placeholder="Cliente (opcional)"
-          placeholderTextColor={colors.textSecondary}
-          value={selectedCustomer}
-          onChangeText={setSelectedCustomer}
-        />
+        <View style={{ position: 'relative', zIndex: 1 }}>
+          <TextInput
+            style={styles.input}
+            placeholder="Cliente (opcional)"
+            placeholderTextColor={colors.textSecondary}
+            value={customerSearch}
+            onChangeText={handleCustomerSearchChange}
+            onFocus={() => setCustomerSuggestionsVisible(customerSearch.length > 0)}
+          />
+          {customerSuggestionsVisible && filteredCustomers.length > 0 && (
+            <View style={[styles.suggestionsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <ScrollView style={{ maxHeight: 150 }}>
+                {filteredCustomers.map((customer) => (
+                  <TouchableOpacity
+                    key={customer.id}
+                    style={[styles.suggestionItem, { borderBottomColor: colors.border }]}
+                    onPress={() => handleCustomerSelect(customer)}
+                  >
+                    <Text style={[styles.suggestionText, { color: colors.text }]}>{customer.name}</Text>
+                    <Text style={[styles.suggestionSubtext, { color: colors.textSecondary }]}>{customer.phone}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+        </View>
 
         <View>
           <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text, marginBottom: 8 }}>
@@ -657,7 +703,7 @@ export default function Vendas() {
 
   return (
     <View style={styles.container}>
-      <Header title="Vendas" />
+      <Header title="Vendas" showSettings />
       {/* crown icon top-right for non-premium users */}
       { !premium && (
         <TouchableOpacity onPress={() => router.push('/premium' as any)} style={{ position: 'absolute', top: 12, right: 12, padding: 6 }}>

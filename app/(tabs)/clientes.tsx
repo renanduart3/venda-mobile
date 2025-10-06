@@ -453,7 +453,7 @@ export default function Clientes() {
 
   return (
     <View style={styles.container}>
-      <Header title="Clientes" />
+      <Header title="Clientes" showSettings />
       
       <View style={styles.content}>
         {/* Controls */}
