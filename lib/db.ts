@@ -94,6 +94,7 @@ export async function initDB() {
         due_date TEXT,
         paid INTEGER,
         recurring INTEGER,
+        customer_id TEXT,
         created_at TEXT,
         updated_at TEXT
       );

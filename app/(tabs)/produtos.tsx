@@ -577,22 +577,31 @@ export default function Produtos() {
                     <Text style={styles.productName} numberOfLines={1}>
                       {product.name}
                     </Text>
+                    {product.type === 'service' && product.description && (
+                      <Text style={[styles.stockText, { color: colors.textSecondary, marginBottom: 4 }]} numberOfLines={1}>
+                        {product.description}
+                      </Text>
+                    )}
                     <Text style={styles.productPrice}>
                       R$ {product.price.toFixed(2)}
                     </Text>
-                    <View style={styles.stockInfo}>
-                      <Package size={12} color={stockStatus.color} />
-                      <Text style={[styles.stockText, { color: stockStatus.color }]}>
-                        {product.stock} em estoque
-                      </Text>
-                    </View>
-                    {stockStatus.status !== 'ok' && (
-                      <View style={styles.stockAlert}>
-                        <AlertTriangle size={12} color={stockStatus.color} />
-                        <Text style={[styles.stockAlertText, { color: stockStatus.color }]}>
-                          {stockStatus.text}
-                        </Text>
-                      </View>
+                    {product.type !== 'service' && (
+                      <>
+                        <View style={styles.stockInfo}>
+                          <Package size={12} color={stockStatus.color} />
+                          <Text style={[styles.stockText, { color: stockStatus.color }]}>
+                            {product.stock} em estoque
+                          </Text>
+                        </View>
+                        {stockStatus.status !== 'ok' && (
+                          <View style={styles.stockAlert}>
+                            <AlertTriangle size={12} color={stockStatus.color} />
+                            <Text style={[styles.stockAlertText, { color: stockStatus.color }]}>
+                              {stockStatus.text}
+                            </Text>
+                          </View>
+                        )}
+                      </>
                     )}
                   </View>
 

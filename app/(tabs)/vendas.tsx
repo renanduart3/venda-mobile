@@ -34,6 +34,8 @@ interface Product {
   price: number;
   stock: number;
   barcode?: string;
+  type?: 'product' | 'service';
+  description?: string;
 }
 
 interface SaleItem {
@@ -114,15 +116,16 @@ export default function Vendas() {
 
   const addItemToSale = (product: Product) => {
     const existingItem = saleItems.find(item => item.product.id === product.id);
-    
+    const isService = product.type === 'service';
+
     if (existingItem) {
-      if (existingItem.quantity < product.stock) {
+      if (isService || existingItem.quantity < product.stock) {
         updateItemQuantity(product.id, existingItem.quantity + 1);
       } else {
         Alert.alert('Estoque Insuficiente', 'Não há estoque suficiente para este produto.');
       }
     } else {
-      if (product.stock > 0) {
+      if (isService || product.stock > 0) {
         const newItem: SaleItem = {
           product,
           quantity: 1,
@@ -160,30 +163,48 @@ export default function Vendas() {
       return;
     }
 
-    try {
-      const newSale: Sale = {
-        id: Date.now().toString(),
-        items: saleItems,
-        customer: selectedCustomer || undefined,
-        paymentMethod,
-        total: totalSale,
-        timestamp: new Date().toISOString(),
-        observation: observation || undefined,
-      };
+    Alert.alert(
+      'Confirmar Venda',
+      `Valor Total: R$ ${totalSale.toFixed(2)}\nForma de Pagamento: ${
+        paymentMethod === 'cash' ? 'Dinheiro' :
+        paymentMethod === 'credit' ? 'Crédito' :
+        paymentMethod === 'debit' ? 'Débito' : 'PIX'
+      }${selectedCustomer ? `\nCliente: ${selectedCustomer}` : ''}`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Confirmar',
+          onPress: async () => {
+            try {
+              const newSale: Sale = {
+                id: Date.now().toString(),
+                items: saleItems,
+                customer: selectedCustomer || undefined,
+                paymentMethod,
+                total: totalSale,
+                timestamp: new Date().toISOString(),
+                observation: observation || undefined,
+              };
 
-      // TODO: Save to local storage and queue for sync
-      setSales([newSale, ...sales]);
-      
-      // Reset form
-      setSaleItems([]);
-      setSelectedCustomer('');
-      setPaymentMethod('credit');
-      setObservation('');
+              setSales([newSale, ...sales]);
 
-      Alert.alert('Venda Finalizada', `Venda de R$ ${totalSale.toFixed(2)} realizada com sucesso!`);
-    } catch (error) {
-      Alert.alert('Erro', 'Não foi possível finalizar a venda.');
-    }
+              setSaleItems([]);
+              setSelectedCustomer('');
+              setCustomerSearch('');
+              setPaymentMethod('credit');
+              setObservation('');
+
+              Alert.alert('✅ Sucesso', `Venda de R$ ${totalSale.toFixed(2)} realizada com sucesso!`);
+            } catch (error) {
+              Alert.alert('❌ Erro', 'Não foi possível finalizar a venda. Tente novamente.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleBarcodeScanned = ({ data }: { data: string }) => {
