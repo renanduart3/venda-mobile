@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+
+import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Bell, Settings, Wifi, WifiOff, Crown } from 'lucide-react-native';
+import { Bell, Settings, Wifi, WifiOff } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useOffline } from '@/contexts/OfflineContext';
 import { useRouter } from 'expo-router';
-import { isPremium } from '@/lib/premium';
+import { usePremium } from '@/contexts/PremiumContext';
 
 interface HeaderProps {
   title: string;
@@ -17,20 +18,7 @@ export function Header({ title, showSettings = false }: HeaderProps) {
   const { unreadCount } = useNotifications();
   const { isOnline } = useOffline();
   const router = useRouter();
-  const [premium, setPremium] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const p = await isPremium();
-        if (mounted) setPremium(p);
-      } catch (e) {
-        // ignore
-      }
-    })();
-    return () => { mounted = false; };
-  }, []);
+  const { isPremium } = usePremium();
 
   const styles = StyleSheet.create({
     header: {
@@ -75,9 +63,18 @@ export function Header({ title, showSettings = false }: HeaderProps) {
     },
     connectionIndicator: {
       padding: 4,
-      borderRadius: 4,
-      backgroundColor: isOnline ? colors.success : colors.error,
     },
+    premiumButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+    },
+    premiumButtonText: {
+      color: colors.white,
+      fontFamily: 'Inter-Bold',
+      fontSize: 14,
+    }
   });
 
   return (
@@ -86,17 +83,11 @@ export function Header({ title, showSettings = false }: HeaderProps) {
       
       <View style={styles.rightSection}>
         <View style={styles.connectionIndicator}>
-          {premium ? (
-            isOnline ? (
-              <Wifi size={16} color={colors.white} />
+            {isOnline ? (
+              <Wifi size={16} color={colors.success} />
             ) : (
-              <WifiOff size={16} color={colors.white} />
-            )
-          ) : (
-            <TouchableOpacity onPress={() => router.push('/premium' as any)}>
-              <Crown size={16} color={colors.white} />
-            </TouchableOpacity>
-          )}
+              <WifiOff size={16} color={colors.error} />
+            )}
         </View>
 
         <TouchableOpacity 
@@ -114,9 +105,15 @@ export function Header({ title, showSettings = false }: HeaderProps) {
         </TouchableOpacity>
 
         {showSettings && (
-          <TouchableOpacity onPress={() => router.push('/settings' as any)} style={{ padding: 6 }}>
-            <Settings size={24} color={colors.text} />
-          </TouchableOpacity>
+          isPremium ? (
+            <TouchableOpacity onPress={() => router.push('/settings' as any)} style={{ padding: 6 }}>
+              <Settings size={24} color={colors.text} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.premiumButton} onPress={() => router.push('/premium' as any)}>
+              <Text style={styles.premiumButtonText}>Premium</Text>
+            </TouchableOpacity>
+          )
         )}
       </View>
     </View>

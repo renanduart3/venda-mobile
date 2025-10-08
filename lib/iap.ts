@@ -1,6 +1,9 @@
+
 import { Platform } from 'react-native';
+import * as InAppPurchases from 'expo-in-app-purchases';
 import { validateSubscription } from './premium';
 
+// Define os IDs de produto para iOS e Android
 export const PRODUCT_IDS = {
   MONTHLY: Platform.select({
     ios: 'premium_monthly',
@@ -12,127 +15,147 @@ export const PRODUCT_IDS = {
   }) as string,
 };
 
-export interface Product {
-  productId: string;
-  title: string;
-  description: string;
-  price: string;
-  localizedPrice: string;
-  currency: string;
-  type: 'subs';
-}
-
-export interface Purchase {
-  productId: string;
-  transactionId: string;
-  transactionDate: number;
-  transactionReceipt: string;
-  purchaseToken: string;
-}
+// Reexporta as interfaces da biblioteca para uso no aplicativo
+export type Product = InAppPurchases.IAPItem;
+export type Purchase = InAppPurchases.InAppPurchase;
 
 let iapAvailable = false;
 
+// 1. Inicializa a conexão com a loja de aplicativos
 export async function initializeIAP(): Promise<boolean> {
   try {
     if (Platform.OS === 'web') {
-      console.log('IAP not available on web');
+      console.log('IAP não está disponível na web.');
       return false;
     }
-
+    
+    await InAppPurchases.connectAsync();
     iapAvailable = true;
+    console.log('Conexão com IAP estabelecida.');
     return true;
+
   } catch (error) {
-    console.error('Error initializing IAP:', error);
+    console.error('Erro ao inicializar IAP:', error);
     return false;
   }
 }
 
+// 2. Busca os produtos cadastrados na loja
 export async function getProducts(): Promise<Product[]> {
   try {
     if (!iapAvailable) {
-      console.log('IAP not initialized');
+      console.log('IAP não inicializado para buscar produtos.');
       return [];
     }
+    const productIds = Platform.select({
+      ios: [PRODUCT_IDS.MONTHLY, PRODUCT_IDS.ANNUAL],
+      android: [PRODUCT_IDS.MONTHLY, PRODUCT_IDS.ANNUAL],
+    }) || [];
+    
+    const { responseCode, results } = await InAppPurchases.getProductsAsync(productIds);
 
-    return [
-      {
-        productId: PRODUCT_IDS.MONTHLY,
-        title: 'Premium Mensal',
-        description: 'Acesso completo a todos os recursos premium por 1 mês',
-        price: '9.90',
-        localizedPrice: 'R$ 9,90',
-        currency: 'BRL',
-        type: 'subs',
-      },
-      {
-        productId: PRODUCT_IDS.ANNUAL,
-        title: 'Premium Anual',
-        description: 'Acesso completo a todos os recursos premium por 1 ano',
-        price: '99.90',
-        localizedPrice: 'R$ 99,90',
-        currency: 'BRL',
-        type: 'subs',
-      },
-    ];
+    if (responseCode === InAppPurchases.IAPResponseCode.OK) {
+      console.log('Produtos buscados com sucesso:', results);
+      return results || [];
+    }
+    console.error('Erro ao buscar produtos. Código:', responseCode);
+    return [];
+
   } catch (error) {
-    console.error('Error getting products:', error);
+    console.error('Erro ao buscar produtos:', error);
     return [];
   }
 }
 
+// 3. Inicia o fluxo de compra
 export async function purchaseSubscription(productId: string): Promise<{ success: boolean; error?: string }> {
   try {
     if (!iapAvailable) {
-      return { success: false, error: 'IAP not available' };
+      return { success: false, error: 'IAP não disponível' };
     }
 
-    if (Platform.OS === 'web') {
-      return { success: false, error: 'Purchases not available on web' };
-    }
+    // Configura um listener para receber o resultado da compra
+    InAppPurchases.setPurchaseListener(async ({ responseCode, results, errorCode }) => {
+      if (responseCode === InAppPurchases.IAPResponseCode.OK) {
+        for (const purchase of results || []) {
+          if (!purchase.acknowledged) {
+            console.log(`Processando compra para ${purchase.productId}`);
 
-    const platform = Platform.OS as 'android' | 'ios';
-    const mockPurchaseToken = `mock_token_${Date.now()}_${productId}`;
+            const platform = Platform.OS as 'android' | 'ios';
+            // Para o Android, usamos o purchaseToken. Para iOS, o transactionReceipt.
+            const token = platform === 'android' ? purchase.purchaseToken : purchase.transactionReceipt;
 
-    const result = await validateSubscription(platform, mockPurchaseToken, productId);
+            if (token) {
+              const validationResult = await validateSubscription(platform, token, purchase.productId);
+              
+              if (validationResult.success) {
+                console.log('Compra validada e finalizada com sucesso.');
+                await InAppPurchases.finishTransactionAsync(purchase, true);
+              } else {
+                console.error('Falha na validação do recibo:', validationResult.error);
+                await InAppPurchases.finishTransactionAsync(purchase, false);
+              }
+            } else {
+                console.error('Token de compra não encontrado.');
+                await InAppPurchases.finishTransactionAsync(purchase, false);
+            }
+          }
+        }
+      }
+    });
 
-    if (result.success) {
-      return { success: true };
-    } else {
-      return { success: false, error: result.error || 'Purchase validation failed' };
-    }
-  } catch (error) {
-    console.error('Error purchasing subscription:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    console.log(`Iniciando compra para o produto: ${productId}`);
+    await InAppPurchases.purchaseItemAsync(productId);
+
+    // O resultado final será tratado pelo listener
+    return { success: true };
+
+  } catch (error: any) {
+    console.error('Erro ao iniciar a compra:', error);
+    if (error.code === 'E_USER_CANCELLED') {
+      return { success: false, error: 'Compra cancelada pelo usuário.' };
+    }    
+    return { success: false, error: error.message || 'Erro desconhecido' };
   }
 }
 
+// 4. Restaura compras anteriores
 export async function restorePurchases(): Promise<{ success: boolean; error?: string; restored: number }> {
   try {
     if (!iapAvailable) {
-      return { success: false, error: 'IAP not available', restored: 0 };
+      return { success: false, error: 'IAP não disponível', restored: 0 };
     }
-
-    if (Platform.OS === 'web') {
-      return { success: false, error: 'Restore not available on web', restored: 0 };
+    
+    const { responseCode, results } = await InAppPurchases.getPurchaseHistoryAsync();
+    
+    if (responseCode === InAppPurchases.IAPResponseCode.OK && results) {
+        for (const purchase of results) {
+            const platform = Platform.OS as 'android' | 'ios';
+            const token = platform === 'android' ? purchase.purchaseToken : purchase.transactionReceipt;
+            if (token) {
+                 // Valida cada compra restaurada com o backend
+                await validateSubscription(platform, token, purchase.productId);
+            }
+        }
+        return { success: true, restored: results.length };
     }
+    return { success: false, error: 'Nenhuma compra encontrada para restaurar', restored: 0 };
 
-    return { success: true, restored: 0 };
-  } catch (error) {
-    console.error('Error restoring purchases:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      restored: 0,
-    };
+  } catch (error: any) {
+    console.error('Erro ao restaurar compras:', error);
+    return { success: false, error: error.message, restored: 0 };
   }
 }
 
+// 5. Encerra a conexão
 export async function endConnection(): Promise<void> {
   try {
     if (iapAvailable) {
+      await InAppPurchases.disconnectAsync();
       iapAvailable = false;
+      console.log('Conexão com IAP encerrada.');
     }
   } catch (error) {
-    console.error('Error ending IAP connection:', error);
+    console.error('Erro ao encerrar a conexão IAP:', error);
   }
 }

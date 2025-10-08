@@ -4,7 +4,8 @@ import {
   ShoppingCart, 
   Package, 
   Users, 
-  Wallet 
+  Wallet,
+  PieChart
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -76,6 +77,15 @@ export default function TabLayout() {
           title: 'Finanças',
           tabBarIcon: ({ size, color }) => (
             <Wallet size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="analises"
+        options={{
+          title: 'Análises',
+          tabBarIcon: ({ size, color }) => (
+            <PieChart size={size} color={color} />
           ),
         }}
       />

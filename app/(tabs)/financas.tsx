@@ -19,12 +19,13 @@ import {
   CheckCircle,
   XCircle,
   RotateCcw,
-  Filter
+  Download
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { usePremium } from '../../contexts/PremiumContext';
 
 interface Expense {
   id: string;
@@ -39,13 +40,12 @@ interface Expense {
 
 export default function Financas() {
   const { colors } = useTheme();
-  const [activeTab, setActiveTab] = useState<'new' | 'report'>('new');
+  const { isPremium, showPremiumDialog } = usePremium();
+  const [activeTab, setActiveTab] = useState<'vendas' | 'despesas'>('vendas');
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const [selectedPeriod, setSelectedPeriod] = useState('month');
   
-  // Form state
   const [formData, setFormData] = useState({
     name: '',
     amount: '',
@@ -59,7 +59,6 @@ export default function Financas() {
   }, []);
 
   const loadExpenses = async () => {
-    // TODO: Load from local storage and sync with Supabase
     const mockExpenses: Expense[] = [
       {
         id: '1',
@@ -67,36 +66,6 @@ export default function Financas() {
         amount: 1200.00,
         due_date: '2024-01-05',
         paid: true,
-        recurring: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        name: 'Conta de Luz',
-        amount: 380.50,
-        due_date: '2024-01-15',
-        paid: false,
-        recurring: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '3',
-        name: 'Compra de Produtos',
-        amount: 2500.00,
-        due_date: '2024-01-10',
-        paid: true,
-        recurring: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '4',
-        name: 'Internet',
-        amount: 89.90,
-        due_date: '2024-01-20',
-        paid: false,
         recurring: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -156,7 +125,6 @@ export default function Financas() {
       };
 
       if (editingExpense) {
-        // Update existing expense
         const updatedExpense: Expense = {
           ...editingExpense,
           ...expenseData,
@@ -164,7 +132,6 @@ export default function Financas() {
         };
         setExpenses(expenses.map(e => e.id === editingExpense.id ? updatedExpense : e));
       } else {
-        // Create new expense
         const newExpense: Expense = {
           id: Date.now().toString(),
           ...expenseData,
@@ -207,24 +174,6 @@ export default function Financas() {
     setExpenses(expenses.map(e => e.id === expense.id ? updatedExpense : e));
   };
 
-  const getExpenseStats = () => {
-    const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const paidExpenses = expenses.filter(e => e.paid).reduce((sum, expense) => sum + expense.amount, 0);
-    const pendingExpenses = totalExpenses - paidExpenses;
-    const overdueExpenses = expenses.filter(e => 
-      !e.paid && new Date(e.due_date) < new Date()
-    ).length;
-
-    return {
-      total: totalExpenses,
-      paid: paidExpenses,
-      pending: pendingExpenses,
-      overdue: overdueExpenses,
-    };
-  };
-
-  const stats = getExpenseStats();
-
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR');
   };
@@ -232,11 +181,36 @@ export default function Financas() {
   const isOverdue = (expense: Expense) => {
     return !expense.paid && new Date(expense.due_date) < new Date();
   };
+  
+  const handleExport = () => {
+    if (!isPremium) {
+      showPremiumDialog();
+      return;
+    }
+    Alert.alert('Exportar', 'Funcionalidade premium de exportação.');
+  };
 
   const styles = StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    headerContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingRight: 20,
+    },
+    exportButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      padding: 8,
+    },
+    exportButtonText: {
+      color: colors.primary,
+      fontFamily: 'Inter-SemiBold',
+      fontSize: 14,
     },
     tabSelector: {
       flexDirection: 'row',
@@ -266,8 +240,6 @@ export default function Financas() {
       flex: 1,
       paddingHorizontal: 20,
     },
-    
-    // New Expense Tab
     addButton: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -283,40 +255,6 @@ export default function Financas() {
       fontSize: 16,
       fontFamily: 'Inter-SemiBold',
     },
-    
-    // Stats Cards
-    statsContainer: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      marginBottom: 20,
-      gap: 12,
-    },
-    statCard: {
-      flex: 1,
-      minWidth: '45%',
-    },
-    statHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 8,
-    },
-    statIcon: {
-      padding: 8,
-      borderRadius: 8,
-    },
-    statValue: {
-      fontSize: 18,
-      fontFamily: 'Inter-Bold',
-      marginBottom: 4,
-    },
-    statLabel: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-    
-    // Expenses List
     expenseCard: {
       marginBottom: 12,
     },
@@ -356,35 +294,6 @@ export default function Financas() {
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
     },
-    expenseTags: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      marginTop: 4,
-    },
-    tag: {
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 4,
-      backgroundColor: colors.surface,
-    },
-    tagText: {
-      fontSize: 10,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-    overdueTag: {
-      backgroundColor: colors.error + '20',
-    },
-    overdueTagText: {
-      color: colors.error,
-    },
-    recurringTag: {
-      backgroundColor: colors.primary + '20',
-    },
-    recurringTagText: {
-      color: colors.primary,
-    },
     actions: {
       flexDirection: 'row',
       gap: 8,
@@ -400,8 +309,6 @@ export default function Financas() {
       backgroundColor: colors.success + '20',
       borderColor: colors.success,
     },
-    
-    // Modal styles
     modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -476,68 +383,19 @@ export default function Financas() {
       flex: 1,
     },
   });
-
-  const StatCard = ({ 
-    icon, 
-    value, 
-    label, 
-    color = colors.primary 
-  }: { 
-    icon: React.ReactNode; 
-    value: string | number; 
-    label: string; 
-    color?: string; 
-  }) => (
-    <Card style={styles.statCard}>
-      <View style={styles.statHeader}>
-        <View style={[styles.statIcon, { backgroundColor: color + '20' }]}>
-          {icon}
-        </View>
-      </View>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </Card>
+  
+  const VendasTab = () => (
+    <View style={styles.content}>
+        <Text>Conteúdo da aba de vendas.</Text>
+    </View>
   );
 
-  const NewExpenseTab = () => (
+  const DespesasTab = () => (
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      {/* Add Expense Button */}
       <TouchableOpacity style={styles.addButton} onPress={() => openExpenseModal()}>
         <Plus size={20} color={colors.white} />
         <Text style={styles.addButtonText}>Nova Despesa</Text>
       </TouchableOpacity>
-
-      {/* Stats */}
-      <View style={styles.statsContainer}>
-        <StatCard
-          icon={<DollarSign size={20} color={colors.primary} />}
-          value={`R$ ${stats.total.toFixed(2)}`}
-          label="Total do Mês"
-        />
-        <StatCard
-          icon={<CheckCircle size={20} color={colors.success} />}
-          value={`R$ ${stats.paid.toFixed(2)}`}
-          label="Pago"
-          color={colors.success}
-        />
-        <StatCard
-          icon={<XCircle size={20} color={colors.warning} />}
-          value={`R$ ${stats.pending.toFixed(2)}`}
-          label="Pendente"
-          color={colors.warning}
-        />
-        <StatCard
-          icon={<Calendar size={20} color={colors.error} />}
-          value={stats.overdue}
-          label="Vencidas"
-          color={colors.error}
-        />
-      </View>
-
-      {/* Expenses List */}
-      <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 16 }}>
-        Despesas do Mês
-      </Text>
       
       {expenses.map((expense) => (
         <Card key={expense.id} style={styles.expenseCard}>
@@ -561,18 +419,6 @@ export default function Financas() {
                 <Text style={styles.expenseDate}>
                   Venc: {formatDate(expense.due_date)}
                 </Text>
-              </View>
-              <View style={styles.expenseTags}>
-                {isOverdue(expense) && (
-                  <View style={[styles.tag, styles.overdueTag]}>
-                    <Text style={[styles.tagText, styles.overdueTagText]}>VENCIDA</Text>
-                  </View>
-                )}
-                {expense.recurring && (
-                  <View style={[styles.tag, styles.recurringTag]}>
-                    <Text style={[styles.tagText, styles.recurringTagText]}>RECORRENTE</Text>
-                  </View>
-                )}
               </View>
             </View>
 
@@ -605,21 +451,6 @@ export default function Financas() {
           </View>
         </Card>
       ))}
-    </ScrollView>
-  );
-
-  const ReportTab = () => (
-    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 20 }}>
-        Relatórios Financeiros
-      </Text>
-      
-      {/* TODO: Add charts and detailed reports */}
-      <Card>
-        <Text style={{ textAlign: 'center', color: colors.textSecondary, marginVertical: 40 }}>
-          Relatórios em desenvolvimento
-        </Text>
-      </Card>
     </ScrollView>
   );
 
@@ -709,30 +540,34 @@ export default function Financas() {
 
   return (
     <View style={styles.container}>
-      <Header title="Finanças" showSettings />
+        <View style={styles.headerContainer}>
+            <Header title="Finanças" showSettings />
+            <TouchableOpacity style={styles.exportButton} onPress={handleExport}>
+                <Download size={20} color={colors.primary} />
+                <Text style={styles.exportButtonText}>Exportar</Text>
+            </TouchableOpacity>
+        </View>
       
-      {/* Tab Selector */}
       <View style={styles.tabSelector}>
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'new' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('new')}
+          style={[styles.tabButton, activeTab === 'vendas' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('vendas')}
         >
-          <Text style={[styles.tabButtonText, activeTab === 'new' && styles.tabButtonTextActive]}>
-            Despesas
+          <Text style={[styles.tabButtonText, activeTab === 'vendas' && styles.tabButtonTextActive]}>
+            Vendas
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'report' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('report')}
+          style={[styles.tabButton, activeTab === 'despesas' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('despesas')}
         >
-          <Text style={[styles.tabButtonText, activeTab === 'report' && styles.tabButtonTextActive]}>
-            Relatórios
+          <Text style={[styles.tabButtonText, activeTab === 'despesas' && styles.tabButtonTextActive]}>
+            Despesas
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Tab Content */}
-      {activeTab === 'new' ? <NewExpenseTab /> : <ReportTab />}
+      {activeTab === 'vendas' ? <VendasTab /> : <DespesasTab />}
 
       <ExpenseModal />
     </View>
