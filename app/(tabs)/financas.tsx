@@ -1,20 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  StyleSheet,
   ScrollView,
-  TextInput,
   TouchableOpacity,
   FlatList,
   Modal,
-  Alert
+  Alert,
+  Platform
 } from 'react-native';
-import { 
-  Plus, 
-  Calendar, 
-  Edit, 
-  Trash2, 
+import { TextInput } from '@/components/ui/TextInput';
+import {
+  Plus,
+  Calendar,
+  Edit,
+  Trash2,
   DollarSign,
   CheckCircle,
   XCircle,
@@ -31,10 +32,11 @@ interface Expense {
   id: string;
   name: string;
   amount: number;
-  due_date: string;
+  due_date?: string | null;
   paid: boolean;
   recurring: boolean;
   customer_id?: string | null;
+  created_month: string; // Mês de cadastro (YYYY-MM)
   created_at: string;
   updated_at: string;
 }
@@ -43,12 +45,19 @@ export default function Financas() {
   const { colors } = useTheme();
   const [activeTab, setActiveTab] = useState<'new' | 'report'>('new');
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [sales, setSales] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
-  
+
+  // Report filters
+  const [reportFilter, setReportFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   // Form state
   const [formData, setFormData] = useState({
     name: '',
@@ -59,10 +68,17 @@ export default function Financas() {
     customer_id: '',
   });
 
+
   useEffect(() => {
     loadExpenses();
+    loadSales();
     loadCustomers();
   }, []);
+
+  // Reset page when filter or month changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [reportFilter, selectedMonth]);
 
   const loadCustomers = async () => {
     try {
@@ -74,50 +90,26 @@ export default function Financas() {
   };
 
   const loadExpenses = async () => {
-    // TODO: Load from local storage and sync with Supabase
-    const mockExpenses: Expense[] = [
-      {
-        id: '1',
-        name: 'Aluguel da Loja',
-        amount: 1200.00,
-        due_date: '2024-01-05',
-        paid: true,
-        recurring: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        name: 'Conta de Luz',
-        amount: 380.50,
-        due_date: '2024-01-15',
-        paid: false,
-        recurring: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '3',
-        name: 'Compra de Produtos',
-        amount: 2500.00,
-        due_date: '2024-01-10',
-        paid: true,
-        recurring: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: '4',
-        name: 'Internet',
-        amount: 89.90,
-        due_date: '2024-01-20',
-        paid: false,
-        recurring: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-    setExpenses(mockExpenses);
+    try {
+      const { mockExpenses } = await import('@/lib/mocks');
+      const convertedExpenses = mockExpenses.map(expense => ({
+        ...expense,
+        paid: Boolean(expense.paid),
+        recurring: Boolean(expense.recurring)
+      }));
+      setExpenses(convertedExpenses);
+    } catch (error) {
+      console.error('Error loading expenses:', error);
+    }
+  };
+
+  const loadSales = async () => {
+    try {
+      const { mockSales } = await import('@/lib/mocks');
+      setSales(mockSales);
+    } catch (error) {
+      console.error('Error loading sales:', error);
+    }
   };
 
   const openExpenseModal = (expense?: Expense) => {
@@ -126,7 +118,7 @@ export default function Financas() {
       setFormData({
         name: expense.name,
         amount: expense.amount.toString(),
-        due_date: expense.due_date,
+        due_date: expense.due_date || '',
         paid: expense.paid,
         recurring: expense.recurring,
         customer_id: expense.customer_id || '',
@@ -159,19 +151,23 @@ export default function Financas() {
   };
 
   const saveExpense = async () => {
-    if (!formData.name.trim() || !formData.amount || !formData.due_date) {
+    if (!formData.name.trim() || !formData.amount) {
       Alert.alert('Erro', 'Preencha todos os campos obrigatórios.');
       return;
     }
 
     try {
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
       const expenseData = {
         name: formData.name.trim(),
         amount: parseFloat(formData.amount),
-        due_date: formData.due_date,
+        due_date: formData.due_date || null,
         paid: formData.paid,
         recurring: formData.recurring,
         customer_id: formData.customer_id || null,
+        created_month: editingExpense?.created_month || currentMonth,
       };
 
       if (editingExpense) {
@@ -230,8 +226,8 @@ export default function Financas() {
     const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
     const paidExpenses = expenses.filter(e => e.paid).reduce((sum, expense) => sum + expense.amount, 0);
     const pendingExpenses = totalExpenses - paidExpenses;
-    const overdueExpenses = expenses.filter(e => 
-      !e.paid && new Date(e.due_date) < new Date()
+    const overdueExpenses = expenses.filter(e =>
+      !e.paid && e.due_date && new Date(e.due_date) < new Date()
     ).length;
 
     return {
@@ -248,8 +244,96 @@ export default function Financas() {
     return new Date(dateString).toLocaleDateString('pt-BR');
   };
 
+  const formatDateForDisplay = (dateString: string | null) => {
+    if (!dateString) return 'Sem vencimento';
+    return formatDate(dateString);
+  };
+
   const isOverdue = (expense: Expense) => {
-    return !expense.paid && new Date(expense.due_date) < new Date();
+    return !expense.paid && expense.due_date && new Date(expense.due_date) < new Date();
+  };
+
+  // Report functions
+  const getFinancialData = () => {
+    const currentMonth = selectedMonth;
+
+    // Filter expenses by month
+    const monthlyExpenses = expenses.filter(expense => {
+      const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
+      return expenseMonth === currentMonth;
+    });
+
+    // Filter sales by month
+    const monthlySales = sales.filter(sale => {
+      const saleMonth = sale.created_at.slice(0, 7);
+      return saleMonth === currentMonth;
+    });
+
+
+    // Combine and format data
+    const financialData = [
+      ...monthlyExpenses.map(expense => ({
+        id: `expense-${expense.id}`,
+        type: 'expense' as const,
+        description: expense.name,
+        amount: -expense.amount, // Negative for expenses
+        date: expense.created_at,
+        customer: expense.customer_id ? customers.find(c => c.id === expense.customer_id)?.name : null,
+        status: expense.paid ? 'Pago' : 'Pendente',
+        category: 'Despesa'
+      })),
+      ...monthlySales.map(sale => ({
+        id: `sale-${sale.id}`,
+        type: 'income' as const,
+        description: `Venda - ${sale.customer_name}`,
+        amount: sale.total, // Positive for income
+        date: sale.created_at,
+        customer: sale.customer_name,
+        status: 'Pago',
+        category: 'Venda'
+      }))
+    ];
+
+    // Sort by date (newest first)
+    return financialData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  };
+
+  const getFilteredData = () => {
+    const data = getFinancialData();
+
+    switch (reportFilter) {
+      case 'income':
+        return data.filter(item => item.type === 'income');
+      case 'expense':
+        return data.filter(item => item.type === 'expense');
+      default:
+        return data;
+    }
+  };
+
+  const getPaginatedData = () => {
+    const filteredData = getFilteredData();
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return {
+      data: filteredData.slice(startIndex, endIndex),
+      totalPages: Math.ceil(filteredData.length / itemsPerPage),
+      totalItems: filteredData.length
+    };
+  };
+
+  const getMonthSummary = () => {
+    const data = getFinancialData();
+    const totalIncome = data.filter(item => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
+    const totalExpenses = Math.abs(data.filter(item => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0));
+    const balance = totalIncome - totalExpenses;
+
+    return {
+      totalIncome,
+      totalExpenses,
+      balance,
+      transactionCount: data.length
+    };
   };
 
   const styles = StyleSheet.create({
@@ -285,7 +369,7 @@ export default function Financas() {
       flex: 1,
       paddingHorizontal: 20,
     },
-    
+
     // New Expense Tab
     addButton: {
       flexDirection: 'row',
@@ -302,7 +386,7 @@ export default function Financas() {
       fontSize: 16,
       fontFamily: 'Inter-SemiBold',
     },
-    
+
     // Stats Cards
     statsContainer: {
       flexDirection: 'row',
@@ -334,7 +418,7 @@ export default function Financas() {
       fontFamily: 'Inter-Medium',
       color: colors.textSecondary,
     },
-    
+
     // Expenses List
     expenseCard: {
       marginBottom: 12,
@@ -374,12 +458,22 @@ export default function Financas() {
       fontSize: 12,
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
+      textAlign: 'right',
+      flexShrink: 0,
+      marginLeft: 'auto',
     },
     expenseTags: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
       gap: 4,
       marginTop: 4,
+    },
+    tagsContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      flex: 1,
     },
     tag: {
       paddingHorizontal: 6,
@@ -419,7 +513,7 @@ export default function Financas() {
       backgroundColor: colors.success + '20',
       borderColor: colors.success,
     },
-    
+
     // Modal styles
     modalOverlay: {
       flex: 1,
@@ -552,18 +646,199 @@ export default function Financas() {
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
     },
+
+    // Report styles
+    reportHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 20,
+    },
+    reportTitle: {
+      fontSize: 18,
+      fontFamily: 'Inter-SemiBold',
+      color: colors.text,
+    },
+    premiumButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 6,
+    },
+    premiumButtonText: {
+      color: colors.white,
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+    },
+    monthSelector: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 20,
+      gap: 12,
+    },
+    selectorLabel: {
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
+      color: colors.text,
+    },
+    monthInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 6,
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+      fontSize: 14,
+      fontFamily: 'Inter-Regular',
+      color: colors.text,
+      backgroundColor: colors.surface,
+      minWidth: 100,
+    },
+    summaryContainer: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 20,
+    },
+    summaryCard: {
+      flex: 1,
+      padding: 12,
+      alignItems: 'center',
+    },
+    summaryLabel: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+      color: colors.textSecondary,
+      marginBottom: 4,
+    },
+    summaryValue: {
+      fontSize: 16,
+      fontFamily: 'Inter-Bold',
+    },
+    filterContainer: {
+      flexDirection: 'row',
+      gap: 8,
+      marginBottom: 20,
+    },
+    filterButton: {
+      flex: 1,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 6,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+    },
+    filterButtonActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    filterButtonText: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+      color: colors.textSecondary,
+    },
+    filterButtonTextActive: {
+      color: colors.white,
+    },
+    dataContainer: {
+      marginBottom: 20,
+    },
+    dataTitle: {
+      fontSize: 16,
+      fontFamily: 'Inter-SemiBold',
+      color: colors.text,
+      marginBottom: 12,
+    },
+    transactionCard: {
+      marginBottom: 8,
+    },
+    transactionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+    },
+    transactionInfo: {
+      flex: 1,
+      marginRight: 12,
+    },
+    transactionDescription: {
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    transactionDate: {
+      fontSize: 12,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+      marginBottom: 2,
+    },
+    transactionCustomer: {
+      fontSize: 12,
+      fontFamily: 'Inter-Regular',
+      color: colors.primary,
+    },
+    transactionAmount: {
+      alignItems: 'flex-end',
+    },
+    amountText: {
+      fontSize: 16,
+      fontFamily: 'Inter-Bold',
+      marginBottom: 2,
+    },
+    statusText: {
+      fontSize: 10,
+      fontFamily: 'Inter-Medium',
+      color: colors.textSecondary,
+    },
+    emptyText: {
+      textAlign: 'center',
+      color: colors.textSecondary,
+      fontSize: 14,
+      fontFamily: 'Inter-Regular',
+      paddingVertical: 20,
+    },
+    paginationContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 20,
+      paddingVertical: 16,
+    },
+    paginationButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 6,
+      backgroundColor: colors.primary,
+    },
+    paginationButtonDisabled: {
+      backgroundColor: colors.border,
+    },
+    paginationText: {
+      color: colors.white,
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+    },
+    paginationTextDisabled: {
+      color: colors.textSecondary,
+    },
+    paginationInfo: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+      color: colors.textSecondary,
+    },
   });
 
-  const StatCard = ({ 
-    icon, 
-    value, 
-    label, 
-    color = colors.primary 
-  }: { 
-    icon: React.ReactNode; 
-    value: string | number; 
-    label: string; 
-    color?: string; 
+  const StatCard = ({
+    icon,
+    value,
+    label,
+    color = colors.primary
+  }: {
+    icon: React.ReactNode;
+    value: string | number;
+    label: string;
+    color?: string;
   }) => (
     <Card style={styles.statCard}>
       <View style={styles.statHeader}>
@@ -615,7 +890,7 @@ export default function Financas() {
       <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 16 }}>
         Despesas do Mês
       </Text>
-      
+
       {expenses.map((expense) => (
         <Card key={expense.id} style={styles.expenseCard}>
           <View style={styles.expenseItem}>
@@ -623,14 +898,16 @@ export default function Financas() {
               styles.expenseIcon,
               { backgroundColor: expense.paid ? colors.success + '20' : colors.warning + '20' }
             ]}>
-              {expense.paid 
+              {expense.paid
                 ? <CheckCircle size={20} color={colors.success} />
                 : <XCircle size={20} color={colors.warning} />
               }
             </View>
-            
+
             <View style={styles.expenseInfo}>
-              <Text style={styles.expenseName}>{expense.name}</Text>
+              <Text style={styles.expenseName} numberOfLines={2} ellipsizeMode="tail">
+                {expense.name}
+              </Text>
               {expense.customer_id && (
                 <Text style={styles.expenseCustomer}>
                   Cliente: {customers.find(c => c.id === expense.customer_id)?.name || 'Cliente não encontrado'}
@@ -640,37 +917,28 @@ export default function Financas() {
                 <Text style={styles.expenseAmount}>
                   R$ {expense.amount.toFixed(2)}
                 </Text>
-                <Text style={styles.expenseDate}>
-                  Venc: {formatDate(expense.due_date)}
-                </Text>
               </View>
               <View style={styles.expenseTags}>
-                {isOverdue(expense) && (
-                  <View style={[styles.tag, styles.overdueTag]}>
-                    <Text style={[styles.tagText, styles.overdueTagText]}>VENCIDA</Text>
-                  </View>
-                )}
-                {expense.recurring && (
-                  <View style={[styles.tag, styles.recurringTag]}>
-                    <Text style={[styles.tagText, styles.recurringTagText]}>RECORRENTE</Text>
-                  </View>
-                )}
+                <View style={styles.tagsContainer}>
+                  {isOverdue(expense) && (
+                    <View style={[styles.tag, styles.overdueTag]}>
+                      <Text style={[styles.tagText, styles.overdueTagText]}>VENCIDA</Text>
+                    </View>
+                  )}
+                  {expense.recurring && (
+                    <View style={[styles.tag, styles.recurringTag]}>
+                      <Text style={[styles.tagText, styles.recurringTagText]}>RECORRENTE</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.expenseDate}>
+                  Venc: {formatDateForDisplay(expense.due_date || null)}
+                </Text>
               </View>
             </View>
 
             <View style={styles.actions}>
-              <TouchableOpacity
-                style={[
-                  styles.actionButton,
-                  expense.paid && styles.paidButton,
-                ]}
-                onPress={() => togglePaidStatus(expense)}
-              >
-                {expense.paid 
-                  ? <CheckCircle size={16} color={colors.success} />
-                  : <XCircle size={16} color={colors.warning} />
-                }
-              </TouchableOpacity>
+             
               <TouchableOpacity
                 style={styles.actionButton}
                 onPress={() => openExpenseModal(expense)}
@@ -690,168 +958,305 @@ export default function Financas() {
     </ScrollView>
   );
 
-  const ReportTab = () => (
-    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 20 }}>
-        Relatórios Financeiros
-      </Text>
-      
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => {
-          console.log('Navegando para relatórios...');
-          router.push('/relatorios');
-        }}
-      >
-        <Text style={styles.addButtonText}>Acessar Relatórios Premium</Text>
-      </TouchableOpacity>
-      
-      <Card>
-        <Text style={{ textAlign: 'center', color: colors.textSecondary, marginVertical: 40 }}>
-          Relatórios básicos em desenvolvimento
-        </Text>
-      </Card>
-    </ScrollView>
-  );
+  const ReportTab = () => {
+    // Simplified version for testing
+    const currentMonth = selectedMonth;
+    const monthlyExpenses = expenses.filter(expense => {
+      const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
+      return expenseMonth === currentMonth;
+    });
+    const monthlySales = sales.filter(sale => {
+      const saleMonth = sale.created_at.slice(0, 7);
+      return saleMonth === currentMonth;
+    });
+
+    const totalIncome = monthlySales.reduce((sum, sale) => sum + sale.total, 0);
+    const totalExpenses = monthlyExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const balance = totalIncome - totalExpenses;
+
+    return (
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.reportHeader}>
+          <Text style={styles.reportTitle}>Relatórios Financeiros</Text>
+          <TouchableOpacity
+            style={styles.premiumButton}
+            onPress={() => router.push('/relatorios')}
+          >
+            <Text style={styles.premiumButtonText}>Relatórios Premium</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Month Selector */}
+        <View style={styles.monthSelector}>
+          <Text style={styles.selectorLabel}>Mês:</Text>
+          <TextInput
+            style={styles.monthInput}
+            value={selectedMonth}
+            onChangeText={setSelectedMonth}
+            placeholder="YYYY-MM"
+            placeholderTextColor={colors.textSecondary}
+          />
+        </View>
+
+        {/* Summary Cards */}
+        <View style={styles.summaryContainer}>
+          <Card style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Entradas</Text>
+            <Text style={[styles.summaryValue, { color: colors.success }]}>
+              R$ {totalIncome.toFixed(2)}
+            </Text>
+          </Card>
+          <Card style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Saídas</Text>
+            <Text style={[styles.summaryValue, { color: colors.error }]}>
+              R$ {totalExpenses.toFixed(2)}
+            </Text>
+          </Card>
+          <Card style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Saldo</Text>
+            <Text style={[
+              styles.summaryValue,
+              { color: balance >= 0 ? colors.success : colors.error }
+            ]}>
+              R$ {balance.toFixed(2)}
+            </Text>
+          </Card>
+        </View>
+
+        {/* Filter Buttons */}
+        <View style={styles.filterContainer}>
+          <TouchableOpacity
+            style={[styles.filterButton, reportFilter === 'all' && styles.filterButtonActive]}
+            onPress={() => setReportFilter('all')}
+          >
+            <Text style={[styles.filterButtonText, reportFilter === 'all' && styles.filterButtonTextActive]}>
+              Todos ({monthlyExpenses.length + monthlySales.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterButton, reportFilter === 'income' && styles.filterButtonActive]}
+            onPress={() => setReportFilter('income')}
+          >
+            <Text style={[styles.filterButtonText, reportFilter === 'income' && styles.filterButtonTextActive]}>
+              Entradas ({monthlySales.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterButton, reportFilter === 'expense' && styles.filterButtonActive]}
+            onPress={() => setReportFilter('expense')}
+          >
+            <Text style={[styles.filterButtonText, reportFilter === 'expense' && styles.filterButtonTextActive]}>
+              Saídas ({monthlyExpenses.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Financial Data List */}
+        <View style={styles.dataContainer}>
+          <Text style={styles.dataTitle}>
+            Transações do Mês
+          </Text>
+
+          {/* Sales (Income) */}
+          {reportFilter === 'all' || reportFilter === 'income' ? (
+            monthlySales.map((sale) => (
+              <Card key={`sale-${sale.id}`} style={styles.transactionCard}>
+                <View style={styles.transactionHeader}>
+                  <View style={styles.transactionInfo}>
+                    <Text style={styles.transactionDescription}>Venda - {sale.customer_name}</Text>
+                    <Text style={styles.transactionDate}>
+                      {formatDate(sale.created_at)} • Venda
+                    </Text>
+                    <Text style={styles.transactionCustomer}>Cliente: {sale.customer_name}</Text>
+                  </View>
+                  <View style={styles.transactionAmount}>
+                    <Text style={[styles.amountText, { color: colors.success }]}>
+                      +R$ {sale.total.toFixed(2)}
+                    </Text>
+                    <Text style={styles.statusText}>Pago</Text>
+                  </View>
+                </View>
+              </Card>
+            ))
+          ) : null}
+
+          {/* Expenses */}
+          {reportFilter === 'all' || reportFilter === 'expense' ? (
+            monthlyExpenses.map((expense) => (
+              <Card key={`expense-${expense.id}`} style={styles.transactionCard}>
+                <View style={styles.transactionHeader}>
+                  <View style={styles.transactionInfo}>
+                    <Text style={styles.transactionDescription}>{expense.name}</Text>
+                    <Text style={styles.transactionDate}>
+                      {formatDate(expense.created_at)} • Despesa
+                    </Text>
+                    {expense.customer_id && (
+                      <Text style={styles.transactionCustomer}>
+                        Cliente: {customers.find(c => c.id === expense.customer_id)?.name || 'Cliente não encontrado'}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.transactionAmount}>
+                    <Text style={[styles.amountText, { color: colors.error }]}>
+                      -R$ {expense.amount.toFixed(2)}
+                    </Text>
+                    <Text style={styles.statusText}>{expense.paid ? 'Pago' : 'Pendente'}</Text>
+                  </View>
+                </View>
+              </Card>
+            ))
+          ) : null}
+
+          {monthlyExpenses.length === 0 && monthlySales.length === 0 && (
+            <Card>
+              <Text style={styles.emptyText}>Nenhuma transação encontrada para este mês</Text>
+            </Card>
+          )}
+        </View>
+      </ScrollView>
+    );
+  };
 
   const ExpenseModal = () => (
     <>
-    <Modal visible={showExpenseModal} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>
-            {editingExpense ? 'Editar Despesa' : 'Nova Despesa'}
-          </Text>
-          
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Nome da Despesa *</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.name}
-                onChangeText={(text) => setFormData({ ...formData, name: text })}
-                placeholder="Ex: Aluguel, Conta de Luz..."
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
+      <Modal visible={showExpenseModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              {editingExpense ? 'Editar Despesa' : 'Nova Despesa'}
+            </Text>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Valor *</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.amount}
-                onChangeText={(text) => setFormData({ ...formData, amount: text })}
-                placeholder="0,00"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="numeric"
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Data de Vencimento *</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.due_date}
-                onChangeText={(text) => setFormData({ ...formData, due_date: text })}
-                placeholder="AAAA-MM-DD"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Cliente (opcional)</Text>
-              <View style={styles.customerSelector}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Nome da Despesa *</Text>
                 <TextInput
                   style={styles.input}
-                  value={formData.customer_id ? (customers.find(c => c.id === formData.customer_id)?.name || '') : customerSearchQuery}
-                  onChangeText={(text) => {
-                    setCustomerSearchQuery(text);
-                    if (!text) {
-                      setFormData({ ...formData, customer_id: '' });
-                    }
-                  }}
-                  placeholder="Digite o nome do cliente..."
+                  value={formData.name}
+                  onChangeText={(text) => setFormData({ ...formData, name: text })}
+                  placeholder="Ex: Aluguel, Conta de Luz..."
                   placeholderTextColor={colors.textSecondary}
                 />
-                {formData.customer_id && (
-                  <TouchableOpacity
-                    style={styles.clearButton}
-                    onPress={() => {
-                      setFormData({ ...formData, customer_id: '' });
-                      setCustomerSearchQuery('');
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Valor *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.amount}
+                  onChangeText={(text) => setFormData({ ...formData, amount: text })}
+                  placeholder="0,00"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Data de Vencimento (opcional)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.due_date}
+                  onChangeText={(text) => setFormData({ ...formData, due_date: text })}
+                  placeholder="YYYY-MM-DD (ex: 2024-12-25)"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Cliente (opcional)</Text>
+                <View style={styles.customerSelector}>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.customer_id ? (customers.find(c => c.id === formData.customer_id)?.name || '') : customerSearchQuery}
+                    onChangeText={(text) => {
+                      setCustomerSearchQuery(text);
+                      if (!text) {
+                        setFormData({ ...formData, customer_id: '' });
+                      }
                     }}
-                  >
-                    <Text style={styles.clearButtonText}>✕</Text>
-                  </TouchableOpacity>
+                    placeholder="Digite o nome do cliente..."
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  {formData.customer_id && (
+                    <TouchableOpacity
+                      style={styles.clearButton}
+                      onPress={() => {
+                        setFormData({ ...formData, customer_id: '' });
+                        setCustomerSearchQuery('');
+                      }}
+                    >
+                      <Text style={styles.clearButtonText}>✕</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Customer Suggestions */}
+                {customerSearchQuery && customerSearchQuery.length > 0 && (
+                  <View style={styles.customerSuggestions}>
+                    {customers
+                      .filter(customer =>
+                        customer.name.toLowerCase().includes(customerSearchQuery.toLowerCase())
+                      )
+                      .slice(0, 5)
+                      .map((customer) => (
+                        <TouchableOpacity
+                          key={customer.id}
+                          style={styles.customerSuggestion}
+                          onPress={() => {
+                            setFormData({ ...formData, customer_id: customer.id });
+                            setCustomerSearchQuery('');
+                          }}
+                        >
+                          <Text style={styles.customerSuggestionName}>{customer.name}</Text>
+                          {customer.email && (
+                            <Text style={styles.customerSuggestionEmail}>{customer.email}</Text>
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                  </View>
                 )}
               </View>
-              
-              {/* Customer Suggestions */}
-              {customerSearchQuery && customerSearchQuery.length > 0 && (
-                <View style={styles.customerSuggestions}>
-                  {customers
-                    .filter(customer => 
-                      customer.name.toLowerCase().includes(customerSearchQuery.toLowerCase())
-                    )
-                    .slice(0, 5)
-                    .map((customer) => (
-                      <TouchableOpacity
-                        key={customer.id}
-                        style={styles.customerSuggestion}
-                        onPress={() => {
-                          setFormData({ ...formData, customer_id: customer.id });
-                          setCustomerSearchQuery('');
-                        }}
-                      >
-                        <Text style={styles.customerSuggestionName}>{customer.name}</Text>
-                        {customer.email && (
-                          <Text style={styles.customerSuggestionEmail}>{customer.email}</Text>
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                </View>
-              )}
-            </View>
 
-            <View style={styles.formGroup}>
-              <TouchableOpacity
-                style={styles.checkboxContainer}
-                onPress={() => setFormData({ ...formData, paid: !formData.paid })}
-              >
-                <View style={[styles.checkbox, formData.paid && styles.checkboxChecked]}>
-                  {formData.paid && <CheckCircle size={12} color={colors.white} />}
-                </View>
-                <Text style={styles.checkboxText}>Pago</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.checkboxContainer}
-                onPress={() => setFormData({ ...formData, recurring: !formData.recurring })}
-              >
-                <View style={[styles.checkbox, formData.recurring && styles.checkboxChecked]}>
-                  {formData.recurring && <RotateCcw size={12} color={colors.white} />}
-                </View>
-                <Text style={styles.checkboxText}>Recorrente</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
+              <View style={styles.formGroup}>
+                <TouchableOpacity
+                  style={styles.checkboxContainer}
+                  onPress={() => setFormData({ ...formData, paid: !formData.paid })}
+                >
+                  <View style={[styles.checkbox, formData.paid && styles.checkboxChecked]}>
+                    {formData.paid && <CheckCircle size={12} color={colors.white} />}
+                  </View>
+                  <Text style={styles.checkboxText}>Pago</Text>
+                </TouchableOpacity>
 
-          <View style={styles.modalButtons}>
-            <Button
-              title="Cancelar"
-              onPress={closeExpenseModal}
-              variant="outline"
-              style={styles.modalButton}
-            />
-            <Button
-              title="Salvar"
-              onPress={saveExpense}
-              style={styles.modalButton}
-            />
+                <TouchableOpacity
+                  style={styles.checkboxContainer}
+                  onPress={() => setFormData({ ...formData, recurring: !formData.recurring })}
+                >
+                  <View style={[styles.checkbox, formData.recurring && styles.checkboxChecked]}>
+                    {formData.recurring && <RotateCcw size={12} color={colors.white} />}
+                  </View>
+                  <Text style={styles.checkboxText}>Recorrente</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+
+            <View style={styles.modalButtons}>
+              <Button
+                title="Cancelar"
+                onPress={closeExpenseModal}
+                variant="outline"
+                style={styles.modalButton}
+              />
+              <Button
+                title="Salvar"
+                onPress={saveExpense}
+                style={styles.modalButton}
+              />
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
 
     </>
   );
@@ -859,7 +1264,7 @@ export default function Financas() {
   return (
     <View style={styles.container}>
       <Header title="Finanças" showSettings />
-      
+
       {/* Tab Selector */}
       <View style={styles.tabSelector}>
         <TouchableOpacity

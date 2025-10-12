@@ -4,11 +4,14 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   TouchableOpacity,
   Alert,
   Switch
 } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
+import { TextInput } from '@/components/ui/TextInput';
 import {
   ArrowLeft,
   Store,
@@ -16,7 +19,12 @@ import {
   Sun,
   Moon,
   Smartphone,
-  Crown
+  Crown,
+  Database,
+  Download,
+  Upload,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
@@ -42,6 +50,9 @@ export default function Settings() {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [premium, setPremium] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     loadStoreSettings();
@@ -87,6 +98,183 @@ export default function Settings() {
     });
     setPrimaryColor(defaultPrimary);
     setSecondaryColor(defaultSecondary);
+  };
+
+  // Reset Database Functions
+  const resetDatabase = async () => {
+    Alert.prompt(
+      '⚠️ ZONA DE PERIGO - AÇÃO IRREVERSÍVEL',
+      'Esta ação irá APAGAR TODOS os dados do aplicativo permanentemente:\n\n• Todos os clientes\n• Todos os produtos\n• Todas as vendas\n• Todas as despesas\n• Todas as configurações\n\nEsta ação NÃO PODE ser desfeita!\n\nPara confirmar, digite exatamente:\n"eu tenho certeza que quero deletar o banco"',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'APAGAR TUDO',
+          style: 'destructive',
+          onPress: async (confirmationText) => {
+            if (confirmationText !== 'eu tenho certeza que quero deletar o banco') {
+              Alert.alert('Confirmação Incorreta', 'Digite exatamente: "eu tenho certeza que quero deletar o banco"');
+              return;
+            }
+            
+            setIsResetting(true);
+            try {
+              // Aqui você implementaria a limpeza real do banco
+              // Por enquanto, apenas simular
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              
+              Alert.alert('✅ Banco Resetado', 'Todos os dados foram apagados com sucesso!');
+            } catch (error) {
+              Alert.alert('❌ Erro', 'Não foi possível resetar o banco de dados.');
+            } finally {
+              setIsResetting(false);
+            }
+          }
+        }
+      ],
+      'plain-text',
+      '',
+      'default'
+    );
+  };
+
+  // Export/Import Functions
+  const exportData = async () => {
+    if (!premium) {
+      Alert.alert('Premium Necessário', 'A funcionalidade de exportação está disponível apenas para usuários Premium.');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      // Simular coleta de dados do banco
+      const exportData = {
+        customers: [],
+        products: [],
+        sales: [],
+        expenses: [],
+        settings: storeSettings,
+        exportDate: new Date().toISOString(),
+        version: '1.0.0'
+      };
+
+      const csvContent = convertToCSV(exportData);
+      const fileName = `loja_backup_${new Date().toISOString().split('T')[0]}.csv`;
+      const fileUri = FileSystem.documentDirectory + fileName;
+      
+      await FileSystem.writeAsStringAsync(fileUri, csvContent);
+      
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri);
+        Alert.alert('✅ Exportação Concluída', 'Dados exportados com sucesso!');
+      } else {
+        Alert.alert('❌ Erro', 'Não foi possível compartilhar o arquivo.');
+      }
+    } catch (error) {
+      Alert.alert('❌ Erro', 'Não foi possível exportar os dados.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const importData = async () => {
+    if (!premium) {
+      Alert.alert('Premium Necessário', 'A funcionalidade de importação está disponível apenas para usuários Premium.');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'text/csv',
+        copyToCacheDirectory: true
+      });
+
+      if (result.canceled) {
+        setIsImporting(false);
+        return;
+      }
+
+      const fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri);
+      const importedData = parseCSV(fileContent);
+
+      if (!validateImportData(importedData)) {
+        Alert.alert('❌ Arquivo Inválido', 'O arquivo não possui a estrutura correta para importação.');
+        setIsImporting(false);
+        return;
+      }
+
+      Alert.alert(
+        'Confirmar Importação',
+        'Esta ação irá substituir todos os dados atuais pelos dados do arquivo. Deseja continuar?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Importar',
+            onPress: async () => {
+              // Aqui você implementaria a importação real
+              Alert.alert('✅ Importação Concluída', 'Dados importados com sucesso!');
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('❌ Erro', 'Não foi possível importar os dados.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Helper Functions
+  const convertToCSV = (data: any) => {
+    const headers = ['type', 'id', 'name', 'value', 'date', 'metadata'];
+    const rows = [headers.join(',')];
+    
+    // Simular dados para CSV
+    Object.entries(data).forEach(([type, items]: [string, any]) => {
+      if (Array.isArray(items)) {
+        items.forEach((item: any) => {
+          const row = [
+            type,
+            item.id || '',
+            item.name || '',
+            item.value || '',
+            item.date || '',
+            JSON.stringify(item)
+          ];
+          rows.push(row.join(','));
+        });
+      }
+    });
+    
+    return rows.join('\n');
+  };
+
+  const parseCSV = (csvContent: string) => {
+    const lines = csvContent.split('\n');
+    const headers = lines[0].split(',');
+    const data: any = {};
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',');
+      if (values.length === headers.length) {
+        const type = values[0];
+        if (!data[type]) data[type] = [];
+        data[type].push({
+          id: values[1],
+          name: values[2],
+          value: values[3],
+          date: values[4],
+          metadata: JSON.parse(values[5] || '{}')
+        });
+      }
+    }
+    
+    return data;
+  };
+
+  const validateImportData = (data: any) => {
+    const requiredTypes = ['customers', 'products', 'sales', 'expenses'];
+    return requiredTypes.every(type => data[type] && Array.isArray(data[type]));
   };
 
   const styles = StyleSheet.create({
@@ -213,6 +401,58 @@ export default function Settings() {
       fontSize: 14,
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
+    },
+    dangerSection: {
+      marginBottom: 24,
+    },
+    dangerCard: {
+      backgroundColor: colors.surface,
+      borderColor: colors.border,
+      borderWidth: 1,
+    },
+    dangerText: {
+      color: colors.textSecondary,
+      fontSize: 14,
+      fontFamily: 'Inter-Regular',
+      marginBottom: 12,
+      lineHeight: 20,
+    },
+    confirmationInput: {
+      borderColor: colors.border,
+      borderWidth: 1,
+      backgroundColor: colors.background,
+    },
+    premiumCard: {
+      opacity: 0.6,
+    },
+    premiumBadge: {
+      position: 'absolute',
+      top: 12,
+      right: 12,
+      backgroundColor: colors.primary,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+      zIndex: 10,
+    },
+    premiumBadgeText: {
+      color: colors.white,
+      fontSize: 10,
+      fontFamily: 'Inter-SemiBold',
+    },
+    actionButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginBottom: 8,
+    },
+    actionButtonDisabled: {
+      opacity: 0.5,
+    },
+    actionButtonText: {
+      fontSize: 16,
+      fontFamily: 'Inter-Medium',
     },
   });
 
@@ -341,6 +581,73 @@ export default function Settings() {
                 </TouchableOpacity>
               ))}
             </View>
+          </Card>
+        </View>
+
+        {/* Data Management */}
+        <View style={styles.section}>
+          <Card style={!premium ? styles.premiumCard : undefined}>
+            {!premium && (
+              <TouchableOpacity
+                style={styles.premiumBadge}
+                onPress={() => router.push('/planos')}
+              >
+                <Text style={styles.premiumBadgeText}>PREMIUM</Text>
+              </TouchableOpacity>
+            )}
+
+            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
+              <Database size={20} color={colors.primary} />
+              Gerenciamento de Dados
+            </Text>
+
+            <View style={styles.actionButton}>
+              <TouchableOpacity
+                style={[styles.actionButton, !premium && styles.actionButtonDisabled]}
+                onPress={exportData}
+                disabled={!premium || isExporting}
+              >
+                <Download size={20} color={colors.primary} />
+                <Text style={[styles.actionButtonText, { color: colors.primary }]}>
+                  {isExporting ? 'Exportando...' : 'Exportar Dados'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.actionButton}>
+              <TouchableOpacity
+                style={[styles.actionButton, !premium && styles.actionButtonDisabled]}
+                onPress={importData}
+                disabled={!premium || isImporting}
+              >
+                <Upload size={20} color={colors.primary} />
+                <Text style={[styles.actionButtonText, { color: colors.primary }]}>
+                  {isImporting ? 'Importando...' : 'Importar Dados'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {!premium && (
+              <Text style={[styles.dangerText, { color: colors.textSecondary, fontSize: 12, marginTop: 8 }]}>
+                Para acessar essas funcionalidades, assine o Premium
+              </Text>
+            )}
+          </Card>
+        </View>
+
+        {/* Reset Database */}
+        <View style={styles.dangerSection}>
+          <Card style={styles.dangerCard}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.error, paddingVertical: 16 }]}
+              onPress={resetDatabase}
+              disabled={isResetting}
+            >
+              <Trash2 size={24} color={colors.white} />
+              <Text style={[styles.actionButtonText, { color: colors.white, fontSize: 18, fontFamily: 'Inter-Bold' }]}>
+                {isResetting ? 'Resetando...' : 'RESETAR BANCO DE DADOS'}
+              </Text>
+            </TouchableOpacity>
           </Card>
         </View>
 

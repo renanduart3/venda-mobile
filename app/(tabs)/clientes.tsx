@@ -4,13 +4,13 @@ import {
   Text, 
   StyleSheet, 
   ScrollView,
-  TextInput,
   TouchableOpacity,
   FlatList,
   Modal,
   Alert,
   Linking
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { 
   Plus, 
   Search, 

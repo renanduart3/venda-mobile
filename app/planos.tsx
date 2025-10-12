@@ -1,155 +1,86 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   Alert,
-  Modal
+  Platform
 } from 'react-native';
-import { 
+import {
   ArrowLeft,
   Crown,
   Check,
-  X,
-  Calendar,
-  CreditCard
+  Star,
+  Shield,
+  Zap,
+  Download,
+  Cloud
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
-import { isPremium, enablePremium, disablePremium } from '@/lib/premium';
-
-const plans = [
-  {
-    id: 'free',
-    name: 'Gratuito',
-    price: 'R$ 0',
-    period: 'Sempre',
-    description: 'Funcionalidades básicas',
-    features: [
-      'Até 100 produtos',
-      'Vendas básicas',
-      'Clientes básicos',
-      'Relatórios simples'
-    ],
-    popular: false,
-    current: true
-  },
-  {
-    id: 'monthly',
-    name: 'Premium Mensal',
-    price: 'R$ 29,90',
-    period: 'por mês',
-    description: 'Todas as funcionalidades',
-    features: [
-      'Produtos ilimitados',
-      'Relatórios avançados',
-      'Análise de clientes RFV',
-      'Exportação PDF/Excel',
-      'Sincronização em nuvem',
-      'Suporte prioritário'
-    ],
-    popular: true,
-    current: false
-  },
-  {
-    id: 'yearly',
-    name: 'Premium Anual',
-    price: 'R$ 299,90',
-    period: 'por ano',
-    description: 'Melhor custo-benefício',
-    features: [
-      'Produtos ilimitados',
-      'Relatórios avançados',
-      'Análise de clientes RFV',
-      'Exportação PDF/Excel',
-      'Sincronização em nuvem',
-      'Suporte prioritário',
-      '2 meses grátis'
-    ],
-    popular: false,
-    current: false
-  }
-];
+import { subscriptionManager, SUBSCRIPTION_PLANS, SubscriptionPlan } from '@/lib/subscriptions';
 
 export default function Planos() {
   const { colors } = useTheme();
-  const [premium, setPremium] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string>('yearly');
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeSubscription, setActiveSubscription] = useState<any>(null);
 
   useEffect(() => {
-    loadPremiumStatus();
+    loadActiveSubscription();
   }, []);
 
-  const loadPremiumStatus = async () => {
+  const loadActiveSubscription = async () => {
     try {
-      const isPremiumUser = await isPremium();
-      setPremium(isPremiumUser);
+      const subscription = await subscriptionManager.getActiveSubscription();
+      setActiveSubscription(subscription);
     } catch (error) {
-      console.error('Erro carregando status premium:', error);
+      console.error('Erro ao carregar assinatura:', error);
     }
   };
 
-  const handleSelectPlan = (planId: string) => {
-    if (planId === 'free') {
-      Alert.alert('Plano Gratuito', 'Você já está no plano gratuito.');
+  const handleSubscribe = async (plan: SubscriptionPlan) => {
+    if (Platform.OS !== 'android') {
+      Alert.alert(
+        'Disponível no Android',
+        'As assinaturas estão disponíveis apenas no Android através do Google Play Store.',
+        [{ text: 'OK' }]
+      );
       return;
     }
-    setSelectedPlan(planId);
-  };
 
-  const handleSubscribe = async () => {
-    if (!selectedPlan) return;
-
-    setIsProcessing(true);
-    
+    setIsLoading(true);
     try {
-      // Simular processo de pagamento
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const result = await subscriptionManager.purchaseSubscription(plan);
       
-      // Simular sucesso do pagamento
-      const success = Math.random() > 0.1; // 90% de chance de sucesso
-      
-      if (success) {
-        await enablePremium();
-        setPremium(true);
-        Alert.alert(
-          'Assinatura Ativada!',
-          'Seu plano premium foi ativado com sucesso. Aproveite todas as funcionalidades!',
-          [{ text: 'OK', onPress: () => router.back() }]
-        );
+      if (result.success) {
+        // Atualizar estado local
+        await loadActiveSubscription();
       } else {
-        Alert.alert('Erro no Pagamento', 'Não foi possível processar o pagamento. Tente novamente.');
+        Alert.alert('Erro', result.error || 'Não foi possível processar a assinatura.');
       }
     } catch (error) {
-      Alert.alert('Erro', 'Ocorreu um erro durante o processo. Tente novamente.');
+      Alert.alert('Erro', 'Ocorreu um erro inesperado. Tente novamente.');
     } finally {
-      setIsProcessing(false);
-      setSelectedPlan(null);
+      setIsLoading(false);
     }
   };
 
-  const handleCancelSubscription = async () => {
-    setIsProcessing(true);
-    
+  const handleRestorePurchases = async () => {
+    setIsLoading(true);
     try {
-      await disablePremium();
-      setPremium(false);
-      Alert.alert(
-        'Assinatura Cancelada',
-        'Sua assinatura premium foi cancelada. Você continuará com acesso até o final do período atual.',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
+      const restored = await subscriptionManager.restorePurchases();
+      if (restored) {
+        await loadActiveSubscription();
+      }
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível cancelar a assinatura. Tente novamente.');
+      Alert.alert('Erro', 'Não foi possível restaurar as compras.');
     } finally {
-      setIsProcessing(false);
-      setShowCancelModal(false);
+      setIsLoading(false);
     }
   };
 
@@ -183,32 +114,81 @@ export default function Planos() {
       flex: 1,
       padding: 20,
     },
-    currentPlan: {
-      marginBottom: 24,
+    heroSection: {
+      alignItems: 'center',
+      marginBottom: 32,
     },
-    currentPlanCard: {
-      backgroundColor: premium ? colors.primary + '20' : colors.surface,
-      borderColor: premium ? colors.primary : colors.border,
-      borderWidth: 2,
-    },
-    currentPlanText: {
-      fontSize: 16,
-      fontFamily: 'Inter-SemiBold',
+    heroTitle: {
+      fontSize: 28,
+      fontFamily: 'Inter-Bold',
       color: colors.text,
+      textAlign: 'center',
       marginBottom: 8,
     },
-    currentPlanStatus: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: premium ? colors.primary : colors.textSecondary,
+    heroSubtitle: {
+      fontSize: 16,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 24,
     },
     plansContainer: {
       gap: 16,
+      marginBottom: 32,
     },
     planCard: {
       position: 'relative',
     },
-    popularBadge: {
+    planCardRecommended: {
+      borderColor: colors.primary,
+      borderWidth: 2,
+    },
+    planHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 16,
+    },
+    planInfo: {
+      flex: 1,
+    },
+    planName: {
+      fontSize: 20,
+      fontFamily: 'Inter-Bold',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    planDescription: {
+      fontSize: 14,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+    },
+    planPrice: {
+      alignItems: 'flex-end',
+    },
+    priceValue: {
+      fontSize: 24,
+      fontFamily: 'Inter-Bold',
+      color: colors.primary,
+    },
+    pricePeriod: {
+      fontSize: 14,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+    },
+    savings: {
+      backgroundColor: colors.success + '20',
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 12,
+      marginTop: 4,
+    },
+    savingsText: {
+      fontSize: 12,
+      fontFamily: 'Inter-SemiBold',
+      color: colors.success,
+    },
+    recommendedBadge: {
       position: 'absolute',
       top: -8,
       right: 16,
@@ -216,39 +196,11 @@ export default function Planos() {
       paddingHorizontal: 12,
       paddingVertical: 4,
       borderRadius: 12,
-      zIndex: 1,
     },
-    popularBadgeText: {
+    recommendedText: {
       fontSize: 12,
-      fontFamily: 'Inter-Bold',
+      fontFamily: 'Inter-SemiBold',
       color: colors.white,
-    },
-    planHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 12,
-    },
-    planName: {
-      fontSize: 20,
-      fontFamily: 'Inter-Bold',
-      color: colors.text,
-    },
-    planPrice: {
-      fontSize: 24,
-      fontFamily: 'Inter-Bold',
-      color: colors.primary,
-    },
-    planPeriod: {
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-    },
-    planDescription: {
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      marginBottom: 16,
     },
     featuresList: {
       marginBottom: 20,
@@ -259,7 +211,7 @@ export default function Planos() {
       marginBottom: 8,
     },
     featureIcon: {
-      marginRight: 8,
+      marginRight: 12,
     },
     featureText: {
       fontSize: 14,
@@ -267,65 +219,52 @@ export default function Planos() {
       color: colors.text,
       flex: 1,
     },
-    selectButton: {
+    subscribeButton: {
+      width: '100%',
+    },
+    activeSubscription: {
+      backgroundColor: colors.success + '20',
+      borderColor: colors.success,
+      borderWidth: 1,
+      padding: 16,
+      borderRadius: 8,
+      marginBottom: 20,
+    },
+    activeText: {
+      fontSize: 16,
+      fontFamily: 'Inter-SemiBold',
+      color: colors.success,
+      textAlign: 'center',
+    },
+    restoreButton: {
       marginTop: 16,
     },
-    selectButtonActive: {
-      backgroundColor: colors.primary,
-    },
-    selectButtonText: {
-      color: colors.white,
-    },
-    selectButtonTextActive: {
-      color: colors.white,
-    },
-    cancelButton: {
-      backgroundColor: colors.error,
-      marginTop: 20,
-    },
-    cancelButtonText: {
-      color: colors.white,
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    modalContent: {
+    footer: {
+      marginTop: 32,
+      padding: 16,
       backgroundColor: colors.surface,
-      borderRadius: 16,
-      padding: 24,
-      width: '90%',
-      maxWidth: 400,
+      borderRadius: 8,
     },
-    modalTitle: {
-      fontSize: 20,
-      fontFamily: 'Inter-Bold',
-      color: colors.text,
-      marginBottom: 8,
-    },
-    modalDescription: {
-      fontSize: 14,
+    footerText: {
+      fontSize: 12,
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
-      marginBottom: 20,
-      lineHeight: 20,
-    },
-    modalButtons: {
-      flexDirection: 'row',
-      gap: 12,
-    },
-    modalButton: {
-      flex: 1,
+      textAlign: 'center',
+      lineHeight: 18,
     },
   });
+
+  const getFeatureIcon = (index: number) => {
+    const icons = [Crown, Star, Shield, Zap, Download, Cloud];
+    const Icon = icons[index % icons.length];
+    return <Icon size={16} color={colors.success} />;
+  };
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
         >
@@ -333,119 +272,99 @@ export default function Planos() {
         </TouchableOpacity>
         <Text style={styles.title}>Planos Premium</Text>
       </View>
-      
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Current Plan Status */}
-        <View style={styles.currentPlan}>
-          <Card style={styles.currentPlanCard}>
-            <Text style={styles.currentPlanText}>
-              {premium ? 'Plano Atual: Premium' : 'Plano Atual: Gratuito'}
-            </Text>
-            <Text style={styles.currentPlanStatus}>
-              {premium 
-                ? 'Você tem acesso a todas as funcionalidades premium'
-                : 'Upgrade para premium e desbloqueie funcionalidades avançadas'
-              }
-            </Text>
-            {premium && (
-              <Button
-                title="Cancelar Assinatura"
-                onPress={() => setShowCancelModal(true)}
-                style={styles.cancelButton}
-                textStyle={styles.cancelButtonText}
-              />
-            )}
-          </Card>
+        {/* Hero Section */}
+        <View style={styles.heroSection}>
+          <Text style={styles.heroTitle}>Desbloqueie Todo o Potencial</Text>
+          <Text style={styles.heroSubtitle}>
+            Acesse recursos avançados e maximize sua produtividade com o Premium
+          </Text>
         </View>
+
+        {/* Active Subscription */}
+        {activeSubscription && (
+          <Card style={styles.activeSubscription}>
+            <Text style={styles.activeText}>
+              ✅ Você já possui uma assinatura ativa!
+            </Text>
+          </Card>
+        )}
 
         {/* Plans */}
         <View style={styles.plansContainer}>
-          {plans.map((plan) => (
-            <Card key={plan.id} style={styles.planCard}>
-              {plan.popular && (
-                <View style={styles.popularBadge}>
-                  <Text style={styles.popularBadgeText}>MAIS POPULAR</Text>
+          {SUBSCRIPTION_PLANS.map((plan) => (
+            <Card
+              key={plan.id}
+              style={[
+                styles.planCard,
+                plan.id === 'yearly' && styles.planCardRecommended
+              ]}
+            >
+              {plan.id === 'yearly' && (
+                <View style={styles.recommendedBadge}>
+                  <Text style={styles.recommendedText}>RECOMENDADO</Text>
                 </View>
               )}
-              
+
               <View style={styles.planHeader}>
-                <View>
+                <View style={styles.planInfo}>
                   <Text style={styles.planName}>{plan.name}</Text>
-                  <Text style={styles.planPeriod}>{plan.period}</Text>
+                  <Text style={styles.planDescription}>{plan.description}</Text>
                 </View>
-                <Text style={styles.planPrice}>{plan.price}</Text>
+                <View style={styles.planPrice}>
+                  <Text style={styles.priceValue}>{plan.price}</Text>
+                  <Text style={styles.pricePeriod}>
+                    {plan.period === 'monthly' ? '/mês' : '/ano'}
+                  </Text>
+                  {plan.savings && (
+                    <View style={styles.savings}>
+                      <Text style={styles.savingsText}>{plan.savings}</Text>
+                    </View>
+                  )}
+                </View>
               </View>
-              
-              <Text style={styles.planDescription}>{plan.description}</Text>
-              
+
               <View style={styles.featuresList}>
                 {plan.features.map((feature, index) => (
                   <View key={index} style={styles.featureItem}>
-                    <Check 
-                      size={16} 
-                      color={colors.success} 
-                      style={styles.featureIcon}
-                    />
+                    <View style={styles.featureIcon}>
+                      {getFeatureIcon(index)}
+                    </View>
                     <Text style={styles.featureText}>{feature}</Text>
                   </View>
                 ))}
               </View>
-              
+
               <Button
-                title={plan.id === 'free' ? 'Plano Atual' : 'Selecionar Plano'}
-                onPress={() => handleSelectPlan(plan.id)}
-                style={[
-                  styles.selectButton,
-                  selectedPlan === plan.id && styles.selectButtonActive
-                ]}
-                textStyle={[
-                  selectedPlan === plan.id && styles.selectButtonTextActive
-                ]}
-                disabled={plan.id === 'free' || isProcessing}
+                title={activeSubscription ? 'Assinatura Ativa' : 'Assinar Agora'}
+                onPress={() => handleSubscribe(plan)}
+                disabled={!!activeSubscription || isLoading}
+                style={styles.subscribeButton}
+                variant={plan.id === 'yearly' ? 'default' : 'outline'}
               />
             </Card>
           ))}
         </View>
 
-        {/* Subscribe Button */}
-        {selectedPlan && selectedPlan !== 'free' && (
-          <Button
-            title={isProcessing ? "Processando..." : "Assinar com Google Pay"}
-            onPress={handleSubscribe}
-            disabled={isProcessing}
-            style={{ marginTop: 20 }}
-          />
-        )}
-      </ScrollView>
+        {/* Restore Purchases */}
+        <Button
+          title="Restaurar Compras"
+          onPress={handleRestorePurchases}
+          variant="outline"
+          style={styles.restoreButton}
+          disabled={isLoading}
+        />
 
-      {/* Cancel Subscription Modal */}
-      <Modal visible={showCancelModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Cancelar Assinatura</Text>
-            <Text style={styles.modalDescription}>
-              Tem certeza que deseja cancelar sua assinatura premium? 
-              Você perderá acesso a todas as funcionalidades premium.
-            </Text>
-            
-            <View style={styles.modalButtons}>
-              <Button
-                title="Cancelar"
-                onPress={() => setShowCancelModal(false)}
-                variant="outline"
-                style={styles.modalButton}
-              />
-              <Button
-                title="Sim, Cancelar"
-                onPress={handleCancelSubscription}
-                style={[styles.modalButton, { backgroundColor: colors.error }]}
-                textStyle={{ color: colors.white }}
-                disabled={isProcessing}
-              />
-            </View>
-          </View>
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            As assinaturas são gerenciadas pelo Google Play Store.{'\n'}
+            Você pode cancelar a qualquer momento nas configurações da sua conta.{'\n'}
+            O pagamento será cobrado na confirmação da compra.
+          </Text>
         </View>
-      </Modal>
+      </ScrollView>
     </View>
   );
 }

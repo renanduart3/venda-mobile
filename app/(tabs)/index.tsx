@@ -11,16 +11,17 @@ import {
   TrendingUp, 
   DollarSign, 
   Package, 
-  Users, 
-  AlertTriangle,
+  Users,
   Download
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert, Platform } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -36,6 +37,7 @@ interface DashboardStats {
 
 export default function Dashboard() {
   const { colors } = useTheme();
+  const { addNotification } = useNotifications();
   const [stats, setStats] = useState<DashboardStats>({
     dailySales: 0,
     dailyRevenue: 0,
@@ -46,15 +48,24 @@ export default function Dashboard() {
     peakHours: [],
   });
 
-  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month'>('today');
 
   useEffect(() => {
     loadDashboardData();
-  }, [selectedPeriod]);
+  }, []);
+
+  useEffect(() => {
+    // Create low stock notification if needed
+    if (stats.lowStockCount > 0) {
+      createLowStockNotification();
+    }
+  }, [stats.lowStockCount]);
 
   const loadDashboardData = async () => {
     try {
-      // Load mock data for now - replace with actual data loading
+      // Load data for current month
+      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+      
+      // Load mock data for current month - replace with actual data loading
       const mockStats: DashboardStats = {
         dailySales: 23,
         dailyRevenue: 1847.50,
@@ -79,6 +90,15 @@ export default function Dashboard() {
     }
   };
 
+  const createLowStockNotification = () => {
+    addNotification({
+      type: 'low_stock',
+      title: 'Estoque Baixo',
+      message: `${stats.lowStockCount} produtos com estoque abaixo do mínimo. Verifique e reabasteça.`,
+      actionData: { count: stats.lowStockCount }
+    });
+  };
+
   const handleRelatoriosPress = () => {
     console.log('Navegando para relatórios...');
     router.push('/relatorios');
@@ -92,34 +112,12 @@ export default function Dashboard() {
     content: {
       flex: 1,
     },
-    periodSelector: {
-      flexDirection: 'row',
-      padding: 20,
-      gap: 12,
-    },
-    periodButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    periodButtonActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    periodButtonText: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-    periodButtonTextActive: {
-      color: colors.white,
-    },
     statsGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       paddingHorizontal: 20,
+      marginBottom: 20,
+      marginTop: 10,
       gap: 12,
     },
     statCard: {
@@ -146,27 +144,6 @@ export default function Dashboard() {
       fontSize: 14,
       fontFamily: 'Inter-Medium',
       color: colors.textSecondary,
-    },
-    alertCard: {
-      margin: 20,
-      backgroundColor: colors.warning + '10',
-      borderColor: colors.warning,
-    },
-    alertHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 8,
-    },
-    alertTitle: {
-      fontSize: 16,
-      fontFamily: 'Inter-SemiBold',
-      color: colors.warning,
-    },
-    alertText: {
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      color: colors.text,
     },
     section: {
       marginHorizontal: 20,
@@ -230,40 +207,18 @@ export default function Dashboard() {
       <Header title="Dashboard" showSettings />
       
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Period Selector */}
-        <View style={styles.periodSelector}>
-          {(['today', 'week', 'month'] as const).map((period) => (
-            <TouchableOpacity
-              key={period}
-              style={[
-                styles.periodButton,
-                selectedPeriod === period && styles.periodButtonActive,
-              ]}
-              onPress={() => setSelectedPeriod(period)}
-            >
-              <Text
-                style={[
-                  styles.periodButtonText,
-                  selectedPeriod === period && styles.periodButtonTextActive,
-                ]}
-              >
-                {period === 'today' ? 'Hoje' : period === 'week' ? 'Semana' : 'Mês'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
 
         {/* Stats Grid */}
         <View style={styles.statsGrid}>
           <StatCard
             icon={<TrendingUp size={20} color={colors.primary} />}
             value={stats.dailySales}
-            label="Vendas Hoje"
+            label="Vendas do Mês"
           />
           <StatCard
             icon={<DollarSign size={20} color={colors.success} />}
             value={`R$ ${stats.dailyRevenue.toFixed(2)}`}
-            label="Faturamento"
+            label="Faturamento do Mês"
             color={colors.success}
           />
           <StatCard
@@ -280,18 +235,6 @@ export default function Dashboard() {
           />
         </View>
 
-        {/* Low Stock Alert */}
-        {stats.lowStockCount > 0 && (
-          <Card style={styles.alertCard}>
-            <View style={styles.alertHeader}>
-              <AlertTriangle size={20} color={colors.warning} />
-              <Text style={styles.alertTitle}>Atenção: Estoque Baixo</Text>
-            </View>
-            <Text style={styles.alertText}>
-              {stats.lowStockCount} produtos com estoque abaixo do mínimo
-            </Text>
-          </Card>
-        )}
 
         {/* Top Products */}
         <View style={styles.section}>

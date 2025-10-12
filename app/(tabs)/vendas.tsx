@@ -4,12 +4,12 @@ import {
   Text, 
   StyleSheet, 
   ScrollView,
-  TextInput,
   TouchableOpacity,
   FlatList,
   Modal,
   Alert
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { 
   Plus, 
   Camera, 
@@ -146,10 +146,25 @@ export default function Vendas() {
     setProducts(mockProducts as Product[]);
     setCustomers(mockCustomers);
     
-    // Garantir que as vendas tenham timestamps válidos
-    const salesWithValidTimestamps = (mockSales as Sale[]).map(sale => ({
-      ...sale,
-      timestamp: sale.timestamp || new Date().toISOString()
+    // Garantir que as vendas tenham timestamps válidos e converter para interface Sale
+    const salesWithValidTimestamps = (mockSales as any[]).map(sale => ({
+      id: sale.id,
+      items: sale.items.map((item: any) => ({
+        product: {
+          id: item.product_id,
+          name: item.product_name,
+          price: item.unit_price,
+          stock: 0,
+          type: 'product' as const
+        },
+        quantity: item.quantity,
+        total: item.total
+      })),
+      customer: sale.customer_name,
+      paymentMethod: sale.payment_method.toLowerCase() as 'cash' | 'credit' | 'debit' | 'pix',
+      total: sale.total,
+      timestamp: sale.created_at,
+      observation: sale.observation
     }));
     
     setSales(salesWithValidTimestamps);
@@ -850,12 +865,7 @@ export default function Vendas() {
   return (
     <View style={styles.container}>
       <Header title="Vendas" showSettings />
-      {/* crown icon top-right for non-premium users */}
-      { !premium && (
-        <TouchableOpacity onPress={() => router.push('/premium' as any)} style={{ position: 'absolute', top: 12, right: 12, padding: 6 }}>
-          <Crown size={22} color={colors.primary} />
-        </TouchableOpacity>
-      )}
+
       <View style={styles.tabSelector}>
         <TouchableOpacity
           style={[styles.tabButton, activeTab === 'new' && styles.tabButtonActive]}

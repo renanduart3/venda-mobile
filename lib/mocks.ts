@@ -157,6 +157,7 @@ export const mockExpenses = [
     paid: 1,
     recurring: 1,
     customer_id: null,
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -168,6 +169,7 @@ export const mockExpenses = [
     paid: 0,
     recurring: 1,
     customer_id: null,
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -179,6 +181,7 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: null,
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -190,6 +193,7 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: '1', // João Silva
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -201,50 +205,67 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: '2', // Maria Santos
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: '4',
+    id: '6',
     name: 'Salário Funcionário',
     amount: 1800.00,
     due_date: new Date(2025, 9, 5).toISOString(),
     paid: 1,
     recurring: 1,
     customer_id: null,
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: '5',
+    id: '7',
     name: 'Compra fiado - João Silva',
     amount: 150.00,
     due_date: new Date(2025, 9, 25).toISOString(),
     paid: 0,
     recurring: 0,
     customer_id: '1',
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: '6',
+    id: '8',
     name: 'Compra fiado - João Silva',
     amount: 85.50,
     due_date: new Date(2025, 9, 28).toISOString(),
     paid: 0,
     recurring: 0,
     customer_id: '1',
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: '7',
+    id: '9',
     name: 'Compra fiado - Maria Santos',
     amount: 220.00,
     due_date: new Date(2025, 9, 22).toISOString(),
     paid: 0,
     recurring: 0,
     customer_id: '2',
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: '10',
+    name: 'Dívida Aberta - Pedro Costa',
+    amount: 75.00,
+    due_date: null, // Sem data de vencimento
+    paid: 0,
+    recurring: 0,
+    customer_id: '3',
+    created_month: new Date().toISOString().slice(0, 7), // Mês atual
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
