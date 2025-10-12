@@ -19,6 +19,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
@@ -78,9 +79,9 @@ export default function Dashboard() {
     }
   };
 
-  const exportDashboard = async () => {
-    // TODO: Implement PDF export
-    console.log('Exporting dashboard...');
+  const handleRelatoriosPress = () => {
+    console.log('Navegando para relatórios...');
+    router.push('/relatorios');
   };
 
   const styles = StyleSheet.create({
@@ -305,10 +306,10 @@ export default function Dashboard() {
           </Card>
         </View>
 
-        {/* Export Button */}
+        {/* Relatórios Button */}
         <Button
-          title="Exportar Relatório"
-          onPress={exportDashboard}
+          title="Relatórios"
+          onPress={handleRelatoriosPress}
           style={styles.exportButton}
           variant="outline"
         />

@@ -184,6 +184,28 @@ export const mockExpenses = [
   },
   {
     id: '4',
+    name: 'Serviço de Limpeza',
+    amount: 150.00,
+    due_date: new Date(2025, 9, 25).toISOString(),
+    paid: 0,
+    recurring: 0,
+    customer_id: '1', // João Silva
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: '5',
+    name: 'Manutenção de Equipamentos',
+    amount: 300.00,
+    due_date: new Date(2025, 9, 30).toISOString(),
+    paid: 0,
+    recurring: 0,
+    customer_id: '2', // Maria Santos
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: '4',
     name: 'Salário Funcionário',
     amount: 1800.00,
     due_date: new Date(2025, 9, 5).toISOString(),

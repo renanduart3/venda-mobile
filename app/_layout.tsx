@@ -57,6 +57,12 @@ export default function RootLayout() {
         <NotificationProvider>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="settings" />
+            <Stack.Screen name="relatorios" />
+            <Stack.Screen name="premium" />
+            <Stack.Screen name="planos" />
+            <Stack.Screen name="notifications" />
+            <Stack.Screen name="cliente-detalhe" />
             <Stack.Screen name="+not-found" />
           </Stack>
           <StatusBar style="auto" />

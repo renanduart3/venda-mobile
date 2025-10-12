@@ -1,21 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Bell, Settings, Wifi, WifiOff, Crown } from 'lucide-react-native';
+import { Bell, Settings, Crown, ArrowLeft } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
-import { useOffline } from '@/contexts/OfflineContext';
 import { useRouter } from 'expo-router';
 import { isPremium } from '@/lib/premium';
 
 interface HeaderProps {
   title: string;
   showSettings?: boolean;
+  showBack?: boolean;
+  onBackPress?: () => void;
 }
 
-export function Header({ title, showSettings = false }: HeaderProps) {
+export function Header({ title, showSettings = false, showBack = false, onBackPress }: HeaderProps) {
   const { colors } = useTheme();
   const { unreadCount } = useNotifications();
-  const { isOnline } = useOffline();
   const router = useRouter();
   const [premium, setPremium] = useState(false);
 
@@ -73,35 +73,60 @@ export function Header({ title, showSettings = false }: HeaderProps) {
       fontSize: 12,
       fontFamily: 'Inter-Bold',
     },
-    connectionIndicator: {
-      padding: 4,
-      borderRadius: 4,
-      backgroundColor: isOnline ? colors.success : colors.error,
+    premiumBadge: {
+      position: 'relative',
+      padding: 6,
+      borderRadius: 8,
+      backgroundColor: colors.primary,
+    },
+    premiumBadgeText: {
+      position: 'absolute',
+      top: -4,
+      right: -4,
+      backgroundColor: colors.warning,
+      borderRadius: 8,
+      paddingHorizontal: 4,
+      paddingVertical: 2,
+      minWidth: 16,
+      height: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    premiumBadgeLabel: {
+      fontSize: 8,
+      fontFamily: 'Inter-Bold',
+      color: colors.white,
     },
   });
 
   return (
     <View style={styles.header}>
-      <Text style={styles.title}>{title}</Text>
-      
-      <View style={styles.rightSection}>
-        <View style={styles.connectionIndicator}>
-          {premium ? (
-            isOnline ? (
-              <Wifi size={16} color={colors.white} />
-            ) : (
-              <WifiOff size={16} color={colors.white} />
-            )
-          ) : (
-            <TouchableOpacity onPress={() => router.push('/premium' as any)}>
-              <Crown size={16} color={colors.white} />
-            </TouchableOpacity>
-          )}
-        </View>
-
+      {showBack && (
         <TouchableOpacity 
+          onPress={onBackPress || (() => router.back())}
+          style={{ padding: 8, marginRight: 8 }}
+        >
+          <ArrowLeft size={24} color={colors.text} />
+        </TouchableOpacity>
+      )}
+      <Text style={[styles.title, showBack && { flex: 1, textAlign: 'center' }]}>{title}</Text>
+
+      <View style={styles.rightSection}>
+        {!premium && (
+          <TouchableOpacity
+            style={styles.premiumBadge}
+            onPress={() => router.push('/planos')}
+          >
+            <Crown size={16} color={colors.white} />
+            <View style={styles.premiumBadgeText}>
+              <Text style={styles.premiumBadgeLabel}>PREMIUM</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
           style={[styles.notificationButton, { padding: 6 }]}
-          onPress={() => router.push('/notifications' as any)}
+          onPress={() => router.push('/notifications')}
         >
           <Bell size={24} color={colors.text} />
           {unreadCount > 0 && (
@@ -114,10 +139,18 @@ export function Header({ title, showSettings = false }: HeaderProps) {
         </TouchableOpacity>
 
         {showSettings && (
-          <TouchableOpacity onPress={() => router.push('/settings' as any)} style={{ padding: 6 }}>
+          <TouchableOpacity onPress={() => {
+            console.log('Navegando para settings...');
+            try {
+              router.push('/settings' as any);
+            } catch (error) {
+              console.error('Erro na navegação:', error);
+            }
+          }} style={{ padding: 6 }}>
             <Settings size={24} color={colors.text} />
           </TouchableOpacity>
         )}
+
       </View>
     </View>
   );

@@ -3,7 +3,6 @@
     "name": "Loja Inteligente",
     "slug": "loja-inteligente-mobile",
     "version": "1.0.0",
-    "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "lojaapp",
     "userInterfaceStyle": "automatic",

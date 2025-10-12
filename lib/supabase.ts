@@ -60,3 +60,19 @@ export interface StoreSettings {
   created_at: string;
   updated_at: string;
 }
+
+export const supabase = {
+  auth: {
+    getUser: async () => ({ data: { user: null }, error: null }),
+    getSession: async () => ({ data: { session: null }, error: null }),
+  },
+  from: (table: string) => ({
+    select: (columns: string) => ({
+      eq: (column: string, value: any) => ({
+        order: (column: string, options: any) => ({
+          maybeSingle: async () => ({ data: null, error: null }),
+        }),
+      }),
+    }),
+  }),
+} as any;

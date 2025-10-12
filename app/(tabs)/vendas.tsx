@@ -18,7 +18,9 @@ import {
   Filter,
   Search,
   X,
-  Crown
+  Crown,
+  Edit,
+  Trash2
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -81,6 +83,58 @@ export default function Vendas() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
 
+  // Função para filtrar vendas do dia atual
+  const getTodaySales = () => {
+    const today = new Date();
+    const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    return sales.filter(sale => {
+      try {
+        // Verificar se timestamp é válido
+        if (!sale.timestamp) return false;
+        
+        const saleDate = new Date(sale.timestamp);
+        
+        // Verificar se a data é válida
+        if (isNaN(saleDate.getTime())) return false;
+        
+        const saleDateString = saleDate.toISOString().split('T')[0];
+        return saleDateString === todayString;
+      } catch (error) {
+        console.error('Erro ao processar data da venda:', error);
+        return false;
+      }
+    });
+  };
+
+  // Função para deletar venda
+  const handleDeleteSale = (saleId: string) => {
+    Alert.alert(
+      'Confirmar Exclusão',
+      'Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { 
+          text: 'Excluir', 
+          style: 'destructive',
+          onPress: () => {
+            setSales(prevSales => prevSales.filter(sale => sale.id !== saleId));
+            Alert.alert('Sucesso', 'Venda excluída com sucesso!');
+          }
+        }
+      ]
+    );
+  };
+
+  // Função para editar venda
+  const handleEditSale = (sale: Sale) => {
+    Alert.alert(
+      'Editar Venda',
+      'Funcionalidade de edição será implementada em breve.',
+      [{ text: 'OK' }]
+    );
+  };
+
   const totalSale = saleItems.reduce((sum, item) => sum + item.total, 0);
 
   useEffect(() => {
@@ -91,7 +145,14 @@ export default function Vendas() {
     const { mockProducts, mockCustomers, mockSales } = await import('@/lib/mocks');
     setProducts(mockProducts as Product[]);
     setCustomers(mockCustomers);
-    setSales(mockSales as Sale[]);
+    
+    // Garantir que as vendas tenham timestamps válidos
+    const salesWithValidTimestamps = (mockSales as Sale[]).map(sale => ({
+      ...sale,
+      timestamp: sale.timestamp || new Date().toISOString()
+    }));
+    
+    setSales(salesWithValidTimestamps);
 
     const p = await isPremium();
     setPremium(p);
@@ -696,31 +757,95 @@ export default function Vendas() {
     </ScrollView>
   );
 
-  const SalesHistoryTab = () => (
-    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 20 }}>
-        Histórico de Vendas
-      </Text>
-      
-      {/* TODO: Add filters and search */}
-      
-      {sales.map((sale) => (
-        <Card key={sale.id} style={{ marginBottom: 12 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text }}>
-              {new Date(sale.timestamp).toLocaleDateString('pt-BR')}
+  const SalesHistoryTab = () => {
+    const todaySales = getTodaySales();
+    
+    return (
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 20 }}>
+          Histórico de Vendas do Dia
+        </Text>
+        
+        {todaySales.length === 0 ? (
+          <Card style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={{ fontSize: 16, fontFamily: 'Inter-Medium', color: colors.textSecondary, textAlign: 'center' }}>
+              Nenhuma venda realizada hoje
             </Text>
-            <Text style={{ fontSize: 16, fontFamily: 'Inter-Bold', color: colors.primary }}>
-              R$ {sale.total.toFixed(2)}
+            <Text style={{ fontSize: 14, fontFamily: 'Inter-Regular', color: colors.textSecondary, textAlign: 'center', marginTop: 8 }}>
+              As vendas do dia aparecerão aqui
             </Text>
-          </View>
-          <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
-            {sale.items.length} item(s) • {sale.paymentMethod}
-          </Text>
-        </Card>
-      ))}
-    </ScrollView>
-  );
+          </Card>
+        ) : (
+          todaySales.map((sale) => (
+            <Card key={sale.id} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text }}>
+                  Venda #{sale.id.slice(-6)}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => handleEditSale(sale)}
+                    style={{ padding: 4 }}
+                  >
+                    <Edit size={16} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteSale(sale.id)}
+                    style={{ padding: 4 }}
+                  >
+                    <Trash2 size={16} color={colors.error} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              <View style={{ marginBottom: 8 }}>
+                <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text }}>
+                  Cliente: {sale.customer || 'Cliente não informado'}
+                </Text>
+                <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text }}>
+                  Total: R$ {sale.total.toFixed(2)}
+                </Text>
+              </View>
+              
+              <View style={{ marginBottom: 8 }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
+                  Itens:
+                </Text>
+                {sale.items.map((item, index) => (
+                  <Text key={index} style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
+                    • {item.product.name} x{item.quantity} - R$ {item.total.toFixed(2)}
+                  </Text>
+                ))}
+              </View>
+              
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
+                  {(() => {
+                    try {
+                      const date = new Date(sale.timestamp);
+                      if (isNaN(date.getTime())) return 'Horário inválido';
+                      return date.toLocaleTimeString('pt-BR');
+                    } catch (error) {
+                      return 'Horário inválido';
+                    }
+                  })()}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Text style={{ 
+                    fontSize: 12, 
+                    fontFamily: 'Inter-Medium', 
+                    color: sale.paymentMethod === 'credit' ? colors.success : colors.primary 
+                  }}>
+                    {sale.paymentMethod === 'credit' ? 'Crédito' : 'Dinheiro'}
+                  </Text>
+                </View>
+              </View>
+            </Card>
+          ))
+        )}
+      </ScrollView>
+    );
+  };
 
   return (
     <View style={styles.container}>

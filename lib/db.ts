@@ -1,37 +1,63 @@
-import { Platform } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 
 let db: SQLite.SQLiteDatabase | null = null;
 const DB_NAME = 'venda.db';
 
-if (Platform.OS !== 'web') {
-  db = SQLite.openDatabaseSync(DB_NAME);
+// Initialize database for mobile
+try {
+  // Use the correct API for expo-sqlite
+  if (SQLite.openDatabaseSync) {
+    db = SQLite.openDatabaseSync(DB_NAME);
+  } else if (SQLite.openDatabase) {
+    db = SQLite.openDatabase(DB_NAME);
+  } else {
+    console.warn('No valid SQLite database method available');
+    db = null;
+  }
+} catch (e) {
+  console.warn('Could not open SQLite database:', e);
+  db = null;
 }
 
 async function execSql(sql: string, params: any[] = []): Promise<any> {
   if (!db) {
-    console.warn('Database not available on web platform');
-    return { rows: { length: 0, item: () => null } };
+    console.warn('Database not available');
+    return { rows: { length: 0, item: () => null, _array: [] } };
   }
 
-  try {
-    const result = await db.execAsync([{ sql, args: params }]);
-    return {
-      rows: {
-        length: result[0]?.rows?.length || 0,
-        item: (i: number) => result[0]?.rows?.[i],
-        _array: result[0]?.rows || []
+  return new Promise((resolve, reject) => {
+    db.transaction(
+      (tx) => {
+        tx.executeSql(
+          sql,
+          params,
+          (_, result) => {
+            resolve({
+              rows: {
+                length: result.rows.length,
+                item: (i: number) => result.rows.item(i),
+                _array: result.rows._array || []
+              }
+            });
+          },
+          (_, error) => {
+            console.error('SQL execution error:', error);
+            reject(error);
+            return false;
+          }
+        );
+      },
+      (error) => {
+        console.error('Transaction error:', error);
+        reject(error);
       }
-    };
-  } catch (error) {
-    console.error('SQL execution error:', error);
-    throw error;
-  }
+    );
+  });
 }
 
 export async function initDB() {
   if (!db) {
-    console.warn('Database not available on web platform - skipping initialization');
+    console.warn('Database not available - skipping initialization');
     return;
   }
 
@@ -142,7 +168,7 @@ export async function del(table: string, whereClause = 'id = ?', whereParams: an
 
 export async function all(table: string, whereClause = '', params: any[] = []) {
   if (!db) {
-    console.warn('Database not available on web platform');
+    console.warn('Database not available');
     return [];
   }
 
@@ -161,7 +187,7 @@ export async function all(table: string, whereClause = '', params: any[] = []) {
 
 export async function query(sql: string, params: any[] = []) {
   if (!db) {
-    console.warn('Database not available on web platform');
+    console.warn('Database not available');
     return [];
   }
 

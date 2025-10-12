@@ -4,12 +4,15 @@ import {
   ShoppingCart, 
   Package, 
   Users, 
-  Wallet 
+  Wallet,
+  Home
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 
 export default function TabLayout() {
   const { colors } = useTheme();
+  
+  console.log('TabLayout colors:', colors);
 
   return (
     <Tabs
@@ -38,9 +41,10 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ size, color }) => (
-            <BarChart3 size={size} color={color} />
-          ),
+          tabBarIcon: ({ size, color }) => {
+            console.log('Dashboard icon - size:', size, 'color:', color);
+            return <Home size={24} color={color} />;
+          },
         }}
       />
       <Tabs.Screen

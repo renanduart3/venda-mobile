@@ -25,6 +25,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { router } from 'expo-router';
 
 interface Expense {
   id: string;
@@ -33,6 +34,7 @@ interface Expense {
   due_date: string;
   paid: boolean;
   recurring: boolean;
+  customer_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -41,6 +43,8 @@ export default function Financas() {
   const { colors } = useTheme();
   const [activeTab, setActiveTab] = useState<'new' | 'report'>('new');
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
@@ -52,11 +56,22 @@ export default function Financas() {
     due_date: '',
     paid: false,
     recurring: false,
+    customer_id: '',
   });
 
   useEffect(() => {
     loadExpenses();
+    loadCustomers();
   }, []);
+
+  const loadCustomers = async () => {
+    try {
+      const { mockCustomers } = await import('@/lib/mocks');
+      setCustomers(mockCustomers);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
+  };
 
   const loadExpenses = async () => {
     // TODO: Load from local storage and sync with Supabase
@@ -114,6 +129,7 @@ export default function Financas() {
         due_date: expense.due_date,
         paid: expense.paid,
         recurring: expense.recurring,
+        customer_id: expense.customer_id || '',
       });
     } else {
       setEditingExpense(null);
@@ -123,6 +139,7 @@ export default function Financas() {
         due_date: '',
         paid: false,
         recurring: false,
+        customer_id: '',
       });
     }
     setShowExpenseModal(true);
@@ -137,6 +154,7 @@ export default function Financas() {
       due_date: '',
       paid: false,
       recurring: false,
+      customer_id: '',
     });
   };
 
@@ -153,6 +171,7 @@ export default function Financas() {
         due_date: formData.due_date,
         paid: formData.paid,
         recurring: formData.recurring,
+        customer_id: formData.customer_id || null,
       };
 
       if (editingExpense) {
@@ -475,6 +494,64 @@ export default function Financas() {
     modalButton: {
       flex: 1,
     },
+    inputText: {
+      fontSize: 16,
+      fontFamily: 'Inter-Regular',
+    },
+    expenseCustomer: {
+      fontSize: 12,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    customerSelector: {
+      position: 'relative',
+    },
+    clearButton: {
+      position: 'absolute',
+      right: 12,
+      top: 12,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: colors.border,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    clearButtonText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: 'bold',
+    },
+    customerSuggestions: {
+      position: 'absolute',
+      top: 50,
+      left: 0,
+      right: 0,
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      maxHeight: 200,
+      zIndex: 1000,
+      elevation: 5,
+    },
+    customerSuggestion: {
+      padding: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    customerSuggestionName: {
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
+      color: colors.text,
+      marginBottom: 2,
+    },
+    customerSuggestionEmail: {
+      fontSize: 12,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+    },
   });
 
   const StatCard = ({ 
@@ -554,6 +631,11 @@ export default function Financas() {
             
             <View style={styles.expenseInfo}>
               <Text style={styles.expenseName}>{expense.name}</Text>
+              {expense.customer_id && (
+                <Text style={styles.expenseCustomer}>
+                  Cliente: {customers.find(c => c.id === expense.customer_id)?.name || 'Cliente não encontrado'}
+                </Text>
+              )}
               <View style={styles.expenseDetails}>
                 <Text style={styles.expenseAmount}>
                   R$ {expense.amount.toFixed(2)}
@@ -614,16 +696,26 @@ export default function Financas() {
         Relatórios Financeiros
       </Text>
       
-      {/* TODO: Add charts and detailed reports */}
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => {
+          console.log('Navegando para relatórios...');
+          router.push('/relatorios');
+        }}
+      >
+        <Text style={styles.addButtonText}>Acessar Relatórios Premium</Text>
+      </TouchableOpacity>
+      
       <Card>
         <Text style={{ textAlign: 'center', color: colors.textSecondary, marginVertical: 40 }}>
-          Relatórios em desenvolvimento
+          Relatórios básicos em desenvolvimento
         </Text>
       </Card>
     </ScrollView>
   );
 
   const ExpenseModal = () => (
+    <>
     <Modal visible={showExpenseModal} transparent animationType="fade">
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
@@ -667,6 +759,61 @@ export default function Financas() {
             </View>
 
             <View style={styles.formGroup}>
+              <Text style={styles.label}>Cliente (opcional)</Text>
+              <View style={styles.customerSelector}>
+                <TextInput
+                  style={styles.input}
+                  value={formData.customer_id ? (customers.find(c => c.id === formData.customer_id)?.name || '') : customerSearchQuery}
+                  onChangeText={(text) => {
+                    setCustomerSearchQuery(text);
+                    if (!text) {
+                      setFormData({ ...formData, customer_id: '' });
+                    }
+                  }}
+                  placeholder="Digite o nome do cliente..."
+                  placeholderTextColor={colors.textSecondary}
+                />
+                {formData.customer_id && (
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={() => {
+                      setFormData({ ...formData, customer_id: '' });
+                      setCustomerSearchQuery('');
+                    }}
+                  >
+                    <Text style={styles.clearButtonText}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {/* Customer Suggestions */}
+              {customerSearchQuery && customerSearchQuery.length > 0 && (
+                <View style={styles.customerSuggestions}>
+                  {customers
+                    .filter(customer => 
+                      customer.name.toLowerCase().includes(customerSearchQuery.toLowerCase())
+                    )
+                    .slice(0, 5)
+                    .map((customer) => (
+                      <TouchableOpacity
+                        key={customer.id}
+                        style={styles.customerSuggestion}
+                        onPress={() => {
+                          setFormData({ ...formData, customer_id: customer.id });
+                          setCustomerSearchQuery('');
+                        }}
+                      >
+                        <Text style={styles.customerSuggestionName}>{customer.name}</Text>
+                        {customer.email && (
+                          <Text style={styles.customerSuggestionEmail}>{customer.email}</Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              )}
+            </View>
+
+            <View style={styles.formGroup}>
               <TouchableOpacity
                 style={styles.checkboxContainer}
                 onPress={() => setFormData({ ...formData, paid: !formData.paid })}
@@ -705,6 +852,8 @@ export default function Financas() {
         </View>
       </View>
     </Modal>
+
+    </>
   );
 
   return (

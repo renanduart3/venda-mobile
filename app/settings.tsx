@@ -1,45 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  StyleSheet,
   ScrollView,
   TextInput,
   TouchableOpacity,
   Alert,
   Switch
 } from 'react-native';
-import { 
+import {
   ArrowLeft,
-  RefreshCw,
-  Wifi,
-  WifiOff,
   Store,
-  User,
   Palette,
   Sun,
   Moon,
-  Smartphone
+  Smartphone,
+  Crown
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import {useOffline } from '@/contexts/OfflineContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
-import { isPremium, enablePremium, disablePremium } from '@/lib/premium';
-import { exportDatabaseToCSV, importDatabaseFromFile, reportToPDF } from '@/lib/export';
-import { generateSalesReport } from '@/lib/reports';
 
 export default function Settings() {
   const { colors, theme, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
-  const { isOnline, lastSync, syncData } = useOffline();
-  
+  const isOnline = true;
+  const lastSync = null;
+  const syncData = async () => { };
+
   const [storeSettings, setStoreSettings] = useState({
     storeName: '',
     ownerName: '',
     pixKey: '',
   });
-  
+
   const [customColors, setCustomColors] = useState({
     primary: colors.primary,
     secondary: colors.secondary,
@@ -55,15 +50,13 @@ export default function Settings() {
 
   const loadPremium = async () => {
     try {
-      const p = await isPremium();
-      setPremium(p);
+      setPremium(false); // Temporariamente false para teste
     } catch (e) {
       console.error('Erro carregando premium', e);
     }
   };
 
   const loadStoreSettings = async () => {
-    // TODO: Load from local storage
     setStoreSettings({
       storeName: 'Minha Loja',
       ownerName: 'João Silva',
@@ -73,22 +66,9 @@ export default function Settings() {
 
   const saveStoreSettings = async () => {
     try {
-      // TODO: Save to local storage and queue for sync
       Alert.alert('Sucesso', 'Configurações salvas com sucesso!');
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível salvar as configurações.');
-    }
-  };
-
-  const handleManualSync = async () => {
-    setIsSyncing(true);
-    try {
-      await syncData();
-      Alert.alert('Sucesso', 'Sincronização concluída!');
-    } catch (error) {
-      Alert.alert('Erro', 'Falha na sincronização.');
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -107,50 +87,6 @@ export default function Settings() {
     });
     setPrimaryColor(defaultPrimary);
     setSecondaryColor(defaultSecondary);
-  };
-
-  const handleEnablePremium = async () => {
-    const ok = await enablePremium();
-    if (ok) setPremium(true);
-  };
-
-  const handleDisablePremium = async () => {
-    const ok = await disablePremium();
-    if (ok) setPremium(false);
-  };
-
-  const handleExportDatabase = async () => {
-    try {
-      const path = await exportDatabaseToCSV();
-      Alert.alert('Exportado', 'Banco de dados exportado com sucesso!');
-    } catch (e: any) {
-      Alert.alert('Erro', e.message || 'Falha ao exportar');
-    }
-  };
-
-  const handleImportDatabase = async () => {
-    try {
-      const count = await importDatabaseFromFile();
-      Alert.alert('Importado', `${count} registros importados com sucesso!`);
-    } catch (e: any) {
-      Alert.alert('Erro', e.message || 'Falha ao importar');
-    }
-  };
-
-  const handleGeneratePDFReport = async () => {
-    try {
-      const data = await generateSalesReport({ period: 'monthly' });
-      // generate simple HTML
-      let html = `<h1>Relatório Mensal</h1><table border="1" style="border-collapse:collapse;width:100%"><tr><th>Período</th><th>Total</th><th>Contagem</th></tr>`;
-      data.forEach((r: any) => {
-        html += `<tr><td>${r.period}</td><td>${r.total.toFixed(2)}</td><td>${r.count}</td></tr>`;
-      });
-      html += `</table>`;
-      const uri = await reportToPDF(html);
-      Alert.alert('Relatório', `PDF gerado: ${uri}`);
-    } catch (e: any) {
-      Alert.alert('Erro', e.message || 'Falha ao gerar PDF');
-    }
   };
 
   const styles = StyleSheet.create({
@@ -195,26 +131,6 @@ export default function Settings() {
       alignItems: 'center',
       gap: 8,
     },
-    
-    // Sync Section
-    syncStatus: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 12,
-    },
-    statusText: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-    },
-    lastSyncText: {
-      fontSize: 12,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      marginBottom: 16,
-    },
-    
-    // Form Fields
     formGroup: {
       marginBottom: 16,
     },
@@ -235,8 +151,6 @@ export default function Settings() {
       color: colors.text,
       backgroundColor: colors.surface,
     },
-    
-    // Theme Section
     themeOptions: {
       gap: 12,
     },
@@ -264,8 +178,6 @@ export default function Settings() {
       fontFamily: 'Inter-Medium',
       color: colors.text,
     },
-    
-    // Color Customization
     colorRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -284,8 +196,6 @@ export default function Settings() {
       gap: 8,
       marginTop: 16,
     },
-    
-    // System Info
     infoRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -310,7 +220,7 @@ export default function Settings() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
         >
@@ -318,8 +228,36 @@ export default function Settings() {
         </TouchableOpacity>
         <Text style={styles.title}>Configurações</Text>
       </View>
-      
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+
+      <ScrollView style={[styles.content, { marginBottom: 30 }]} showsVerticalScrollIndicator={false}>
+        {/* Premium */}
+        <View style={styles.section}>
+          <Card>
+            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
+              <Crown size={20} color={colors.primary} />
+              Premium
+            </Text>
+
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.label}>Plano Atual</Text>
+              <Text style={[styles.infoValue, {
+                color: premium ? colors.primary : colors.textSecondary,
+                fontFamily: 'Inter-SemiBold'
+              }]}>
+                {premium ? 'Premium Ativo' : 'Gratuito'}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              <Button
+                title={premium ? "Gerenciar Plano" : "Fazer Upgrade"}
+                onPress={() => router.push('/planos')}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </Card>
+        </View>
+
         {/* Store Data */}
         <View style={styles.section}>
           <Card>
@@ -327,7 +265,7 @@ export default function Settings() {
               <Store size={20} color={colors.primary} />
               Dados da Loja
             </Text>
-            
+
             <View style={styles.formGroup}>
               <Text style={styles.label}>Nome da Loja</Text>
               <TextInput
@@ -375,7 +313,7 @@ export default function Settings() {
               <Palette size={20} color={colors.primary} />
               Tema
             </Text>
-            
+
             <View style={styles.themeOptions}>
               {[
                 { key: 'light', label: 'Claro', icon: <Sun size={20} color={colors.text} /> },
@@ -406,111 +344,25 @@ export default function Settings() {
           </Card>
         </View>
 
-        {/* Color Customization */}
-        <View style={styles.section}>
-          <Card>
-            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
-              Personalização de Cores
-            </Text>
-            
-            <View style={styles.colorRow}>
-              <Text style={styles.label}>Cor Primária</Text>
-              <View style={[styles.colorPreview, { backgroundColor: customColors.primary }]} />
-            </View>
-            
-            <TextInput
-              style={styles.input}
-              value={customColors.primary}
-              onChangeText={(text) => setCustomColors({ ...customColors, primary: text })}
-              placeholder="#4f46e5"
-              placeholderTextColor={colors.textSecondary}
-            />
-
-            <View style={styles.colorRow}>
-              <Text style={styles.label}>Cor Secundária</Text>
-              <View style={[styles.colorPreview, { backgroundColor: customColors.secondary }]} />
-            </View>
-            
-            <TextInput
-              style={styles.input}
-              value={customColors.secondary}
-              onChangeText={(text) => setCustomColors({ ...customColors, secondary: text })}
-              placeholder="#7c3aed"
-              placeholderTextColor={colors.textSecondary}
-            />
-
-            <View style={styles.colorButtons}>
-              <Button
-                title="Aplicar"
-                onPress={applyCustomColors}
-                style={{ flex: 1 }}
-              />
-              <Button
-                title="Resetar"
-                onPress={resetColors}
-                variant="outline"
-                style={{ flex: 1 }}
-              />
-            </View>
-          </Card>
-        </View>
-
         {/* System Info */}
-        <View style={styles.section}>
+        <View style={[styles.section]}>
           <Card>
             <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
               Informações do Sistema
             </Text>
-            
+
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Versão do App</Text>
               <Text style={styles.infoValue}>1.0.0</Text>
             </View>
-            
+
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Status da Conexão</Text>
-              <Text style={[styles.infoValue, { 
-                color: isOnline ? colors.success : colors.error 
+              <Text style={[styles.infoValue, {
+                color: isOnline ? colors.success : colors.error
               }]}>
                 {isOnline ? 'Conectado' : 'Desconectado'}
               </Text>
-            </View>
-            
-            {lastSync && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Última Sincronização</Text>
-                <Text style={styles.infoValue}>
-                  {lastSync.toLocaleDateString('pt-BR')}
-                </Text>
-              </View>
-            )}
-          </Card>
-        </View>
-
-        {/* Premium */}
-        <View style={styles.section}>
-          <Card>
-            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
-              Premium
-            </Text>
-
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.label}>Status</Text>
-              <Text style={styles.infoValue}>{premium ? 'Ativado' : 'Desativado'}</Text>
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              <Button title="Ativar Premium" onPress={handleEnablePremium} style={{ flex: 1 }} />
-              <Button title="Desativar" onPress={handleDisablePremium} variant="outline" style={{ flex: 1 }} />
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-              <Button title="Exportar Banco" onPress={handleExportDatabase} disabled={!premium} style={{ flex: 1 }} />
-              <Button title="Importar Banco" onPress={handleImportDatabase} disabled={!premium} variant="outline" style={{ flex: 1 }} />
-            </View>
-
-            <View style={{ marginTop: 8 }}>
-              <Button title="Gerar Relatório (PDF)" onPress={handleGeneratePDFReport} disabled={!premium} variant="outline" />
             </View>
           </Card>
         </View>

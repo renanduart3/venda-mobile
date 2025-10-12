@@ -481,16 +481,16 @@ export default function Clientes() {
                         <Text style={styles.customerName}>
                           {customer.name}
                         </Text>
-                        {debt > 0 && (
+                        {debt > 0 ? (
                           <View style={{ backgroundColor: colors.error + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginLeft: 8 }}>
                             <Text style={{ fontSize: 11, fontFamily: 'Inter-Bold', color: colors.error }}>
                               R$ {debt.toFixed(2)}
                             </Text>
                           </View>
-                        )}
+                        ) : null}
                       </View>
 
-                      {customer.phone && (
+                      {customer.phone ? (
                         <View style={styles.contactInfo}>
                           <Phone size={12} color={colors.textSecondary} />
                           <TouchableOpacity onPress={(e) => { e.stopPropagation(); makePhoneCall(customer.phone!); }}>
@@ -498,18 +498,18 @@ export default function Clientes() {
                               {customer.phone}
                             </Text>
                           </TouchableOpacity>
-                          {customer.whatsapp && (
+                          {customer.whatsapp ? (
                             <TouchableOpacity
                               style={[styles.contactButton, styles.whatsappButton]}
                               onPress={(e) => { e.stopPropagation(); openWhatsApp(customer.phone!); }}
                             >
                               <MessageCircle size={12} color="white" />
                             </TouchableOpacity>
-                          )}
+                          ) : null}
                         </View>
-                      )}
+                      ) : null}
 
-                      {customer.email && (
+                      {customer.email ? (
                         <View style={styles.contactInfo}>
                           <Mail size={12} color={colors.textSecondary} />
                           <TouchableOpacity onPress={(e) => { e.stopPropagation(); sendEmail(customer.email!); }}>
@@ -518,7 +518,7 @@ export default function Clientes() {
                             </Text>
                           </TouchableOpacity>
                         </View>
-                      )}
+                      ) : null}
                     </View>
 
                     <View style={styles.actions}>
