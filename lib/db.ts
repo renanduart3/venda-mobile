@@ -3,20 +3,28 @@ import * as SQLite from 'expo-sqlite';
 let db: SQLite.SQLiteDatabase | null = null;
 const DB_NAME = 'venda.db';
 
-// Initialize database for mobile
-try {
-  // Use the correct API for expo-sqlite
-  if (SQLite.openDatabaseSync) {
-    db = SQLite.openDatabaseSync(DB_NAME);
-  } else if (SQLite.openDatabase) {
-    db = SQLite.openDatabase(DB_NAME);
-  } else {
-    console.warn('No valid SQLite database method available');
-    db = null;
+// Initialize database function
+async function initializeDatabase(): Promise<SQLite.SQLiteDatabase | null> {
+  try {
+    // Use the correct API for expo-sqlite
+    if (SQLite.openDatabaseSync) {
+      return SQLite.openDatabaseSync(DB_NAME);
+    } else if (SQLite.openDatabase) {
+      return new Promise((resolve, reject) => {
+        SQLite.openDatabase(DB_NAME, (database) => {
+          resolve(database);
+        }, (error) => {
+          reject(error);
+        });
+      });
+    } else {
+      console.warn('No valid SQLite database method available');
+      return null;
+    }
+  } catch (e) {
+    console.warn('Could not open SQLite database:', e);
+    return null;
   }
-} catch (e) {
-  console.warn('Could not open SQLite database:', e);
-  db = null;
 }
 
 async function execSql(sql: string, params: any[] = []): Promise<any> {
@@ -25,9 +33,39 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
     return { rows: { length: 0, item: () => null, _array: [] } };
   }
 
+  // Check if the database has the exec method (newer API)
+  if (db.exec) {
+    try {
+      const result = db.exec(sql, params);
+      return {
+        rows: {
+          length: result.length,
+          item: (i: number) => result[i],
+          _array: result
+        }
+      };
+    } catch (error) {
+      console.error('SQL execution error:', error);
+      throw error;
+    }
+  }
+
+  // Fallback to transaction-based API
   return new Promise((resolve, reject) => {
+    if (!db.transaction) {
+      console.error('Database transaction method not available');
+      reject(new Error('Database transaction method not available'));
+      return;
+    }
+
     db.transaction(
       (tx) => {
+        if (!tx.executeSql) {
+          console.error('Transaction executeSql method not available');
+          reject(new Error('Transaction executeSql method not available'));
+          return;
+        }
+
         tx.executeSql(
           sql,
           params,
@@ -56,9 +94,13 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
 }
 
 export async function initDB() {
+  // Initialize database if not already done
   if (!db) {
-    console.warn('Database not available - skipping initialization');
-    return;
+    db = await initializeDatabase();
+    if (!db) {
+      console.warn('Database not available - skipping initialization');
+      return;
+    }
   }
 
   try {

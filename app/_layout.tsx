@@ -14,8 +14,8 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { OfflineProvider } from '@/contexts/OfflineContext';
 import db from '@/lib/db';
-import { checkSubscriptionFromDatabase } from '@/lib/premium';
 import { initializeIAP } from '@/lib/iap';
+import { checkSubscriptionFromDatabase } from '@/lib/premium';
 
 SplashScreen.preventAutoHideAsync();
 

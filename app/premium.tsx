@@ -205,8 +205,8 @@ export default function PremiumPage() {
         <Card style={styles.section}>
           <View style={styles.planRow}>
             <View>
-              <Text style={styles.planTitle}>Free</Text>
-              <Text style={styles.planDesc}>Todas as funcionalidades básicas incluídas</Text>
+              <Text style={styles.planTitle}>Plano Gratuito</Text>
+              <Text style={styles.planDesc}>Gestão comercial básica - sem proteção de dados</Text>
             </View>
             <Text style={styles.planDesc}>Grátis</Text>
           </View>
@@ -217,7 +217,7 @@ export default function PremiumPage() {
             <View style={{ flex: 1 }}>
               <Text style={styles.planTitle}>Premium</Text>
               <Text style={styles.planDesc}>
-                Relatórios em PDF, exportação CSV e scanner de produtos
+                Backup automático, relatórios detalhados e exportação de dados
               </Text>
             </View>
           </View>
@@ -251,6 +251,16 @@ export default function PremiumPage() {
             {restoring ? 'Restaurando...' : 'Restaurar Compras'}
           </Text>
         </TouchableOpacity>
+
+        <Card style={styles.section}>
+          <Text style={styles.planTitle}>Por que escolher o Premium?</Text>
+          <Text style={styles.planDesc}>
+            • <Text style={{fontWeight: 'bold'}}>Backup automático:</Text> Seus dados ficam seguros na nuvem{'\n'}
+            • <Text style={{fontWeight: 'bold'}}>Relatórios detalhados:</Text> Análises completas em PDF{'\n'}
+            • <Text style={{fontWeight: 'bold'}}>Exportação de dados:</Text> Backup manual em CSV{'\n'}
+            • <Text style={{fontWeight: 'bold'}}>Scanner de código de barras:</Text> Em breve para vendas rápidas
+          </Text>
+        </Card>
 
         <Text style={styles.infoText}>
           As assinaturas são gerenciadas através da sua conta Google Play ou App Store.

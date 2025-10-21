@@ -276,9 +276,9 @@ export default function Planos() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>Desbloqueie Todo o Potencial</Text>
+          <Text style={styles.heroTitle}>Proteja Seus Dados</Text>
           <Text style={styles.heroSubtitle}>
-            Acesse recursos avançados e maximize sua produtividade com o Premium
+            Com o Premium, seus dados ficam seguros com backup automático e você tem acesso a relatórios detalhados
           </Text>
         </View>
 
@@ -359,9 +359,10 @@ export default function Planos() {
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
+            <Text style={{fontWeight: 'bold'}}>Plano Gratuito:</Text> Gestão comercial básica, mas sem proteção de dados{'\n'}
+            <Text style={{fontWeight: 'bold'}}>Plano Premium:</Text> Backup automático, relatórios detalhados e exportação{'\n\n'}
             As assinaturas são gerenciadas pelo Google Play Store.{'\n'}
-            Você pode cancelar a qualquer momento nas configurações da sua conta.{'\n'}
-            O pagamento será cobrado na confirmação da compra.
+            Você pode cancelar a qualquer momento nas configurações da sua conta.
           </Text>
         </View>
       </ScrollView>

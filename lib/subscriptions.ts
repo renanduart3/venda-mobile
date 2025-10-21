@@ -25,13 +25,13 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     price: 'R$ 9,90',
     period: 'monthly',
     sku: SUBSCRIPTION_SKUS.MONTHLY,
-    description: 'Acesso completo ao app',
+    description: 'Proteção total dos seus dados',
     features: [
-      'Relatórios avançados',
-      'Exportação de dados',
-      'Backup na nuvem',
-      'Suporte prioritário',
-      'Sem anúncios'
+      'Backup automático dos dados',
+      'Relatórios detalhados em PDF',
+      'Exportação de dados em CSV',
+      'Scanner de código de barras (em breve)',
+      'Sincronização na nuvem'
     ]
   },
   {
@@ -42,11 +42,11 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     sku: SUBSCRIPTION_SKUS.YEARLY,
     description: 'Melhor custo-benefício',
     features: [
-      'Relatórios avançados',
-      'Exportação de dados',
-      'Backup na nuvem',
-      'Suporte prioritário',
-      'Sem anúncios',
+      'Backup automático dos dados',
+      'Relatórios detalhados em PDF',
+      'Exportação de dados em CSV',
+      'Scanner de código de barras (em breve)',
+      'Sincronização na nuvem',
       '2 meses grátis'
     ],
     savings: 'Economize R$ 19,10'
