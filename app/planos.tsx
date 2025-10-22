@@ -30,6 +30,9 @@ export default function Planos() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
 
+  // Obter o plano atual baseado na seleção
+  const currentPlan = SUBSCRIPTION_PLANS.find(plan => plan.id === selectedPlan);
+
   useEffect(() => {
     loadActiveSubscription();
   }, []);
@@ -43,7 +46,9 @@ export default function Planos() {
     }
   };
 
-  const handleSubscribe = async (plan: SubscriptionPlan) => {
+  const handleSubscribe = async () => {
+    if (!currentPlan) return;
+    
     if (Platform.OS !== 'android') {
       Alert.alert(
         'Disponível no Android',
@@ -55,15 +60,17 @@ export default function Planos() {
 
     setIsLoading(true);
     try {
-      const result = await subscriptionManager.purchaseSubscription(plan);
+      const result = await subscriptionManager.purchaseSubscription(currentPlan);
       
       if (result.success) {
+        Alert.alert('Sucesso!', 'Assinatura ativada com sucesso!');
         // Atualizar estado local
         await loadActiveSubscription();
       } else {
         Alert.alert('Erro', result.error || 'Não foi possível processar a assinatura.');
       }
     } catch (error) {
+      console.error('Erro na assinatura:', error);
       Alert.alert('Erro', 'Ocorreu um erro inesperado. Tente novamente.');
     } finally {
       setIsLoading(false);
@@ -133,7 +140,6 @@ export default function Planos() {
       lineHeight: 24,
     },
     plansContainer: {
-      gap: 16,
       marginBottom: 32,
     },
     planCard: {
@@ -142,6 +148,36 @@ export default function Planos() {
     planCardRecommended: {
       borderColor: colors.primary,
       borderWidth: 2,
+    },
+    toggleContainer: {
+      flexDirection: 'row',
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      padding: 4,
+      marginBottom: 20,
+    },
+    toggleOption: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 6,
+      alignItems: 'center',
+    },
+    toggleOptionActive: {
+      backgroundColor: colors.primary,
+    },
+    toggleOptionInactive: {
+      backgroundColor: 'transparent',
+    },
+    toggleText: {
+      fontSize: 14,
+      fontFamily: 'Inter-SemiBold',
+    },
+    toggleTextActive: {
+      color: colors.white,
+    },
+    toggleTextInactive: {
+      color: colors.textSecondary,
     },
     planHeader: {
       flexDirection: 'row',
@@ -221,6 +257,7 @@ export default function Planos() {
     },
     subscribeButton: {
       width: '100%',
+      backgroundColor: colors.primary,
     },
     activeSubscription: {
       backgroundColor: colors.success + '20',
@@ -291,17 +328,48 @@ export default function Planos() {
           </Card>
         )}
 
-        {/* Plans */}
-        <View style={styles.plansContainer}>
-          {SUBSCRIPTION_PLANS.map((plan) => (
+        {/* Toggle de Período */}
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity
+            style={[
+              styles.toggleOption,
+              selectedPlan === 'monthly' ? styles.toggleOptionActive : styles.toggleOptionInactive
+            ]}
+            onPress={() => setSelectedPlan('monthly')}
+          >
+            <Text style={[
+              styles.toggleText,
+              selectedPlan === 'monthly' ? styles.toggleTextActive : styles.toggleTextInactive
+            ]}>
+              Mensal
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.toggleOption,
+              selectedPlan === 'yearly' ? styles.toggleOptionActive : styles.toggleOptionInactive
+            ]}
+            onPress={() => setSelectedPlan('yearly')}
+          >
+            <Text style={[
+              styles.toggleText,
+              selectedPlan === 'yearly' ? styles.toggleTextActive : styles.toggleTextInactive
+            ]}>
+              Anual
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Plano Selecionado */}
+        {currentPlan && (
+          <View style={styles.plansContainer}>
             <Card
-              key={plan.id}
               style={[
                 styles.planCard,
-                plan.id === 'yearly' && styles.planCardRecommended
+                selectedPlan === 'yearly' && styles.planCardRecommended
               ]}
             >
-              {plan.id === 'yearly' && (
+              {selectedPlan === 'yearly' && (
                 <View style={styles.recommendedBadge}>
                   <Text style={styles.recommendedText}>RECOMENDADO</Text>
                 </View>
@@ -309,43 +377,43 @@ export default function Planos() {
 
               <View style={styles.planHeader}>
                 <View style={styles.planInfo}>
-                  <Text style={styles.planName}>{plan.name}</Text>
-                  <Text style={styles.planDescription}>{plan.description}</Text>
+                  <Text style={styles.planName} numberOfLines={1} ellipsizeMode="tail">{currentPlan.name}</Text>
+                  <Text style={styles.planDescription} numberOfLines={2} ellipsizeMode="tail">{currentPlan.description}</Text>
                 </View>
                 <View style={styles.planPrice}>
-                  <Text style={styles.priceValue}>{plan.price}</Text>
+                  <Text style={styles.priceValue}>{currentPlan.price}</Text>
                   <Text style={styles.pricePeriod}>
-                    {plan.period === 'monthly' ? '/mês' : '/ano'}
+                    {currentPlan.period === 'monthly' ? '/mês' : '/ano'}
                   </Text>
-                  {plan.savings && (
+                  {currentPlan.savings && (
                     <View style={styles.savings}>
-                      <Text style={styles.savingsText}>{plan.savings}</Text>
+                      <Text style={styles.savingsText}>{currentPlan.savings}</Text>
                     </View>
                   )}
                 </View>
               </View>
 
               <View style={styles.featuresList}>
-                {plan.features.map((feature, index) => (
+                {currentPlan.features.map((feature, index) => (
                   <View key={index} style={styles.featureItem}>
                     <View style={styles.featureIcon}>
                       {getFeatureIcon(index)}
                     </View>
-                    <Text style={styles.featureText}>{feature}</Text>
+                    <Text style={styles.featureText} numberOfLines={2} ellipsizeMode="tail">{feature}</Text>
                   </View>
                 ))}
               </View>
 
               <Button
                 title={activeSubscription ? 'Assinatura Ativa' : 'Assinar Agora'}
-                onPress={() => handleSubscribe(plan)}
+                onPress={handleSubscribe}
                 disabled={!!activeSubscription || isLoading}
                 style={styles.subscribeButton}
-                variant={plan.id === 'yearly' ? 'default' : 'outline'}
+                variant="primary"
               />
             </Card>
-          ))}
-        </View>
+          </View>
+        )}
 
         {/* Restore Purchases */}
         <Button

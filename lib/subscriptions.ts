@@ -30,7 +30,6 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       'Backup automático dos dados',
       'Relatórios detalhados em PDF',
       'Exportação de dados em CSV',
-      'Scanner de código de barras (em breve)',
       'Sincronização na nuvem'
     ]
   },
@@ -42,12 +41,11 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     sku: SUBSCRIPTION_SKUS.YEARLY,
     description: 'Melhor custo-benefício',
     features: [
-      'Backup automático dos dados',
+      'Backup  dos dados',
       'Relatórios detalhados em PDF',
+      'Inteligência de negocio em relatorios',
       'Exportação de dados em CSV',
-      'Scanner de código de barras (em breve)',
-      'Sincronização na nuvem',
-      '2 meses grátis'
+      'Sincronização na nuvem'
     ],
     savings: 'Economize R$ 19,10'
   }
@@ -91,22 +89,20 @@ class SubscriptionManager {
         }
       }
 
-      // Simulação do processo de compra
-      Alert.alert(
-        'Confirmar Assinatura',
-        `Deseja assinar o ${plan.name} por ${plan.price}?`,
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Assinar',
-            onPress: async () => {
-              await this.processPurchase(plan);
-            }
-          }
-        ]
-      );
-
-      return { success: true };
+      // Chamar o IAP real
+      const { purchaseSubscription } = await import('./iap');
+      const result = await purchaseSubscription(plan.sku);
+      
+      if (result.success) {
+        // Simular sucesso da compra
+        await this.saveActiveSubscription(plan, 'mock_transaction_' + Date.now());
+        return { success: true };
+      } else {
+        return {
+          success: false,
+          error: result.error || 'Erro na compra'
+        };
+      }
     } catch (error) {
       console.error('Erro na compra:', error);
       return {
@@ -117,34 +113,8 @@ class SubscriptionManager {
   }
 
   private async processPurchase(plan: SubscriptionPlan): Promise<void> {
-    try {
-      // Simulação do processamento
-      Alert.alert('Processando...', 'Aguarde enquanto processamos seu pagamento...');
-
-      // Simular delay de processamento
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      // Simular sucesso
-      const transactionId = `txn_${Date.now()}`;
-      
-      // Salvar assinatura ativa
-      await this.saveActiveSubscription(plan, transactionId);
-
-      Alert.alert(
-        '✅ Assinatura Ativa!',
-        `Seu ${plan.name} foi ativado com sucesso!`,
-        [{ text: 'OK', onPress: () => {
-          // Navegar de volta ou atualizar interface
-        }}]
-      );
-
-    } catch (error) {
-      Alert.alert(
-        '❌ Erro no Pagamento',
-        'Não foi possível processar seu pagamento. Tente novamente.',
-        [{ text: 'OK' }]
-      );
-    }
+    // Função removida - lógica movida para lib/iap.ts
+    console.log('Purchase processing moved to lib/iap.ts');
   }
 
   private async saveActiveSubscription(plan: SubscriptionPlan, transactionId: string): Promise<void> {

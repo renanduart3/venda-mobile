@@ -13,26 +13,30 @@ export interface PremiumStatus {
   productId?: string;
 }
 
+// Cache para evitar múltiplas chamadas
+let premiumCache: boolean | null = null;
+
 export async function isPremium(): Promise<boolean> {
-  // try {
-  // const v = await AsyncStorage.getItem(PREMIUM_KEY);
-  // if (v === '1') {
-  //   const expiryDate = await AsyncStorage.getItem(EXPIRY_DATE_KEY);
-  //   if (expiryDate) {
-  //     const expiry = new Date(expiryDate);
-  //     const now = new Date();
-  //     if (expiry <= now) {
-  //       await disablePremium();
-  //       return false;
-  //     }
-  //   }
-  return false;
-  //   }
-  //   return false;
-  // } catch (e) {
-  //   console.error('Error reading premium flag', e);
-  //   return false;
-  // }
+  try {
+    // Verificar status real do premium
+    const v = await AsyncStorage.getItem(PREMIUM_KEY);
+    if (v === '1') {
+      const expiryDate = await AsyncStorage.getItem(EXPIRY_DATE_KEY);
+      if (expiryDate) {
+        const expiry = new Date(expiryDate);
+        const now = new Date();
+        if (expiry <= now) {
+          await disablePremium();
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.error('Error reading premium flag', e);
+    return false;
+  }
 }
 
 export async function getPremiumStatus(): Promise<PremiumStatus> {
@@ -98,6 +102,8 @@ export async function disablePremium() {
     return false;
   }
 }
+
+// Função de teste removida para produção
 
 export async function validateSubscription(
   platform: 'android' | 'ios',

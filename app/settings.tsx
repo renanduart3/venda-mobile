@@ -6,7 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Switch
+  Switch,
+  Clipboard
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -24,12 +25,18 @@ import {
   Download,
   Upload,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Edit3,
+  Copy,
+  Plus,
+  X
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { isPremium } from '@/lib/premium';
+import { useCallback } from 'react';
 
 export default function Settings() {
   const { colors, theme, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
@@ -40,8 +47,10 @@ export default function Settings() {
   const [storeSettings, setStoreSettings] = useState({
     storeName: '',
     ownerName: '',
-    pixKey: '',
+    pixKeys: [''],
   });
+
+  const [isEditing, setIsEditing] = useState(false);
 
   const [customColors, setCustomColors] = useState({
     primary: colors.primary,
@@ -59,28 +68,87 @@ export default function Settings() {
     loadPremium();
   }, []);
 
+  // Recarregar status premium quando a tela ganhar foco
+  useFocusEffect(
+    useCallback(() => {
+      loadPremium();
+    }, [])
+  );
+
   const loadPremium = async () => {
     try {
-      setPremium(false); // Temporariamente false para teste
+      const premiumStatus = await isPremium();
+      setPremium(premiumStatus);
     } catch (e) {
       console.error('Erro carregando premium', e);
+      setPremium(false);
     }
   };
 
+  // Função de teste removida para produção
+
   const loadStoreSettings = async () => {
-    setStoreSettings({
-      storeName: 'Minha Loja',
-      ownerName: 'João Silva',
-      pixKey: 'joao@email.com',
-    });
+    // Check if mocks are enabled
+    const { USE_MOCKS, mockStoreSettings } = await import('@/lib/mocks');
+    
+    if (USE_MOCKS) {
+      // Load mock store settings from centralized file
+      setStoreSettings(mockStoreSettings);
+    } else {
+      // Load real settings from database
+      // TODO: Implement real settings loading
+      setStoreSettings({
+        storeName: '',
+        ownerName: '',
+        pixKeys: [''],
+      });
+    }
   };
 
   const saveStoreSettings = async () => {
     try {
       Alert.alert('Sucesso', 'Configurações salvas com sucesso!');
+      setIsEditing(false);
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível salvar as configurações.');
     }
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await Clipboard.setString(text);
+      Alert.alert('Copiado!', 'Chave PIX copiada para a área de transferência.');
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível copiar a chave PIX.');
+    }
+  };
+
+  const addPixKey = () => {
+    if (storeSettings.pixKeys.length < 4) {
+      setStoreSettings({
+        ...storeSettings,
+        pixKeys: [...storeSettings.pixKeys, '']
+      });
+    }
+  };
+
+  const removePixKey = (index: number) => {
+    if (storeSettings.pixKeys.length > 1) {
+      const newPixKeys = storeSettings.pixKeys.filter((_, i) => i !== index);
+      setStoreSettings({
+        ...storeSettings,
+        pixKeys: newPixKeys
+      });
+    }
+  };
+
+  const updatePixKey = (index: number, value: string) => {
+    const newPixKeys = [...storeSettings.pixKeys];
+    newPixKeys[index] = value;
+    setStoreSettings({
+      ...storeSettings,
+      pixKeys: newPixKeys
+    });
   };
 
   const applyCustomColors = () => {
@@ -139,45 +207,55 @@ export default function Settings() {
 
   // Export/Import Functions
   const exportData = async () => {
-    if (!premium) {
+    // Verificar premium novamente para garantir
+    const isUserPremium = await isPremium();
+    if (!isUserPremium) {
       Alert.alert('Premium Necessário', 'A funcionalidade de exportação está disponível apenas para usuários Premium.');
       return;
     }
 
     setIsExporting(true);
     try {
-      // Simular coleta de dados do banco
-      const exportData = {
-        customers: [],
-        products: [],
-        sales: [],
-        expenses: [],
-        settings: storeSettings,
-        exportDate: new Date().toISOString(),
-        version: '1.0.0'
-      };
-
-      const csvContent = convertToCSV(exportData);
-      const fileName = `loja_backup_${new Date().toISOString().split('T')[0]}.csv`;
-      const fileUri = FileSystem.documentDirectory + fileName;
+      // Obter o arquivo do banco SQLite
+      const dbPath = FileSystem.documentDirectory + 'SQLite/venda.db';
       
-      await FileSystem.writeAsStringAsync(fileUri, csvContent);
+      // Verificar se o arquivo existe
+      const fileInfo = await FileSystem.getInfoAsync(dbPath);
+      if (!fileInfo.exists) {
+        Alert.alert('❌ Erro', 'Banco de dados não encontrado.');
+        setIsExporting(false);
+        return;
+      }
+
+      // Criar nome do arquivo de backup com timestamp
+      const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
+      const fileName = `loja_backup_${timestamp}.db`;
+      const backupPath = FileSystem.documentDirectory + fileName;
+      
+      // Copiar arquivo do banco para backup
+      await FileSystem.copyAsync({
+        from: dbPath,
+        to: backupPath
+      });
       
       if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(fileUri);
-        Alert.alert('✅ Exportação Concluída', 'Dados exportados com sucesso!');
+        await Sharing.shareAsync(backupPath);
+        Alert.alert('✅ Exportação Concluída', 'Banco de dados exportado com sucesso!');
       } else {
         Alert.alert('❌ Erro', 'Não foi possível compartilhar o arquivo.');
       }
     } catch (error) {
-      Alert.alert('❌ Erro', 'Não foi possível exportar os dados.');
+      console.error('Erro na exportação:', error);
+      Alert.alert('❌ Erro', 'Não foi possível exportar o banco de dados.');
     } finally {
       setIsExporting(false);
     }
   };
 
   const importData = async () => {
-    if (!premium) {
+    // Verificar premium novamente para garantir
+    const isUserPremium = await isPremium();
+    if (!isUserPremium) {
       Alert.alert('Premium Necessário', 'A funcionalidade de importação está disponível apenas para usuários Premium.');
       return;
     }
@@ -185,7 +263,7 @@ export default function Settings() {
     setIsImporting(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'text/csv',
+        type: 'application/x-sqlite3',
         copyToCacheDirectory: true
       });
 
@@ -194,88 +272,70 @@ export default function Settings() {
         return;
       }
 
-      const fileContent = await FileSystem.readAsStringAsync(result.assets[0].uri);
-      const importedData = parseCSV(fileContent);
-
-      if (!validateImportData(importedData)) {
-        Alert.alert('❌ Arquivo Inválido', 'O arquivo não possui a estrutura correta para importação.');
+      // Verificar se o arquivo é um banco SQLite válido
+      const fileUri = result.assets[0].uri;
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      
+      if (!fileInfo.exists) {
+        Alert.alert('❌ Arquivo Inválido', 'Arquivo não encontrado.');
         setIsImporting(false);
         return;
       }
 
       Alert.alert(
-        'Confirmar Importação',
-        'Esta ação irá substituir todos os dados atuais pelos dados do arquivo. Deseja continuar?',
+        '⚠️ CONFIRMAR IMPORTAÇÃO',
+        'Esta ação irá SUBSTITUIR COMPLETAMENTE o banco de dados atual pelo arquivo selecionado.\n\n' +
+        'TODOS os dados atuais serão PERDIDOS permanentemente!\n\n' +
+        'Esta ação NÃO PODE ser desfeita!\n\n' +
+        'Deseja continuar?',
         [
           { text: 'Cancelar', style: 'cancel' },
           {
-            text: 'Importar',
+            text: 'IMPORTAR (IRREVERSÍVEL)',
+            style: 'destructive',
             onPress: async () => {
-              // Aqui você implementaria a importação real
-              Alert.alert('✅ Importação Concluída', 'Dados importados com sucesso!');
+              try {
+                // Fazer backup do banco atual antes de substituir
+                const currentDbPath = FileSystem.documentDirectory + 'SQLite/venda.db';
+                const backupPath = FileSystem.documentDirectory + `backup_before_import_${Date.now()}.db`;
+                
+                // Verificar se o banco atual existe e fazer backup
+                const currentDbInfo = await FileSystem.getInfoAsync(currentDbPath);
+                if (currentDbInfo.exists) {
+                  await FileSystem.copyAsync({
+                    from: currentDbPath,
+                    to: backupPath
+                  });
+                }
+
+                // Substituir o banco atual pelo importado
+                await FileSystem.copyAsync({
+                  from: fileUri,
+                  to: currentDbPath
+                });
+
+                Alert.alert(
+                  '✅ Importação Concluída', 
+                  'Banco de dados importado com sucesso!\n\n' +
+                  'O banco anterior foi salvo como backup caso precise restaurar.'
+                );
+              } catch (importError) {
+                console.error('Erro na importação:', importError);
+                Alert.alert('❌ Erro', 'Não foi possível importar o banco de dados.');
+              }
             }
           }
         ]
       );
     } catch (error) {
-      Alert.alert('❌ Erro', 'Não foi possível importar os dados.');
+      console.error('Erro na importação:', error);
+      Alert.alert('❌ Erro', 'Não foi possível importar o banco de dados.');
     } finally {
       setIsImporting(false);
     }
   };
 
-  // Helper Functions
-  const convertToCSV = (data: any) => {
-    const headers = ['type', 'id', 'name', 'value', 'date', 'metadata'];
-    const rows = [headers.join(',')];
-    
-    // Simular dados para CSV
-    Object.entries(data).forEach(([type, items]: [string, any]) => {
-      if (Array.isArray(items)) {
-        items.forEach((item: any) => {
-          const row = [
-            type,
-            item.id || '',
-            item.name || '',
-            item.value || '',
-            item.date || '',
-            JSON.stringify(item)
-          ];
-          rows.push(row.join(','));
-        });
-      }
-    });
-    
-    return rows.join('\n');
-  };
-
-  const parseCSV = (csvContent: string) => {
-    const lines = csvContent.split('\n');
-    const headers = lines[0].split(',');
-    const data: any = {};
-    
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',');
-      if (values.length === headers.length) {
-        const type = values[0];
-        if (!data[type]) data[type] = [];
-        data[type].push({
-          id: values[1],
-          name: values[2],
-          value: values[3],
-          date: values[4],
-          metadata: JSON.parse(values[5] || '{}')
-        });
-      }
-    }
-    
-    return data;
-  };
-
-  const validateImportData = (data: any) => {
-    const requiredTypes = ['customers', 'products', 'sales', 'expenses'];
-    return requiredTypes.every(type => data[type] && Array.isArray(data[type]));
-  };
+  // Helper Functions - Removidas pois agora trabalhamos diretamente com arquivos .db
 
   const styles = StyleSheet.create({
     container: {
@@ -454,6 +514,80 @@ export default function Settings() {
       fontSize: 16,
       fontFamily: 'Inter-Medium',
     },
+    sectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    editButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+    editButtonText: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+    },
+    readOnlyText: {
+      fontSize: 16,
+      fontFamily: 'Inter-Regular',
+      color: colors.text,
+      paddingVertical: 12,
+      paddingHorizontal: 12,
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    pixKeyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 8,
+    },
+    pixKeyInput: {
+      flex: 1,
+    },
+    pixKeyText: {
+      flex: 1,
+    },
+    copyButton: {
+      padding: 8,
+      borderRadius: 6,
+      backgroundColor: colors.primary + '20',
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+    removeButton: {
+      padding: 8,
+      borderRadius: 6,
+      backgroundColor: colors.error + '20',
+      borderWidth: 1,
+      borderColor: colors.error,
+    },
+    addPixButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      borderStyle: 'dashed',
+      marginTop: 8,
+    },
+    addPixButtonText: {
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
+    },
   });
 
   return (
@@ -475,74 +609,149 @@ export default function Settings() {
           <Card>
             <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
               <Crown size={20} color={colors.primary} />
-              Premium
+              Plano Atual
             </Text>
 
-            <View style={{ marginBottom: 12 }}>
-              <Text style={styles.label}>Plano Atual</Text>
-              <Text style={[styles.infoValue, {
-                color: premium ? colors.primary : colors.textSecondary,
-                fontFamily: 'Inter-SemiBold'
-              }]}>
-                {premium ? 'Premium Ativo' : 'Gratuito'}
-              </Text>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={[styles.label, { marginBottom: 8 }]}>Status</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.infoValue, {
+                  color: premium ? colors.primary : colors.textSecondary,
+                  fontFamily: 'Inter-SemiBold',
+                  fontSize: 16
+                }]}>
+                  {premium ? 'Premium' : 'Gratuito'}
+                </Text>
+                {premium && (
+                  <View style={{
+                    backgroundColor: colors.success,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 12
+                  }}>
+                    <Text style={{
+                      color: colors.white,
+                      fontSize: 10,
+                      fontFamily: 'Inter-SemiBold'
+                    }}>
+                      ✅ ATIVO
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              <Button
-                title={premium ? "Gerenciar Plano" : "Fazer Upgrade"}
-                onPress={() => router.push('/planos')}
-                style={{ flex: 1 }}
-              />
-            </View>
+            <Button
+              title="Gerenciar Plano"
+              onPress={() => router.push('/planos')}
+            />
           </Card>
         </View>
 
         {/* Store Data */}
         <View style={styles.section}>
           <Card>
-            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
-              <Store size={20} color={colors.primary} />
-              Dados da Loja
-            </Text>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                <Store size={20} color={colors.primary} />
+                Dados da Loja
+              </Text>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => setIsEditing(!isEditing)}
+              >
+                <Edit3 size={16} color={colors.primary} />
+                <Text style={[styles.editButtonText, { color: colors.primary }]}>
+                  {isEditing ? 'Cancelar' : 'Editar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Nome da Loja</Text>
-              <TextInput
-                style={styles.input}
-                value={storeSettings.storeName}
-                onChangeText={(text) => setStoreSettings({ ...storeSettings, storeName: text })}
-                placeholder="Nome da sua loja"
-                placeholderTextColor={colors.textSecondary}
-              />
+              {isEditing ? (
+                <TextInput
+                  style={styles.input}
+                  value={storeSettings.storeName}
+                  onChangeText={(text) => setStoreSettings({ ...storeSettings, storeName: text })}
+                  placeholder="Nome da sua loja"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              ) : (
+                <Text style={styles.readOnlyText}>{storeSettings.storeName}</Text>
+              )}
             </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Nome do Lojista</Text>
-              <TextInput
-                style={styles.input}
-                value={storeSettings.ownerName}
-                onChangeText={(text) => setStoreSettings({ ...storeSettings, ownerName: text })}
-                placeholder="Seu nome"
-                placeholderTextColor={colors.textSecondary}
-              />
+              {isEditing ? (
+                <TextInput
+                  style={styles.input}
+                  value={storeSettings.ownerName}
+                  onChangeText={(text) => setStoreSettings({ ...storeSettings, ownerName: text })}
+                  placeholder="Seu nome"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              ) : (
+                <Text style={styles.readOnlyText}>{storeSettings.ownerName}</Text>
+              )}
             </View>
 
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Chave PIX</Text>
-              <TextInput
-                style={styles.input}
-                value={storeSettings.pixKey}
-                onChangeText={(text) => setStoreSettings({ ...storeSettings, pixKey: text })}
-                placeholder="email@exemplo.com ou telefone"
-                placeholderTextColor={colors.textSecondary}
-              />
+              <Text style={styles.label}>Chaves PIX ({storeSettings.pixKeys.length}/4)</Text>
+              {storeSettings.pixKeys.map((pixKey, index) => (
+                <View key={index} style={styles.pixKeyRow}>
+                  {isEditing ? (
+                    <>
+                      <TextInput
+                        style={[styles.input, styles.pixKeyInput]}
+                        value={pixKey}
+                        onChangeText={(text) => updatePixKey(index, text)}
+                        placeholder="email@exemplo.com ou telefone"
+                        placeholderTextColor={colors.textSecondary}
+                      />
+                      {storeSettings.pixKeys.length > 1 && (
+                        <TouchableOpacity
+                          style={styles.removeButton}
+                          onPress={() => removePixKey(index)}
+                        >
+                          <X size={16} color={colors.error} />
+                        </TouchableOpacity>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Text style={[styles.readOnlyText, styles.pixKeyText]}>{pixKey}</Text>
+                      <TouchableOpacity
+                        style={styles.copyButton}
+                        onPress={() => copyToClipboard(pixKey)}
+                      >
+                        <Copy size={16} color={colors.primary} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              ))}
+              
+              {isEditing && storeSettings.pixKeys.length < 4 && (
+                <TouchableOpacity
+                  style={styles.addPixButton}
+                  onPress={addPixKey}
+                >
+                  <Plus size={16} color={colors.primary} />
+                  <Text style={[styles.addPixButtonText, { color: colors.primary }]}>
+                    Adicionar Chave PIX
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
-            <Button
-              title="Salvar Dados"
-              onPress={saveStoreSettings}
-            />
+            {isEditing && (
+              <Button
+                title="Salvar Dados"
+                onPress={saveStoreSettings}
+              />
+            )}
           </Card>
         </View>
 
@@ -607,10 +816,12 @@ export default function Settings() {
                 onPress={exportData}
                 disabled={!premium || isExporting}
               >
-                <Download size={20} color={colors.primary} />
-                <Text style={[styles.actionButtonText, { color: colors.primary }]}>
-                  {isExporting ? 'Exportando...' : 'Exportar Dados'}
-                </Text>
+                <Download size={20} color={premium ? colors.primary : colors.textSecondary} />
+                       <Text style={[styles.actionButtonText, { 
+                         color: premium ? colors.primary : colors.textSecondary 
+                       }]}>
+                         {isExporting ? 'Exportando...' : 'Backup do Banco'}
+                       </Text>
               </TouchableOpacity>
             </View>
 
@@ -620,16 +831,24 @@ export default function Settings() {
                 onPress={importData}
                 disabled={!premium || isImporting}
               >
-                <Upload size={20} color={colors.primary} />
-                <Text style={[styles.actionButtonText, { color: colors.primary }]}>
-                  {isImporting ? 'Importando...' : 'Importar Dados'}
-                </Text>
+                <Upload size={20} color={premium ? colors.primary : colors.textSecondary} />
+                       <Text style={[styles.actionButtonText, { 
+                         color: premium ? colors.primary : colors.textSecondary 
+                       }]}>
+                         {isImporting ? 'Importando...' : 'Restaurar Banco'}
+                       </Text>
               </TouchableOpacity>
             </View>
 
             {!premium && (
               <Text style={[styles.dangerText, { color: colors.textSecondary, fontSize: 12, marginTop: 8 }]}>
                 Para acessar essas funcionalidades, assine o Premium
+              </Text>
+            )}
+
+            {premium && (
+              <Text style={[styles.dangerText, { color: colors.success, fontSize: 12, marginTop: 8 }]}>
+                ✅ Funcionalidades premium ativas - Backup e restauração do banco de dados liberadas
               </Text>
             )}
           </Card>

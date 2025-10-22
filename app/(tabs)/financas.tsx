@@ -48,13 +48,51 @@ export default function Financas() {
   const [sales, setSales] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  
+  // Filtros
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [expenseStatusFilter, setExpenseStatusFilter] = useState<'all' | 'pending' | 'paid' | 'overdue'>('all');
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
 
+  // Funções de filtro
+  const getFilteredExpenses = () => {
+    let filtered = expenses.filter(expense => {
+      // Filtro por mês
+      const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
+      if (expenseMonth !== selectedMonth) return false;
+      
+      // Filtro por status
+      const today = new Date().toISOString().split('T')[0];
+      const isOverdue = expense.due_date && expense.due_date < today && !expense.paid;
+      
+      switch (expenseStatusFilter) {
+        case 'pending':
+          return !expense.paid && !isOverdue;
+        case 'paid':
+          return expense.paid;
+        case 'overdue':
+          return isOverdue;
+        default:
+          return true;
+      }
+    });
+    
+    return filtered;
+  };
+
+  const getExpenseStats = () => {
+    const filtered = getFilteredExpenses();
+    const total = filtered.reduce((sum, expense) => sum + expense.amount, 0);
+    const paid = filtered.filter(e => e.paid).reduce((sum, expense) => sum + expense.amount, 0);
+    const pending = filtered.filter(e => !e.paid).reduce((sum, expense) => sum + expense.amount, 0);
+    
+    return { total, paid, pending, count: filtered.length };
+  };
+
   // Report filters
   const [reportFilter, setReportFilter] = useState<'all' | 'income' | 'expense'>('all');
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -82,8 +120,17 @@ export default function Financas() {
 
   const loadCustomers = async () => {
     try {
-      const { mockCustomers } = await import('@/lib/mocks');
-      setCustomers(mockCustomers);
+      // Check if mocks are enabled
+      const { USE_MOCKS, mockCustomers } = await import('@/lib/mocks');
+      
+      if (USE_MOCKS) {
+        // Load mock data from centralized file
+        setCustomers(mockCustomers);
+      } else {
+        // Load real data from database
+        // TODO: Implement real data loading
+        setCustomers([]);
+      }
     } catch (error) {
       console.error('Error loading customers:', error);
     }
@@ -91,13 +138,22 @@ export default function Financas() {
 
   const loadExpenses = async () => {
     try {
-      const { mockExpenses } = await import('@/lib/mocks');
-      const convertedExpenses = mockExpenses.map(expense => ({
-        ...expense,
-        paid: Boolean(expense.paid),
-        recurring: Boolean(expense.recurring)
-      }));
-      setExpenses(convertedExpenses);
+      // Check if mocks are enabled
+      const { USE_MOCKS, mockExpenses } = await import('@/lib/mocks');
+      
+      if (USE_MOCKS) {
+        // Load mock data from centralized file
+        const convertedExpenses = mockExpenses.map(expense => ({
+          ...expense,
+          paid: Boolean(expense.paid),
+          recurring: Boolean(expense.recurring)
+        }));
+        setExpenses(convertedExpenses);
+      } else {
+        // Load real data from database
+        // TODO: Implement real data loading
+        setExpenses([]);
+      }
     } catch (error) {
       console.error('Error loading expenses:', error);
     }
@@ -105,8 +161,17 @@ export default function Financas() {
 
   const loadSales = async () => {
     try {
-      const { mockSales } = await import('@/lib/mocks');
-      setSales(mockSales);
+      // Check if mocks are enabled
+      const { USE_MOCKS, mockSales } = await import('@/lib/mocks');
+      
+      if (USE_MOCKS) {
+        // Load mock data from centralized file
+        setSales(mockSales);
+      } else {
+        // Load real data from database
+        // TODO: Implement real data loading
+        setSales([]);
+      }
     } catch (error) {
       console.error('Error loading sales:', error);
     }
@@ -220,22 +285,6 @@ export default function Financas() {
       updated_at: new Date().toISOString(),
     };
     setExpenses(expenses.map(e => e.id === expense.id ? updatedExpense : e));
-  };
-
-  const getExpenseStats = () => {
-    const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const paidExpenses = expenses.filter(e => e.paid).reduce((sum, expense) => sum + expense.amount, 0);
-    const pendingExpenses = totalExpenses - paidExpenses;
-    const overdueExpenses = expenses.filter(e =>
-      !e.paid && e.due_date && new Date(e.due_date) < new Date()
-    ).length;
-
-    return {
-      total: totalExpenses,
-      paid: paidExpenses,
-      pending: pendingExpenses,
-      overdue: overdueExpenses,
-    };
   };
 
   const stats = getExpenseStats();
@@ -387,6 +436,68 @@ export default function Financas() {
       fontFamily: 'Inter-SemiBold',
     },
 
+    // Filtros
+    filterContainer: {
+      marginBottom: 16,
+    },
+    filterLabel: {
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
+      color: colors.text,
+      marginBottom: 8,
+    },
+    monthFilterContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      padding: 4,
+    },
+    monthButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 6,
+    },
+    monthButtonText: {
+      fontSize: 18,
+      fontFamily: 'Inter-Bold',
+      color: colors.primary,
+    },
+    monthText: {
+      fontSize: 16,
+      fontFamily: 'Inter-SemiBold',
+      color: colors.text,
+      marginHorizontal: 20,
+      textTransform: 'capitalize',
+    },
+    statusFilterContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      marginBottom: 16,
+      gap: 8,
+    },
+    statusFilterButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 6,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    statusFilterButtonActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    statusFilterText: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+      color: colors.textSecondary,
+    },
+    statusFilterTextActive: {
+      color: colors.white,
+    },
+
     // Stats Cards
     statsContainer: {
       flexDirection: 'row',
@@ -447,7 +558,8 @@ export default function Financas() {
     expenseDetails: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      justifyContent: 'space-between',
+      marginBottom: 8,
     },
     expenseAmount: {
       fontSize: 14,
@@ -458,16 +570,11 @@ export default function Financas() {
       fontSize: 12,
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
-      textAlign: 'right',
-      flexShrink: 0,
-      marginLeft: 'auto',
     },
     expenseTags: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
       gap: 4,
-      marginTop: 4,
     },
     tagsContainer: {
       flexDirection: 'row',
@@ -645,6 +752,27 @@ export default function Financas() {
       fontSize: 12,
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
+    },
+
+    // Date Input
+    dateInputContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    dateInput: {
+      flex: 1,
+    },
+    dateButton: {
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      backgroundColor: colors.primary,
+      borderRadius: 8,
+    },
+    dateButtonText: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+      color: colors.white,
     },
 
     // Report styles
@@ -859,28 +987,127 @@ export default function Financas() {
         <Text style={styles.addButtonText}>Nova Despesa</Text>
       </TouchableOpacity>
 
+      {/* Filtro de Mês */}
+      <View style={styles.filterContainer}>
+        <Text style={styles.filterLabel}>Mês de Referência:</Text>
+        <View style={styles.monthFilterContainer}>
+          <TouchableOpacity 
+            style={styles.monthButton}
+            onPress={() => {
+              const prevMonth = new Date(selectedMonth + '-01');
+              prevMonth.setMonth(prevMonth.getMonth() - 1);
+              setSelectedMonth(prevMonth.toISOString().slice(0, 7));
+            }}
+          >
+            <Text style={styles.monthButtonText}>‹</Text>
+          </TouchableOpacity>
+          <Text style={styles.monthText}>
+            {new Date(selectedMonth + '-01').toLocaleDateString('pt-BR', { 
+              month: 'long', 
+              year: 'numeric' 
+            })}
+          </Text>
+          <TouchableOpacity 
+            style={styles.monthButton}
+            onPress={() => {
+              const nextMonth = new Date(selectedMonth + '-01');
+              nextMonth.setMonth(nextMonth.getMonth() + 1);
+              setSelectedMonth(nextMonth.toISOString().slice(0, 7));
+            }}
+          >
+            <Text style={styles.monthButtonText}>›</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Filtros de Status */}
+      <View style={styles.statusFilterContainer}>
+        <TouchableOpacity
+          style={[
+            styles.statusFilterButton,
+            expenseStatusFilter === 'all' && styles.statusFilterButtonActive
+          ]}
+          onPress={() => setExpenseStatusFilter('all')}
+        >
+          <Text style={[
+            styles.statusFilterText,
+            expenseStatusFilter === 'all' && styles.statusFilterTextActive
+          ]}>
+            Todos ({getExpenseStats().count})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.statusFilterButton,
+            expenseStatusFilter === 'paid' && styles.statusFilterButtonActive
+          ]}
+          onPress={() => setExpenseStatusFilter('paid')}
+        >
+          <Text style={[
+            styles.statusFilterText,
+            expenseStatusFilter === 'paid' && styles.statusFilterTextActive
+          ]}>
+            Pago ({getFilteredExpenses().filter(e => e.paid).length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.statusFilterButton,
+            expenseStatusFilter === 'pending' && styles.statusFilterButtonActive
+          ]}
+          onPress={() => setExpenseStatusFilter('pending')}
+        >
+          <Text style={[
+            styles.statusFilterText,
+            expenseStatusFilter === 'pending' && styles.statusFilterTextActive
+          ]}>
+            Pendente ({getFilteredExpenses().filter(e => !e.paid).length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.statusFilterButton,
+            expenseStatusFilter === 'overdue' && styles.statusFilterButtonActive
+          ]}
+          onPress={() => setExpenseStatusFilter('overdue')}
+        >
+          <Text style={[
+            styles.statusFilterText,
+            expenseStatusFilter === 'overdue' && styles.statusFilterTextActive
+          ]}>
+            Vencidas ({getFilteredExpenses().filter(e => {
+              const today = new Date().toISOString().split('T')[0];
+              return e.due_date && e.due_date < today && !e.paid;
+            }).length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Stats */}
       <View style={styles.statsContainer}>
         <StatCard
           icon={<DollarSign size={20} color={colors.primary} />}
-          value={`R$ ${stats.total.toFixed(2)}`}
+          value={`R$ ${getExpenseStats().total.toFixed(2)}`}
           label="Total do Mês"
         />
         <StatCard
           icon={<CheckCircle size={20} color={colors.success} />}
-          value={`R$ ${stats.paid.toFixed(2)}`}
+          value={`R$ ${getExpenseStats().paid.toFixed(2)}`}
           label="Pago"
           color={colors.success}
         />
         <StatCard
           icon={<XCircle size={20} color={colors.warning} />}
-          value={`R$ ${stats.pending.toFixed(2)}`}
+          value={`R$ ${getExpenseStats().pending.toFixed(2)}`}
           label="Pendente"
           color={colors.warning}
         />
         <StatCard
           icon={<Calendar size={20} color={colors.error} />}
-          value={stats.overdue}
+          value={getFilteredExpenses().filter(e => {
+            const today = new Date().toISOString().split('T')[0];
+            return e.due_date && e.due_date < today && !e.paid;
+          }).length}
           label="Vencidas"
           color={colors.error}
         />
@@ -891,7 +1118,7 @@ export default function Financas() {
         Despesas do Mês
       </Text>
 
-      {expenses.map((expense) => (
+      {getFilteredExpenses().map((expense) => (
         <Card key={expense.id} style={styles.expenseCard}>
           <View style={styles.expenseItem}>
             <View style={[
@@ -917,6 +1144,9 @@ export default function Financas() {
                 <Text style={styles.expenseAmount}>
                   R$ {expense.amount.toFixed(2)}
                 </Text>
+                <Text style={styles.expenseDate}>
+                  Venc: {formatDateForDisplay(expense.due_date || null)}
+                </Text>
               </View>
               <View style={styles.expenseTags}>
                 <View style={styles.tagsContainer}>
@@ -931,9 +1161,6 @@ export default function Financas() {
                     </View>
                   )}
                 </View>
-                <Text style={styles.expenseDate}>
-                  Venc: {formatDateForDisplay(expense.due_date || null)}
-                </Text>
               </View>
             </View>
 
@@ -990,13 +1217,34 @@ export default function Financas() {
         {/* Month Selector */}
         <View style={styles.monthSelector}>
           <Text style={styles.selectorLabel}>Mês:</Text>
-          <TextInput
-            style={styles.monthInput}
-            value={selectedMonth}
-            onChangeText={setSelectedMonth}
-            placeholder="YYYY-MM"
-            placeholderTextColor={colors.textSecondary}
-          />
+          <View style={styles.monthFilterContainer}>
+            <TouchableOpacity 
+              style={styles.monthButton}
+              onPress={() => {
+                const prevMonth = new Date(selectedMonth + '-01');
+                prevMonth.setMonth(prevMonth.getMonth() - 1);
+                setSelectedMonth(prevMonth.toISOString().slice(0, 7));
+              }}
+            >
+              <Text style={styles.monthButtonText}>‹</Text>
+            </TouchableOpacity>
+            <Text style={styles.monthText}>
+              {new Date(selectedMonth + '-01').toLocaleDateString('pt-BR', { 
+                month: 'long', 
+                year: 'numeric' 
+              })}
+            </Text>
+            <TouchableOpacity 
+              style={styles.monthButton}
+              onPress={() => {
+                const nextMonth = new Date(selectedMonth + '-01');
+                nextMonth.setMonth(nextMonth.getMonth() + 1);
+                setSelectedMonth(nextMonth.toISOString().slice(0, 7));
+              }}
+            >
+              <Text style={styles.monthButtonText}>›</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Summary Cards */}
@@ -1064,11 +1312,11 @@ export default function Financas() {
               <Card key={`sale-${sale.id}`} style={styles.transactionCard}>
                 <View style={styles.transactionHeader}>
                   <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionDescription}>Venda - {sale.customer_name}</Text>
+                    <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">Venda - {sale.customer_name}</Text>
                     <Text style={styles.transactionDate}>
                       {formatDate(sale.created_at)} • Venda
                     </Text>
-                    <Text style={styles.transactionCustomer}>Cliente: {sale.customer_name}</Text>
+                      <Text style={styles.transactionCustomer} numberOfLines={1} ellipsizeMode="tail">Cliente: {sale.customer_name}</Text>
                   </View>
                   <View style={styles.transactionAmount}>
                     <Text style={[styles.amountText, { color: colors.success }]}>
@@ -1087,14 +1335,14 @@ export default function Financas() {
               <Card key={`expense-${expense.id}`} style={styles.transactionCard}>
                 <View style={styles.transactionHeader}>
                   <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionDescription}>{expense.name}</Text>
+                    <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">{expense.name}</Text>
                     <Text style={styles.transactionDate}>
                       {formatDate(expense.created_at)} • Despesa
                     </Text>
                     {expense.customer_id && (
-                      <Text style={styles.transactionCustomer}>
-                        Cliente: {customers.find(c => c.id === expense.customer_id)?.name || 'Cliente não encontrado'}
-                      </Text>
+                        <Text style={styles.transactionCustomer} numberOfLines={1} ellipsizeMode="tail">
+                          Cliente: {customers.find(c => c.id === expense.customer_id)?.name || 'Cliente não encontrado'}
+                        </Text>
                     )}
                   </View>
                   <View style={styles.transactionAmount}>
@@ -1153,13 +1401,39 @@ export default function Financas() {
 
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Data de Vencimento (opcional)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.due_date}
-                  onChangeText={(text) => setFormData({ ...formData, due_date: text })}
-                  placeholder="YYYY-MM-DD (ex: 2024-12-25)"
-                  placeholderTextColor={colors.textSecondary}
-                />
+                <View style={styles.dateInputContainer}>
+                  <TextInput
+                    style={[styles.input, styles.dateInput]}
+                    value={formData.due_date}
+                    onChangeText={(text) => {
+                      // Formatar automaticamente como DD/MM/YYYY
+                      let formatted = text.replace(/\D/g, '');
+                      if (formatted.length >= 2) {
+                        formatted = formatted.substring(0, 2) + '/' + formatted.substring(2);
+                      }
+                      if (formatted.length >= 5) {
+                        formatted = formatted.substring(0, 5) + '/' + formatted.substring(5, 9);
+                      }
+                      setFormData({ ...formData, due_date: formatted });
+                    }}
+                    placeholder="DD/MM/AAAA (ex: 25/12/2024)"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="numeric"
+                    maxLength={10}
+                  />
+                  <TouchableOpacity
+                    style={styles.dateButton}
+                    onPress={() => {
+                      const today = new Date();
+                      const day = String(today.getDate()).padStart(2, '0');
+                      const month = String(today.getMonth() + 1).padStart(2, '0');
+                      const year = today.getFullYear();
+                      setFormData({ ...formData, due_date: `${day}/${month}/${year}` });
+                    }}
+                  >
+                    <Text style={styles.dateButtonText}>Hoje</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.formGroup}>

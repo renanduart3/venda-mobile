@@ -53,51 +53,36 @@ export default function Dashboard() {
     loadDashboardData();
   }, []);
 
-  useEffect(() => {
-    // Create low stock notification if needed
-    if (stats.lowStockCount > 0) {
-      createLowStockNotification();
-    }
-  }, [stats.lowStockCount]);
-
   const loadDashboardData = async () => {
     try {
       // Load data for current month
       const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
       
-      // Load mock data for current month - replace with actual data loading
-      const mockStats: DashboardStats = {
-        dailySales: 23,
-        dailyRevenue: 1847.50,
-        lowStockCount: 5,
-        totalCustomers: 142,
-        monthlyExpenses: 2300.00,
-        topProducts: [
-          { name: 'Coca-Cola 350ml', sales: 45 },
-          { name: 'Pão de Açúcar', sales: 32 },
-          { name: 'Leite Integral', sales: 28 },
-        ],
-        peakHours: [
-          { hour: '08:00', sales: 12 },
-          { hour: '12:00', sales: 18 },
-          { hour: '18:00', sales: 15 },
-        ],
-      };
+      // Check if mocks are enabled
+      const { USE_MOCKS, mockDashboardStats } = await import('@/lib/mocks');
       
-      setStats(mockStats);
+      if (USE_MOCKS) {
+        // Load mock data from centralized file
+        setStats(mockDashboardStats);
+      } else {
+        // Load real data from database
+        // TODO: Implement real data loading
+        setStats({
+          dailySales: 0,
+          dailyRevenue: 0,
+          lowStockCount: 0,
+          totalCustomers: 0,
+          monthlyExpenses: 0,
+          topProducts: [],
+          peakHours: [],
+        });
+      }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
   };
 
-  const createLowStockNotification = () => {
-    addNotification({
-      type: 'low_stock',
-      title: 'Estoque Baixo',
-      message: `${stats.lowStockCount} produtos com estoque abaixo do mínimo. Verifique e reabasteça.`,
-      actionData: { count: stats.lowStockCount }
-    });
-  };
+  // Função removida - não criamos notificações quando não há dados mockados
 
   const handleRelatoriosPress = () => {
     console.log('Navegando para relatórios...');
@@ -242,7 +227,7 @@ export default function Dashboard() {
             <Text style={styles.sectionTitle}>Produtos Mais Vendidos</Text>
             {stats.topProducts.map((product, index) => (
               <View key={index} style={styles.topProductItem}>
-                <Text style={styles.productName}>{product.name}</Text>
+                <Text style={styles.productName} numberOfLines={1} ellipsizeMode="tail">{product.name}</Text>
                 <Text style={styles.productSales}>{product.sales}</Text>
               </View>
             ))}

@@ -1,16 +1,34 @@
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { validateSubscription } from './premium';
 
+// TODO: Instalar react-native-iap quando necessário
+// import RNIap, {
+//   purchaseUpdatedListener,
+//   purchaseErrorListener,
+//   type Product,
+//   type Purchase,
+//   type SubscriptionPurchase,
+//   finishTransaction,
+//   getProducts as getIAPProducts,
+//   getSubscriptions,
+//   requestPurchase,
+//   requestSubscription,
+//   initConnection,
+//   endConnection as endIAPConnection,
+//   getAvailablePurchases,
+// } from 'react-native-iap';
+
+// SKUs reais do Google Play Console
 export const PRODUCT_IDS = {
-  MONTHLY: Platform.select({
-    ios: 'premium_monthly',
-    android: 'premium_monthly',
-  }) as string,
-  ANNUAL: Platform.select({
-    ios: 'premium_annual',
-    android: 'premium_annual',
-  }) as string,
+  MONTHLY: 'premium_monthly_plan',
+  ANNUAL: 'premium_yearly_plan',
 };
+
+// IDs dos produtos para react-native-iap
+const SKUS = Platform.select({
+  ios: [PRODUCT_IDS.MONTHLY, PRODUCT_IDS.ANNUAL],
+  android: [PRODUCT_IDS.MONTHLY, PRODUCT_IDS.ANNUAL],
+}) as string[];
 
 export interface Product {
   productId: string;
@@ -31,6 +49,8 @@ export interface Purchase {
 }
 
 let iapAvailable = false;
+let purchaseUpdateSubscription: any = null;
+let purchaseErrorSubscription: any = null;
 
 export async function initializeIAP(): Promise<boolean> {
   try {
@@ -39,6 +59,8 @@ export async function initializeIAP(): Promise<boolean> {
       return false;
     }
 
+    // Simular inicialização do IAP para teste
+    console.log('IAP initialized for testing');
     iapAvailable = true;
     return true;
   } catch (error) {
@@ -54,24 +76,26 @@ export async function getProducts(): Promise<Product[]> {
       return [];
     }
 
+    // Simular produtos para teste
+    console.log('Getting products for testing');
     return [
       {
         productId: PRODUCT_IDS.MONTHLY,
-        title: 'Premium Mensal',
-        description: 'Acesso completo a todos os recursos premium por 1 mês',
-        price: '9.90',
-        localizedPrice: 'R$ 9,90',
+        title: 'Plano Premium Mensal',
+        description: 'Acesso a todos os recursos premium por 1 mês',
+        price: '9.99',
+        localizedPrice: 'R$ 9,99',
         currency: 'BRL',
-        type: 'subs',
+        type: 'subs' as const,
       },
       {
         productId: PRODUCT_IDS.ANNUAL,
-        title: 'Premium Anual',
-        description: 'Acesso completo a todos os recursos premium por 1 ano',
-        price: '99.90',
-        localizedPrice: 'R$ 99,90',
+        title: 'Plano Premium Anual',
+        description: 'Acesso a todos os recursos premium por 1 ano',
+        price: '99.99',
+        localizedPrice: 'R$ 99,99',
         currency: 'BRL',
-        type: 'subs',
+        type: 'subs' as const,
       },
     ];
   } catch (error) {
@@ -90,16 +114,26 @@ export async function purchaseSubscription(productId: string): Promise<{ success
       return { success: false, error: 'Purchases not available on web' };
     }
 
-    const platform = Platform.OS as 'android' | 'ios';
-    const mockPurchaseToken = `mock_token_${Date.now()}_${productId}`;
-
-    const result = await validateSubscription(platform, mockPurchaseToken, productId);
-
-    if (result.success) {
-      return { success: true };
-    } else {
-      return { success: false, error: result.error || 'Purchase validation failed' };
-    }
+    // Simular compra para teste - vai abrir o Google Pay
+    console.log(`Attempting to purchase: ${productId}`);
+    
+    // Simular abertura do Google Pay
+    Alert.alert(
+      'Google Pay',
+      `Tentando comprar: ${productId}\n\nIsso abriria o Google Pay em produção.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { 
+          text: 'Simular Sucesso', 
+          onPress: () => {
+            // Simular sucesso da compra
+            console.log('Purchase simulated successfully');
+          }
+        }
+      ]
+    );
+    
+    return { success: false, error: 'Simulação - Google Pay seria aberto aqui' };
   } catch (error) {
     console.error('Error purchasing subscription:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
@@ -116,7 +150,9 @@ export async function restorePurchases(): Promise<{ success: boolean; error?: st
       return { success: false, error: 'Restore not available on web', restored: 0 };
     }
 
-    return { success: true, restored: 0 };
+    // TODO: Implementar com react-native-iap quando instalado
+    console.log('restorePurchases temporarily disabled - install react-native-iap to enable');
+    return { success: false, error: 'IAP temporarily disabled - install react-native-iap to enable', restored: 0 };
   } catch (error) {
     console.error('Error restoring purchases:', error);
     return {
@@ -130,6 +166,8 @@ export async function restorePurchases(): Promise<{ success: boolean; error?: st
 export async function endConnection(): Promise<void> {
   try {
     if (iapAvailable) {
+      // TODO: Implementar com react-native-iap quando instalado
+      console.log('endConnection temporarily disabled - install react-native-iap to enable');
       iapAvailable = false;
     }
   } catch (error) {

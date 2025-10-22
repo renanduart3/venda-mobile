@@ -8,11 +8,14 @@ import {
   Home
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useSafeArea } from '@/hooks/useSafeArea';
 
 export default function TabLayout() {
   const { colors } = useTheme();
+  const { bottom, hasBottomBar } = useSafeArea();
   
   console.log('TabLayout colors:', colors);
+  console.log('Safe area bottom:', bottom, 'hasBottomBar:', hasBottomBar);
 
   return (
     <Tabs
@@ -24,9 +27,9 @@ export default function TabLayout() {
           backgroundColor: colors.surface,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          paddingBottom: 8,
+          paddingBottom: hasBottomBar ? bottom + 8 : 8,
           paddingTop: 8,
-          height: 65,
+          height: hasBottomBar ? 65 + bottom : 65,
         },
         tabBarItemStyle: {
           paddingVertical: 4,

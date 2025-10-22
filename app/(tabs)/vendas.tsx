@@ -12,13 +12,11 @@ import {
 import { TextInput } from '@/components/ui/TextInput';
 import { 
   Plus, 
-  Camera, 
   Minus, 
   ShoppingCart,
   Filter,
   Search,
   X,
-  Crown,
   Edit,
   Trash2
 } from 'lucide-react-native';
@@ -28,7 +26,6 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { isPremium, enablePremium } from '@/lib/premium';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 
 interface Product {
   id: string;
@@ -68,8 +65,6 @@ export default function Vendas() {
   const [customerSuggestionsVisible, setCustomerSuggestionsVisible] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'debit' | 'pix'>('credit');
   const [observation, setObservation] = useState('');
-  const [showCamera, setShowCamera] = useState(false);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   // Sales History State
   const [sales, setSales] = useState<Sale[]>([]);
@@ -142,32 +137,43 @@ export default function Vendas() {
   }, []);
 
   const loadData = async () => {
-    const { mockProducts, mockCustomers, mockSales } = await import('@/lib/mocks');
-    setProducts(mockProducts as Product[]);
-    setCustomers(mockCustomers);
+    // Check if mocks are enabled
+    const { USE_MOCKS, mockProducts, mockCustomers, mockSales } = await import('@/lib/mocks');
     
-    // Garantir que as vendas tenham timestamps válidos e converter para interface Sale
-    const salesWithValidTimestamps = (mockSales as any[]).map(sale => ({
-      id: sale.id,
-      items: sale.items.map((item: any) => ({
-        product: {
-          id: item.product_id,
-          name: item.product_name,
-          price: item.unit_price,
-          stock: 0,
-          type: 'product' as const
-        },
-        quantity: item.quantity,
-        total: item.total
-      })),
-      customer: sale.customer_name,
-      paymentMethod: sale.payment_method.toLowerCase() as 'cash' | 'credit' | 'debit' | 'pix',
-      total: sale.total,
-      timestamp: sale.created_at,
-      observation: sale.observation
-    }));
-    
-    setSales(salesWithValidTimestamps);
+    if (USE_MOCKS) {
+      // Load mock data from centralized file
+      setProducts(mockProducts as Product[]);
+      setCustomers(mockCustomers);
+      
+      // Garantir que as vendas tenham timestamps válidos e converter para interface Sale
+      const salesWithValidTimestamps = (mockSales as any[]).map(sale => ({
+        id: sale.id,
+        items: sale.items.map((item: any) => ({
+          product: {
+            id: item.product_id,
+            name: item.product_name,
+            price: item.unit_price,
+            stock: 0,
+            type: 'product' as const
+          },
+          quantity: item.quantity,
+          total: item.total
+        })),
+        customer: sale.customer_name,
+        paymentMethod: sale.payment_method.toLowerCase() as 'cash' | 'credit' | 'debit' | 'pix',
+        total: sale.total,
+        timestamp: sale.created_at,
+        observation: sale.observation
+      }));
+      
+      setSales(salesWithValidTimestamps);
+    } else {
+      // Load real data from database
+      // TODO: Implement real data loading
+      setProducts([]);
+      setCustomers([]);
+      setSales([]);
+    }
 
     const p = await isPremium();
     setPremium(p);
@@ -283,37 +289,6 @@ export default function Vendas() {
     );
   };
 
-  const handleBarcodeScanned = ({ data }: { data: string }) => {
-    const product = products.find(p => p.barcode === data);
-    if (product) {
-      addItemToSale(product);
-      setShowCamera(false);
-    } else {
-      Alert.alert('Produto Não Encontrado', 'Código de barras não encontrado no sistema.');
-    }
-  };
-
-  const openCamera = async () => {
-    if (!premium) {
-      Alert.alert('Premium necessário', 'Escanear produtos por código de barras é uma funcionalidade premium. Deseja ativar o premium agora?', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Ativar', onPress: async () => {
-          const ok = await enablePremium();
-          if (ok) setPremium(true);
-        } }
-      ]);
-      return;
-    }
-
-    if (!cameraPermission?.granted) {
-      const { granted } = await requestCameraPermission();
-      if (!granted) {
-        Alert.alert('Permissão Negada', 'É necessário permitir o acesso à câmera para ler códigos de barras.');
-        return;
-      }
-    }
-    setShowCamera(true);
-  };
 
   const handleProductSearchSelect = (product: Product) => {
     addItemToSale(product);
@@ -394,21 +369,6 @@ export default function Vendas() {
     },
     
     // New Sale Styles
-    scanButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.primary,
-      paddingVertical: 12,
-      borderRadius: 8,
-      marginBottom: 20,
-      gap: 8,
-    },
-    scanButtonText: {
-      color: colors.white,
-      fontSize: 16,
-      fontFamily: 'Inter-SemiBold',
-    },
     productsList: {
       marginBottom: 20,
     },
@@ -586,47 +546,10 @@ export default function Vendas() {
       textAlign: 'center',
     },
     
-    // Camera Modal
-    cameraModal: {
-      flex: 1,
-      backgroundColor: colors.black,
-    },
-    camera: {
-      flex: 1,
-    },
-    cameraControls: {
-      position: 'absolute',
-      top: 50,
-      right: 20,
-    },
-    closeButton: {
-      backgroundColor: colors.surface,
-      padding: 12,
-      borderRadius: 25,
-    },
   });
 
   const NewSaleTab = () => (
     <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-      {/* Barcode Scanner Button (premium only) */}
-      <TouchableOpacity
-        style={[styles.scanButton, !premium && { opacity: 0.6 }]}
-        onPress={openCamera}
-        disabled={!premium}
-      >
-        <Camera size={20} color={colors.white} />
-        <Text style={styles.scanButtonText}>Escanear Código de Barras</Text>
-      </TouchableOpacity>
-
-      {/* If not premium, show a small chip under the scanner that links to premium page */}
-      {!premium && (
-        <TouchableOpacity onPress={() => router.push('/premium')} style={{ alignSelf: 'center', marginBottom: 12 }}>
-            <Card style={{ paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', alignItems: 'center' }}>
-            <Crown size={14} color={colors.primary} style={{ marginRight: 8 }} />
-            <Text style={{ color: colors.text }}>Assinar Premium</Text>
-          </Card>
-        </TouchableOpacity>
-      )}
 
       {/* Product search / autocomplete */}
       <Card style={{ marginBottom: 16 }}>
@@ -888,27 +811,6 @@ export default function Vendas() {
       {/* Tab Content */}
       {activeTab === 'new' ? <NewSaleTab /> : <SalesHistoryTab />}
 
-      {/* Camera Modal */}
-      <Modal visible={showCamera} animationType="slide">
-        <View style={styles.cameraModal}>
-          <CameraView
-            style={styles.camera}
-            onBarcodeScanned={handleBarcodeScanned}
-            barcodeScannerSettings={{
-              barcodeTypes: ['qr', 'ean13', 'ean8', 'code128'],
-            }}
-          >
-            <View style={styles.cameraControls}>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setShowCamera(false)}
-              >
-                <X size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-          </CameraView>
-        </View>
-      </Modal>
     </View>
   );
 }

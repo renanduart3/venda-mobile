@@ -26,6 +26,7 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useRouter } from 'expo-router';
+import { SkeletonCard, EmptyState } from '@/components/ui/Skeleton';
 
 interface Customer {
   id: string;
@@ -45,6 +46,7 @@ export default function Clientes() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -59,9 +61,24 @@ export default function Clientes() {
   }, []);
 
   const loadCustomers = async () => {
-    const { mockCustomers, mockExpenses } = await import('@/lib/mocks');
-    setCustomers(mockCustomers as Customer[]);
-    setExpenses(mockExpenses);
+    setIsLoading(true);
+    try {
+      // Check if mocks are enabled
+      const { USE_MOCKS, mockCustomers, mockExpenses } = await import('@/lib/mocks');
+      
+      if (USE_MOCKS) {
+        // Load mock data from centralized file
+        setCustomers(mockCustomers as Customer[]);
+        setExpenses(mockExpenses);
+      } else {
+        // Load real data from database
+        // TODO: Implement real data loading
+        setCustomers([]);
+        setExpenses([]);
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getCustomerDebt = (customerId: string) => {
@@ -208,8 +225,6 @@ export default function Clientes() {
       backgroundColor: colors.surface,
       borderRadius: 8,
       paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
     },
     searchInput: {
       flex: 1,
@@ -218,6 +233,8 @@ export default function Clientes() {
       fontFamily: 'Inter-Regular',
       color: colors.text,
       marginLeft: 8,
+      backgroundColor: 'transparent',
+      borderWidth: 0,
     },
     addButton: {
       backgroundColor: colors.primary,
@@ -388,6 +405,17 @@ export default function Clientes() {
                 keyboardType="phone-pad"
               />
             </View>
+            <View style={styles.formGroup}>
+              <TouchableOpacity
+                style={styles.checkboxContainer}
+                onPress={() => setFormData({ ...formData, whatsapp: !formData.whatsapp })}
+              >
+                <View style={[styles.checkbox, formData.whatsapp && styles.checkboxChecked]}>
+                  {formData.whatsapp && <MessageCircle size={12} color={colors.white} />}
+                </View>
+                <Text style={styles.checkboxText}>Tem WhatsApp</Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>E-mail</Text>
@@ -402,17 +430,7 @@ export default function Clientes() {
               />
             </View>
 
-            <View style={styles.formGroup}>
-              <TouchableOpacity
-                style={styles.checkboxContainer}
-                onPress={() => setFormData({ ...formData, whatsapp: !formData.whatsapp })}
-              >
-                <View style={[styles.checkbox, formData.whatsapp && styles.checkboxChecked]}>
-                  {formData.whatsapp && <MessageCircle size={12} color={colors.white} />}
-                </View>
-                <Text style={styles.checkboxText}>Tem WhatsApp</Text>
-              </TouchableOpacity>
-            </View>
+            
           </ScrollView>
 
           <View style={styles.modalButtons}>
@@ -459,88 +477,109 @@ export default function Clientes() {
         </View>
 
         {/* Customers List */}
-        <FlatList
-          data={filteredCustomers}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item: customer }) => {
-            const debt = getCustomerDebt(customer.id);
+        {isLoading ? (
+          // Skeleton loading state
+          <View>
+            {[1, 2, 3].map((index) => (
+              <SkeletonCard key={index} />
+            ))}
+          </View>
+        ) : filteredCustomers.length === 0 ? (
+          // Empty state
+          <EmptyState
+            icon={<Users size={32} color={colors.primary} />}
+            title={searchQuery ? "Nenhum cliente encontrado" : "Nenhum cliente cadastrado"}
+            subtitle={searchQuery 
+              ? `Não encontramos clientes que correspondam a "${searchQuery}"`
+              : "Comece adicionando seus primeiros clientes"
+            }
+            actionText="Adicionar Cliente"
+            onAction={() => openCustomerModal()}
+          />
+        ) : (
+          <FlatList
+            data={filteredCustomers}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item: customer }) => {
+              const debt = getCustomerDebt(customer.id);
 
-            return (
-              <TouchableOpacity
-                onPress={() => router.push({ pathname: '/cliente-detalhe', params: { id: customer.id } } as any)}
-              >
-                <Card style={styles.customerCard}>
-                  <View style={styles.customerItem}>
-                    <View style={styles.customerIcon}>
-                      <Users size={24} color={colors.primary} />
-                    </View>
+              return (
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: '/cliente-detalhe', params: { id: customer.id } } as any)}
+                >
+                  <Card style={styles.customerCard}>
+                    <View style={styles.customerItem}>
+                      <View style={styles.customerIcon}>
+                        <Users size={24} color={colors.primary} />
+                      </View>
 
-                    <View style={styles.customerInfo}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <Text style={styles.customerName}>
-                          {customer.name}
-                        </Text>
-                        {debt > 0 ? (
-                          <View style={{ backgroundColor: colors.error + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginLeft: 8 }}>
-                            <Text style={{ fontSize: 11, fontFamily: 'Inter-Bold', color: colors.error }}>
-                              R$ {debt.toFixed(2)}
-                            </Text>
+                      <View style={styles.customerInfo}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <Text style={styles.customerName} numberOfLines={1} ellipsizeMode="tail">
+                            {customer.name}
+                          </Text>
+                          {debt > 0 ? (
+                            <View style={{ backgroundColor: colors.error + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginLeft: 8 }}>
+                              <Text style={{ fontSize: 11, fontFamily: 'Inter-Bold', color: colors.error }}>
+                                R$ {debt.toFixed(2)}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        {customer.phone ? (
+                          <View style={styles.contactInfo}>
+                            <Phone size={12} color={colors.textSecondary} />
+                            <TouchableOpacity onPress={(e) => { e.stopPropagation(); makePhoneCall(customer.phone!); }}>
+                              <Text style={[styles.contactText, { color: colors.primary }]} numberOfLines={1} ellipsizeMode="tail">
+                                {customer.phone}
+                              </Text>
+                            </TouchableOpacity>
+                            {customer.whatsapp ? (
+                              <TouchableOpacity
+                                style={[styles.contactButton, styles.whatsappButton]}
+                                onPress={(e) => { e.stopPropagation(); openWhatsApp(customer.phone!); }}
+                              >
+                                <MessageCircle size={12} color="white" />
+                              </TouchableOpacity>
+                            ) : null}
+                          </View>
+                        ) : null}
+
+                        {customer.email ? (
+                          <View style={styles.contactInfo}>
+                            <Mail size={12} color={colors.textSecondary} />
+                            <TouchableOpacity onPress={(e) => { e.stopPropagation(); sendEmail(customer.email!); }}>
+                              <Text style={[styles.contactText, { color: colors.primary }]} numberOfLines={1} ellipsizeMode="tail">
+                                {customer.email}
+                              </Text>
+                            </TouchableOpacity>
                           </View>
                         ) : null}
                       </View>
 
-                      {customer.phone ? (
-                        <View style={styles.contactInfo}>
-                          <Phone size={12} color={colors.textSecondary} />
-                          <TouchableOpacity onPress={(e) => { e.stopPropagation(); makePhoneCall(customer.phone!); }}>
-                            <Text style={[styles.contactText, { color: colors.primary }]}>
-                              {customer.phone}
-                            </Text>
-                          </TouchableOpacity>
-                          {customer.whatsapp ? (
-                            <TouchableOpacity
-                              style={[styles.contactButton, styles.whatsappButton]}
-                              onPress={(e) => { e.stopPropagation(); openWhatsApp(customer.phone!); }}
-                            >
-                              <MessageCircle size={12} color="white" />
-                            </TouchableOpacity>
-                          ) : null}
-                        </View>
-                      ) : null}
-
-                      {customer.email ? (
-                        <View style={styles.contactInfo}>
-                          <Mail size={12} color={colors.textSecondary} />
-                          <TouchableOpacity onPress={(e) => { e.stopPropagation(); sendEmail(customer.email!); }}>
-                            <Text style={[styles.contactText, { color: colors.primary }]}>
-                              {customer.email}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
+                      <View style={styles.actions}>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={(e) => { e.stopPropagation(); openCustomerModal(customer); }}
+                        >
+                          <Edit size={16} color={colors.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.actionButton}
+                          onPress={(e) => { e.stopPropagation(); deleteCustomer(customer); }}
+                        >
+                          <Trash2 size={16} color={colors.error} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
-
-                    <View style={styles.actions}>
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={(e) => { e.stopPropagation(); openCustomerModal(customer); }}
-                      >
-                        <Edit size={16} color={colors.primary} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={(e) => { e.stopPropagation(); deleteCustomer(customer); }}
-                      >
-                        <Trash2 size={16} color={colors.error} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </Card>
-              </TouchableOpacity>
-            );
-          }}
-        />
+                  </Card>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        )}
       </View>
 
       <CustomerModal />

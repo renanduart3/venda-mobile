@@ -258,7 +258,7 @@ export default function PremiumPage() {
             • <Text style={{fontWeight: 'bold'}}>Backup automático:</Text> Seus dados ficam seguros na nuvem{'\n'}
             • <Text style={{fontWeight: 'bold'}}>Relatórios detalhados:</Text> Análises completas em PDF{'\n'}
             • <Text style={{fontWeight: 'bold'}}>Exportação de dados:</Text> Backup manual em CSV{'\n'}
-            • <Text style={{fontWeight: 'bold'}}>Scanner de código de barras:</Text> Em breve para vendas rápidas
+            • <Text style={{fontWeight: 'bold'}}>Sincronização na nuvem:</Text> Acesso aos dados de qualquer lugar
           </Text>
         </Card>
 

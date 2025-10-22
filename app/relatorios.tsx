@@ -25,6 +25,9 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { router } from 'expo-router';
 import { isPremium } from '@/lib/premium';
+// TODO: Implementar funções de relatórios avançados
+// import { getReportData } from '@/lib/advanced-reports';
+// import { generateReportHTML, reportToPDF } from '@/lib/export';
 
 const premiumReports = [
   { 
@@ -91,18 +94,26 @@ export default function Relatorios() {
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year'>('month');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedFormat, setSelectedFormat] = useState<'pdf' | 'excel' | null>(null);
   const [showPeriodModal, setShowPeriodModal] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [userIsPremium, setUserIsPremium] = useState(false);
+  const [userIsPremium, setUserIsPremium] = useState(true); // Iniciar como premium para evitar flash
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     checkPremiumStatus();
   }, []);
 
   const checkPremiumStatus = async () => {
-    const premium = await isPremium();
-    setUserIsPremium(premium);
+    try {
+      const premium = await isPremium();
+      setUserIsPremium(premium);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  // Função de teste removida para produção
 
   const handleReportPress = (report: any) => {
     if (!userIsPremium) {
@@ -118,28 +129,51 @@ export default function Relatorios() {
     }
     
     setSelectedReport(report);
+    setSelectedFormat(null); // Reset formato selecionado
     setShowPeriodModal(true);
   };
 
-  const handleGenerateReport = async (exportFormat: 'pdf' | 'excel') => {
-    if (!selectedReport) return;
+  const handleGenerateReport = async () => {
+    if (!selectedReport || !selectedFormat) return;
 
     setIsGenerating(true);
     
     try {
-      // Simular geração do relatório
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // TODO: Implementar coleta de dados reais do banco
+      // Por enquanto, simular dados
+      const reportData = [];
       
-      Alert.alert(
-        'Relatório Gerado',
-        `O relatório "${selectedReport.title}" foi gerado com sucesso e será baixado em breve.`,
-        [{ text: 'OK', onPress: () => {
-          setShowPeriodModal(false);
-          setSelectedReport(null);
-        }}]
-      );
+      if (selectedFormat === 'pdf') {
+        // TODO: Implementar geração de PDF real
+        // Por enquanto, simular
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        Alert.alert(
+          'PDF Gerado',
+          `O relatório "${selectedReport.title}" foi gerado em PDF com sucesso!\n\nDados encontrados: ${Array.isArray(reportData) ? reportData.length : 'N/A'} registros`,
+          [{ text: 'OK', onPress: () => {
+            setShowPeriodModal(false);
+            setSelectedReport(null);
+            setSelectedFormat(null);
+          }}]
+        );
+      } else {
+        // Simular geração do relatório Excel
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        Alert.alert(
+          'Relatório Gerado',
+          `O relatório "${selectedReport.title}" foi gerado com sucesso!\n\nDados encontrados: ${Array.isArray(reportData) ? reportData.length : 'N/A'} registros`,
+          [{ text: 'OK', onPress: () => {
+            setShowPeriodModal(false);
+            setSelectedReport(null);
+            setSelectedFormat(null);
+          }}]
+        );
+      }
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível gerar o relatório. Tente novamente.');
+      console.error('Erro ao gerar relatório:', error);
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Não foi possível gerar o relatório. Tente novamente.');
     } finally {
       setIsGenerating(false);
     }
@@ -381,6 +415,41 @@ export default function Relatorios() {
       fontFamily: 'Inter-SemiBold',
       color: colors.white,
     },
+
+    // Seletor de Mês
+    monthFilterContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      padding: 4,
+    },
+    yearFilterContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: 8,
+      padding: 4,
+    },
+    monthButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 6,
+    },
+    monthButtonText: {
+      fontSize: 18,
+      fontFamily: 'Inter-Bold',
+      color: colors.primary,
+    },
+    monthText: {
+      fontSize: 16,
+      fontFamily: 'Inter-SemiBold',
+      color: colors.text,
+      marginHorizontal: 20,
+      textTransform: 'capitalize',
+    },
   });
 
   return (
@@ -392,21 +461,27 @@ export default function Relatorios() {
       />
       
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {!userIsPremium && (
-          <View style={styles.premiumWarning}>
-            <Text style={styles.warningTitle}>🔒 Funcionalidade Premium</Text>
-            <Text style={styles.warningText}>
-              Os relatórios avançados estão disponíveis apenas para usuários premium. 
-              Faça upgrade para acessar todos os recursos.
-            </Text>
-            <TouchableOpacity 
-              style={styles.upgradeButton}
-              onPress={() => router.push('/planos')}
-            >
-              <Text style={styles.upgradeButtonText}>Fazer Upgrade</Text>
-            </TouchableOpacity>
+        {isLoading ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <Text style={{ color: colors.textSecondary }}>Carregando...</Text>
           </View>
-        )}
+        ) : (
+          <>
+            {!userIsPremium && (
+              <View style={styles.premiumWarning}>
+                <Text style={styles.warningTitle}>🔒 Funcionalidade Premium</Text>
+                <Text style={styles.warningText}>
+                  Os relatórios avançados estão disponíveis apenas para usuários premium. 
+                  Faça upgrade para acessar todos os recursos.
+                </Text>
+                <TouchableOpacity 
+                  style={styles.upgradeButton}
+                  onPress={() => router.push('/planos')}
+                >
+                  <Text style={styles.upgradeButtonText}>Fazer Upgrade</Text>
+                </TouchableOpacity>
+              </View>
+            )}
         
         <Text style={[styles.sectionTitle, { marginTop: 20, marginBottom: 16 }]}>
           Relatórios Avançados
@@ -431,8 +506,8 @@ export default function Relatorios() {
                     <View style={[styles.reportIcon, !userIsPremium && styles.disabledIcon]}>
                       {IconComponent && <IconComponent size={24} color={userIsPremium ? colors.primary : colors.textSecondary} />}
                     </View>
-                    <Text style={[styles.reportTitle, !userIsPremium && styles.disabledText]}>{report.title}</Text>
-                    <Text style={[styles.reportDescription, !userIsPremium && styles.disabledText]}>{report.description}</Text>
+                    <Text style={[styles.reportTitle, !userIsPremium && styles.disabledText]} numberOfLines={2} ellipsizeMode="tail">{report.title}</Text>
+                    <Text style={[styles.reportDescription, !userIsPremium && styles.disabledText]} numberOfLines={3} ellipsizeMode="tail">{report.description}</Text>
                   </View>
                   <View style={[styles.premiumBadge, !userIsPremium && styles.disabledBadge]}>
                     <Text style={styles.premiumBadgeText}>PREMIUM</Text>
@@ -442,6 +517,8 @@ export default function Relatorios() {
             );
           })}
         </View>
+        </>
+        )}
       </ScrollView>
 
       {/* Period Selection Modal */}
@@ -487,7 +564,59 @@ export default function Relatorios() {
               </View>
               
               <View style={styles.periodInfo}>
-                <Text style={styles.periodText}>{getPeriodText()}</Text>
+                {selectedPeriod === 'month' ? (
+                  <View style={styles.monthFilterContainer}>
+                    <TouchableOpacity 
+                      style={styles.monthButton}
+                      onPress={() => {
+                        const newMonth = selectedMonth - 1;
+                        if (newMonth < 1) {
+                          setSelectedMonth(12);
+                          setSelectedYear(selectedYear - 1);
+                        } else {
+                          setSelectedMonth(newMonth);
+                        }
+                      }}
+                    >
+                      <Text style={styles.monthButtonText}>‹</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.monthText}>
+                      {getPeriodText()}
+                    </Text>
+                    <TouchableOpacity 
+                      style={styles.monthButton}
+                      onPress={() => {
+                        const newMonth = selectedMonth + 1;
+                        if (newMonth > 12) {
+                          setSelectedMonth(1);
+                          setSelectedYear(selectedYear + 1);
+                        } else {
+                          setSelectedMonth(newMonth);
+                        }
+                      }}
+                    >
+                      <Text style={styles.monthButtonText}>›</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.yearFilterContainer}>
+                    <TouchableOpacity 
+                      style={styles.monthButton}
+                      onPress={() => setSelectedYear(selectedYear - 1)}
+                    >
+                      <Text style={styles.monthButtonText}>‹</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.monthText}>
+                      {getPeriodText()}
+                    </Text>
+                    <TouchableOpacity 
+                      style={styles.monthButton}
+                      onPress={() => setSelectedYear(selectedYear + 1)}
+                    >
+                      <Text style={styles.monthButtonText}>›</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             </View>
             
@@ -495,39 +624,61 @@ export default function Relatorios() {
               <Text style={styles.sectionTitle}>Formato de Exportação</Text>
               <View style={styles.exportButtons}>
                 <TouchableOpacity
-                  style={styles.exportButton}
-                  onPress={() => handleGenerateReport('pdf')}
-                  disabled={isGenerating}
+                  style={[
+                    styles.exportButton,
+                    selectedFormat === 'pdf' && styles.exportButtonActive
+                  ]}
+                  onPress={() => setSelectedFormat('pdf')}
                 >
-                  <Download size={16} color={colors.primary} />
-                  <Text style={styles.exportButtonText}>PDF</Text>
+                  <Download size={16} color={selectedFormat === 'pdf' ? colors.white : colors.primary} />
+                  <Text style={[
+                    styles.exportButtonText,
+                    selectedFormat === 'pdf' && styles.exportButtonTextActive
+                  ]}>PDF</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity
-                  style={styles.exportButton}
-                  onPress={() => handleGenerateReport('excel')}
-                  disabled={isGenerating}
+                  style={[
+                    styles.exportButton,
+                    selectedFormat === 'excel' && styles.exportButtonActive
+                  ]}
+                  onPress={() => setSelectedFormat('excel')}
                 >
-                  <FileSpreadsheet size={16} color={colors.primary} />
-                  <Text style={styles.exportButtonText}>Excel</Text>
+                  <FileSpreadsheet size={16} color={selectedFormat === 'excel' ? colors.white : colors.primary} />
+                  <Text style={[
+                    styles.exportButtonText,
+                    selectedFormat === 'excel' && styles.exportButtonTextActive
+                  ]}>Excel</Text>
                 </TouchableOpacity>
               </View>
             </View>
             
             <View style={styles.generateButtons}>
               <TouchableOpacity
-                style={[styles.generateButton, { backgroundColor: colors.primary }]}
-                onPress={() => handleGenerateReport('pdf')}
-                disabled={isGenerating}
+                style={[
+                  styles.generateButton, 
+                  { 
+                    backgroundColor: (selectedFormat && selectedPeriod) ? colors.primary : colors.border,
+                    opacity: (selectedFormat && selectedPeriod) ? 1 : 0.5
+                  }
+                ]}
+                onPress={handleGenerateReport}
+                disabled={isGenerating || !selectedFormat || !selectedPeriod}
               >
-                <Text style={{ color: colors.white, textAlign: 'center' }}>
+                <Text style={{ 
+                  color: (selectedFormat && selectedPeriod) ? colors.white : colors.text, 
+                  textAlign: 'center' 
+                }}>
                   {isGenerating ? "Gerando..." : "Gerar Relatório"}
                 </Text>
               </TouchableOpacity>
               
               <TouchableOpacity
                 style={[styles.generateButton, { backgroundColor: colors.border }]}
-                onPress={() => setShowPeriodModal(false)}
+                onPress={() => {
+                  setShowPeriodModal(false);
+                  setSelectedFormat(null);
+                }}
               >
                 <Text style={{ color: colors.text, textAlign: 'center' }}>Cancelar</Text>
               </TouchableOpacity>

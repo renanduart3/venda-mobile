@@ -1,4 +1,5 @@
 import db from './db';
+import { isPremium } from './premium';
 
 type Period = 'monthly' | 'yearly' | 'custom';
 
@@ -6,6 +7,36 @@ interface ReportOptions {
   period: Period;
   start?: string; // ISO date
   end?: string; // ISO date
+}
+
+interface ProductSalesData {
+  productId: string;
+  productName: string;
+  totalSold: number;
+  totalRevenue: number;
+  averagePrice: number;
+}
+
+interface CustomerData {
+  customerId: string;
+  customerName: string;
+  totalPurchases: number;
+  totalSpent: number;
+  lastPurchase: string;
+  purchaseFrequency: number;
+}
+
+interface PaymentMethodData {
+  method: string;
+  totalAmount: number;
+  transactionCount: number;
+  percentage: number;
+}
+
+interface HourlySalesData {
+  hour: number;
+  sales: number;
+  transactions: number;
 }
 
 function ensureMinOneMonth(start: Date, end: Date) {

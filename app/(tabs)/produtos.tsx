@@ -23,6 +23,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { SkeletonCard, EmptyState } from '@/components/ui/Skeleton';
 
 interface Product {
   id: string;
@@ -43,8 +44,10 @@ export default function Produtos() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -61,15 +64,56 @@ export default function Produtos() {
     loadProducts();
   }, []);
 
+  // Reset to first page when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
   const loadProducts = async () => {
-    const { mockProducts } = await import('@/lib/mocks');
-    setProducts(mockProducts as Product[]);
+    setIsLoading(true);
+    try {
+      // Check if mocks are enabled
+      const { USE_MOCKS, mockProducts } = await import('@/lib/mocks');
+      
+      if (USE_MOCKS) {
+        // Load mock data from centralized file
+        setProducts(mockProducts as Product[]);
+      } else {
+        // Load real data from database
+        // TODO: Implement real data loading
+        setProducts([]);
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const filteredProducts = products.filter(product =>
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     product.barcode?.includes(searchQuery)
   );
+
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const handleItemsPerPageChange = (newItemsPerPage: number) => {
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1); // Reset to first page when changing items per page
+  };
 
   const openProductModal = (product?: Product) => {
     if (product) {
@@ -209,8 +253,6 @@ export default function Produtos() {
       backgroundColor: colors.surface,
       borderRadius: 8,
       paddingHorizontal: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
     },
     searchInput: {
       flex: 1,
@@ -219,6 +261,8 @@ export default function Produtos() {
       fontFamily: 'Inter-Regular',
       color: colors.text,
       marginLeft: 8,
+      backgroundColor: 'transparent',
+      borderWidth: 0,
     },
     addButton: {
       backgroundColor: colors.primary,
@@ -371,6 +415,37 @@ export default function Produtos() {
     },
     modalButton: {
       flex: 1,
+    },
+
+    // Pagination styles
+    paginationContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 20,
+      paddingVertical: 16,
+    },
+    paginationButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 6,
+      backgroundColor: colors.primary,
+    },
+    paginationButtonDisabled: {
+      backgroundColor: colors.border,
+    },
+    paginationText: {
+      color: colors.white,
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+    },
+    paginationTextDisabled: {
+      color: colors.textSecondary,
+    },
+    paginationInfo: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+      color: colors.textSecondary,
     },
   });
 
@@ -541,7 +616,7 @@ export default function Produtos() {
                   styles.itemsPerPageButton,
                   itemsPerPage === count && styles.itemsPerPageButtonActive,
                 ]}
-                onPress={() => setItemsPerPage(count)}
+                onPress={() => handleItemsPerPageChange(count)}
               >
                 <Text
                   style={[
@@ -557,73 +632,135 @@ export default function Produtos() {
         </View>
 
         {/* Products List */}
-        <FlatList
-          data={filteredProducts.slice(0, itemsPerPage)}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          renderItem={({ item: product }) => {
-            const stockStatus = getStockStatus(product);
-            
-            return (
-              <Card style={styles.productCard}>
-                <View style={styles.productItem}>
-                  <Image
-                    source={{ uri: product.image_url || 'https://images.pexels.com/photos/264547/pexels-photo-264547.jpeg?auto=compress&cs=tinysrgb&w=400' }}
-                    style={styles.productImage}
-                    defaultSource={{ uri: 'https://images.pexels.com/photos/264547/pexels-photo-264547.jpeg?auto=compress&cs=tinysrgb&w=400' }}
-                  />
-                  
-                  <View style={styles.productInfo}>
-                    <Text style={styles.productName} numberOfLines={1}>
-                      {product.name}
-                    </Text>
-                    {product.type === 'service' && product.description && (
-                      <Text style={[styles.stockText, { color: colors.textSecondary, marginBottom: 4 }]} numberOfLines={1}>
-                        {product.description}
+        {isLoading ? (
+          // Skeleton loading state
+          <View>
+            {[1, 2, 3].map((index) => (
+              <SkeletonCard key={index} />
+            ))}
+          </View>
+        ) : filteredProducts.length === 0 ? (
+          // Empty state
+          <EmptyState
+            icon={<Package size={32} color={colors.primary} />}
+            title={searchQuery ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
+            subtitle={searchQuery 
+              ? `Não encontramos produtos que correspondam a "${searchQuery}"`
+              : "Comece adicionando seus primeiros produtos ou serviços"
+            }
+            actionText="Adicionar Produto"
+            onAction={() => openProductModal()}
+          />
+        ) : (
+          <FlatList
+            data={paginatedProducts}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+            renderItem={({ item: product }) => {
+              const stockStatus = getStockStatus(product);
+              
+              return (
+                <Card style={styles.productCard}>
+                  <View style={styles.productItem}>
+                    <Image
+                      source={{ uri: product.image_url || 'https://images.pexels.com/photos/264547/pexels-photo-264547.jpeg?auto=compress&cs=tinysrgb&w=400' }}
+                      style={styles.productImage}
+                      defaultSource={{ uri: 'https://images.pexels.com/photos/264547/pexels-photo-264547.jpeg?auto=compress&cs=tinysrgb&w=400' }}
+                    />
+                    
+                    <View style={styles.productInfo}>
+                      <Text style={styles.productName} numberOfLines={2} ellipsizeMode="tail">
+                        {product.name}
                       </Text>
-                    )}
-                    <Text style={styles.productPrice}>
-                      R$ {product.price.toFixed(2)}
-                    </Text>
-                    {product.type !== 'service' && (
-                      <>
-                        <View style={styles.stockInfo}>
-                          <Package size={12} color={stockStatus.color} />
-                          <Text style={[styles.stockText, { color: stockStatus.color }]}>
-                            {product.stock} em estoque
-                          </Text>
-                        </View>
-                        {stockStatus.status !== 'ok' && (
-                          <View style={styles.stockAlert}>
-                            <AlertTriangle size={12} color={stockStatus.color} />
-                            <Text style={[styles.stockAlertText, { color: stockStatus.color }]}>
-                              {stockStatus.text}
+                      {product.type === 'service' && product.description && (
+                        <Text style={[styles.stockText, { color: colors.textSecondary, marginBottom: 4 }]} numberOfLines={2} ellipsizeMode="tail">
+                          {product.description}
+                        </Text>
+                      )}
+                      <Text style={styles.productPrice}>
+                        R$ {product.price.toFixed(2)}
+                      </Text>
+                      {product.type !== 'service' && (
+                        <>
+                          <View style={styles.stockInfo}>
+                            <Package size={12} color={stockStatus.color} />
+                            <Text style={[styles.stockText, { color: stockStatus.color }]}>
+                              {product.stock} em estoque
                             </Text>
                           </View>
-                        )}
-                      </>
-                    )}
-                  </View>
+                          {stockStatus.status !== 'ok' && (
+                            <View style={styles.stockAlert}>
+                              <AlertTriangle size={12} color={stockStatus.color} />
+                              <Text style={[styles.stockAlertText, { color: stockStatus.color }]}>
+                                {stockStatus.text}
+                              </Text>
+                            </View>
+                          )}
+                        </>
+                      )}
+                    </View>
 
-                  <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => openProductModal(product)}
-                    >
-                      <Edit size={16} color={colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => deleteProduct(product)}
-                    >
-                      <Trash2 size={16} color={colors.error} />
-                    </TouchableOpacity>
+                    <View style={styles.actions}>
+                      <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => openProductModal(product)}
+                      >
+                        <Edit size={16} color={colors.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => deleteProduct(product)}
+                      >
+                        <Trash2 size={16} color={colors.error} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              </Card>
-            );
-          }}
-        />
+                </Card>
+              );
+            }}
+          />
+        )}
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <View style={styles.paginationContainer}>
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                currentPage === 1 && styles.paginationButtonDisabled
+              ]}
+              onPress={goToPreviousPage}
+              disabled={currentPage === 1}
+            >
+              <Text style={[
+                styles.paginationText,
+                currentPage === 1 && styles.paginationTextDisabled
+              ]}>
+                Anterior
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.paginationInfo}>
+              Página {currentPage} de {totalPages}
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.paginationButton,
+                currentPage === totalPages && styles.paginationButtonDisabled
+              ]}
+              onPress={goToNextPage}
+              disabled={currentPage === totalPages}
+            >
+              <Text style={[
+                styles.paginationText,
+                currentPage === totalPages && styles.paginationTextDisabled
+              ]}>
+                Próxima
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       <ProductModal />

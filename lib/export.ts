@@ -190,3 +190,69 @@ export async function reportToPDF(html: string) {
   }
   return uri;
 }
+
+// Função para gerar HTML de relatório
+export function generateReportHTML(reportTitle: string, reportData: any[], period: string): string {
+  const currentDate = new Date().toLocaleDateString('pt-BR');
+  
+  let tableRows = '';
+  if (Array.isArray(reportData) && reportData.length > 0) {
+    const headers = Object.keys(reportData[0]);
+    const headerRow = headers.map(header => 
+      `<th style="border: 1px solid #ddd; padding: 8px; background-color: #f2f2f2;">${header}</th>`
+    ).join('');
+    
+    const dataRows = reportData.map(row => {
+      const cells = headers.map(header => {
+        const value = row[header];
+        const formattedValue = typeof value === 'number' ? value.toLocaleString('pt-BR') : value;
+        return `<td style="border: 1px solid #ddd; padding: 8px;">${formattedValue}</td>`;
+      }).join('');
+      return `<tr>${cells}</tr>`;
+    }).join('');
+    
+    tableRows = `
+      <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+        <thead>
+          <tr>${headerRow}</tr>
+        </thead>
+        <tbody>
+          ${dataRows}
+        </tbody>
+      </table>
+    `;
+  } else {
+    tableRows = '<p>Nenhum dado encontrado para o período selecionado.</p>';
+  }
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>${reportTitle}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .title { font-size: 24px; font-weight: bold; color: #333; }
+        .subtitle { font-size: 16px; color: #666; margin-top: 10px; }
+        .date { font-size: 14px; color: #888; margin-top: 5px; }
+        .summary { margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">${reportTitle}</div>
+        <div class="subtitle">Período: ${period}</div>
+        <div class="date">Gerado em: ${currentDate}</div>
+      </div>
+      
+      <div class="summary">
+        <strong>Resumo:</strong> ${Array.isArray(reportData) ? reportData.length : 0} registros encontrados
+      </div>
+      
+      ${tableRows}
+    </body>
+    </html>
+  `;
+}
