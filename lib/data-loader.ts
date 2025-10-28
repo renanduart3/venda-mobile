@@ -2,7 +2,7 @@
  * Centralized data loading utilities to avoid code duplication
  */
 
-import { USE_MOCKS, mockProducts, mockCustomers, mockSales, mockExpenses, mockDashboardStats } from './mocks';
+import { USE_MOCKS, mockProducts, mockCustomers, mockSales, mockExpenses, mockDashboardStats, mockStoreSettings } from './mocks';
 
 /**
  * Generic data loader that handles mock vs real data
@@ -53,4 +53,11 @@ export async function loadExpenses() {
  */
 export async function loadDashboardStats() {
   return loadData(mockDashboardStats);
+}
+
+/**
+ * Load store settings from mock or database
+ */
+export async function loadStoreSettings() {
+  return loadData(mockStoreSettings);
 }

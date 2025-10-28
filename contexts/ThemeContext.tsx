@@ -77,11 +77,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const isDark = theme === 'dark' || (theme === 'system' && systemTheme === 'dark');
 
-  const colors = {
+  // Memoize colors object to avoid recreating on every render (performance optimization)
+  const colors = React.useMemo(() => ({
     ...(isDark ? darkColors : lightColors),
     primary: customPrimary,
     secondary: customSecondary,
-  };
+  }), [isDark, customPrimary, customSecondary]);
 
   useEffect(() => {
     loadThemeSettings();
@@ -107,30 +108,33 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const setTheme = async (newTheme: Theme) => {
+  const setTheme = React.useCallback(async (newTheme: Theme) => {
     setThemeState(newTheme);
     await AsyncStorage.setItem('theme', newTheme);
-  };
+  }, []);
 
-  const setPrimaryColor = async (color: string) => {
+  const setPrimaryColor = React.useCallback(async (color: string) => {
     setCustomPrimary(color);
     await AsyncStorage.setItem('primaryColor', color);
-  };
+  }, []);
 
-  const setSecondaryColor = async (color: string) => {
+  const setSecondaryColor = React.useCallback(async (color: string) => {
     setCustomSecondary(color);
     await AsyncStorage.setItem('secondaryColor', color);
-  };
+  }, []);
+
+  // Memoize context value to prevent unnecessary re-renders (performance optimization)
+  const contextValue = React.useMemo(() => ({
+    theme,
+    isDark,
+    colors,
+    setTheme,
+    setPrimaryColor,
+    setSecondaryColor,
+  }), [theme, isDark, colors, setTheme, setPrimaryColor, setSecondaryColor]);
 
   return (
-    <ThemeContext.Provider value={{
-      theme,
-      isDark,
-      colors,
-      setTheme,
-      setPrimaryColor,
-      setSecondaryColor,
-    }}>
+    <ThemeContext.Provider value={contextValue}>
       {children}
     </ThemeContext.Provider>
   );
