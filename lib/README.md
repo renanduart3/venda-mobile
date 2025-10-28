@@ -118,7 +118,7 @@ const filtered = customers.filter(c =>
 
 ### After (Using Utility):
 ```typescript
-const { filterCustomers } = require('@/lib/utils');
+import { filterCustomers } from '@/lib/utils';
 const filtered = filterCustomers(customers, query);
 ```
 

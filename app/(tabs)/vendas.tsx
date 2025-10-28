@@ -26,6 +26,7 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { isPremium, enablePremium } from '@/lib/premium';
+import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp } from '@/lib/utils';
 
 interface Product {
   id: string;
@@ -80,7 +81,6 @@ export default function Vendas() {
 
   // Função para filtrar vendas do dia atual
   const getTodaySales = () => {
-    const { getTodaySales: getTodaySalesUtil } = require('@/lib/utils');
     return getTodaySalesUtil(sales);
   };
 
@@ -158,10 +158,7 @@ export default function Vendas() {
     setPremium(p);
   };
 
-  const filteredCustomers = (() => {
-    const { filterCustomers } = require('@/lib/utils');
-    return filterCustomers(customers, customerSearch);
-  })();
+  const filteredCustomers = filterCustomers(customers, customerSearch);
 
   const handleCustomerSelect = (customer: any) => {
     setSelectedCustomer(customer.name);
@@ -737,10 +734,7 @@ export default function Vendas() {
               
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
-                  {(() => {
-                    const { formatTimestamp } = require('@/lib/utils');
-                    return formatTimestamp(sale.timestamp);
-                  })()}
+                  {formatTimestamp(sale.timestamp)}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <Text style={{ 
