@@ -79,11 +79,6 @@ export default function Vendas() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
 
-  // Função para filtrar vendas do dia atual
-  const getTodaySales = () => {
-    return getTodaySalesUtil(sales);
-  };
-
   // Função para deletar venda
   const handleDeleteSale = (saleId: string) => {
     Alert.alert(
@@ -672,7 +667,7 @@ export default function Vendas() {
   );
 
   const SalesHistoryTab = () => {
-    const todaySales = getTodaySales();
+    const todaySales = getTodaySalesUtil(sales);
     
     return (
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
