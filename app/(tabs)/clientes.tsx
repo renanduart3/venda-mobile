@@ -63,19 +63,17 @@ export default function Clientes() {
   const loadCustomers = async () => {
     setIsLoading(true);
     try {
-      // Check if mocks are enabled
-      const { USE_MOCKS, mockCustomers, mockExpenses } = await import('@/lib/mocks');
-      
-      if (USE_MOCKS) {
-        // Load mock data from centralized file
-        setCustomers(mockCustomers as Customer[]);
-        setExpenses(mockExpenses);
-      } else {
-        // Load real data from database
-        // TODO: Implement real data loading
-        setCustomers([]);
-        setExpenses([]);
-      }
+      const { loadCustomers: loadCustomersData, loadExpenses } = await import('@/lib/data-loader');
+      const [customersData, expensesData] = await Promise.all([
+        loadCustomersData(),
+        loadExpenses()
+      ]);
+      setCustomers(customersData as Customer[]);
+      setExpenses(expensesData);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      setCustomers([]);
+      setExpenses([]);
     } finally {
       setIsLoading(false);
     }

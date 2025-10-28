@@ -1,6 +1,10 @@
 // Configuração para ativar/desativar mocks
 export const USE_MOCKS = false; // Ativado para visualizar relatórios premium
 
+// Cache timestamps to avoid repeated Date object creation (performance optimization)
+const CURRENT_TIMESTAMP = new Date().toISOString();
+const CURRENT_MONTH = CURRENT_TIMESTAMP.slice(0, 7);
+
 export const mockProducts = [
   {
     id: '1',
@@ -11,8 +15,8 @@ export const mockProducts = [
     barcode: '123456789',
     image_url: 'https://images.pexels.com/photos/50593/coca-cola-cold-drink-soft-drink-coke-50593.jpeg?auto=compress&cs=tinysrgb&w=400',
     type: 'product',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '2',
@@ -22,8 +26,8 @@ export const mockProducts = [
     min_stock: 20,
     type: 'product',
     image_url: 'https://images.pexels.com/photos/209206/pexels-photo-209206.jpeg?auto=compress&cs=tinysrgb&w=400',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '3',
@@ -33,8 +37,8 @@ export const mockProducts = [
     min_stock: 15,
     type: 'product',
     image_url: 'https://images.pexels.com/photos/416354/pexels-photo-416354.jpeg?auto=compress&cs=tinysrgb&w=400',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '4',
@@ -44,8 +48,8 @@ export const mockProducts = [
     min_stock: 5,
     type: 'product',
     image_url: 'https://images.pexels.com/photos/4465831/pexels-photo-4465831.jpeg?auto=compress&cs=tinysrgb&w=400',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '5',
@@ -55,8 +59,8 @@ export const mockProducts = [
     min_stock: 0,
     type: 'service',
     description: 'Corte de cabelo tradicional',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '6',
@@ -66,8 +70,8 @@ export const mockProducts = [
     min_stock: 0,
     type: 'service',
     description: 'Serviço de manicure completo',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '7',
@@ -77,8 +81,8 @@ export const mockProducts = [
     min_stock: 15,
     type: 'product',
     image_url: 'https://images.pexels.com/photos/1267320/pexels-photo-1267320.jpeg?auto=compress&cs=tinysrgb&w=400',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '8',
@@ -88,8 +92,8 @@ export const mockProducts = [
     min_stock: 8,
     type: 'product',
     image_url: 'https://images.pexels.com/photos/65882/chocolate-dark-coffee-confiserie-65882.jpeg?auto=compress&cs=tinysrgb&w=400',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '9',
@@ -99,8 +103,8 @@ export const mockProducts = [
     min_stock: 5,
     type: 'product',
     image_url: 'https://images.pexels.com/photos/302899/pexels-photo-302899.jpeg?auto=compress&cs=tinysrgb&w=400',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '10',
@@ -110,8 +114,8 @@ export const mockProducts = [
     min_stock: 10,
     type: 'product',
     image_url: 'https://images.pexels.com/photos/209206/pexels-photo-209206.jpeg?auto=compress&cs=tinysrgb&w=400',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '11',
@@ -121,8 +125,8 @@ export const mockProducts = [
     min_stock: 6,
     type: 'product',
     image_url: 'https://images.pexels.com/photos/209206/pexels-photo-209206.jpeg?auto=compress&cs=tinysrgb&w=400',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
 ];
 
@@ -133,8 +137,8 @@ export const mockCustomers = [
     phone: '(11) 98765-4321',
     email: 'joao.silva@email.com',
     whatsapp: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '2',
@@ -142,8 +146,8 @@ export const mockCustomers = [
     phone: '(11) 91234-5678',
     email: 'maria.santos@email.com',
     whatsapp: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '3',
@@ -151,8 +155,8 @@ export const mockCustomers = [
     phone: '(11) 99988-7766',
     email: 'pedro.costa@email.com',
     whatsapp: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '4',
@@ -160,8 +164,8 @@ export const mockCustomers = [
     phone: '(11) 95544-3322',
     email: 'ana.oliveira@email.com',
     whatsapp: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '5',
@@ -169,8 +173,8 @@ export const mockCustomers = [
     phone: '(11) 98877-6655',
     email: 'carlos.mendes@email.com',
     whatsapp: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '6',
@@ -178,8 +182,8 @@ export const mockCustomers = [
     phone: '(11) 94433-2211',
     email: 'fernanda.lima@email.com',
     whatsapp: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '7',
@@ -187,8 +191,8 @@ export const mockCustomers = [
     phone: '(11) 93322-1100',
     email: 'roberto.alves@email.com',
     whatsapp: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '8',
@@ -196,8 +200,8 @@ export const mockCustomers = [
     phone: '(11) 92211-0099',
     email: 'lucia.ferreira@email.com',
     whatsapp: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
 ];
 
@@ -347,9 +351,9 @@ export const mockExpenses = [
     paid: 1,
     recurring: 1,
     customer_id: null,
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '2',
@@ -359,9 +363,9 @@ export const mockExpenses = [
     paid: 0,
     recurring: 1,
     customer_id: null,
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '3',
@@ -371,9 +375,9 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: null,
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '4',
@@ -383,9 +387,9 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: '1', // João Silva
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '5',
@@ -395,9 +399,9 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: '2', // Maria Santos
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '6',
@@ -407,9 +411,9 @@ export const mockExpenses = [
     paid: 1,
     recurring: 1,
     customer_id: null,
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '7',
@@ -419,9 +423,9 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: '1',
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '8',
@@ -431,9 +435,9 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: '1',
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '9',
@@ -443,9 +447,9 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: '2',
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
   {
     id: '10',
@@ -455,9 +459,9 @@ export const mockExpenses = [
     paid: 0,
     recurring: 0,
     customer_id: '3',
-    created_month: new Date().toISOString().slice(0, 7), // Mês atual
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_month: CURRENT_MONTH, // Mês atual
+    created_at: CURRENT_TIMESTAMP,
+    updated_at: CURRENT_TIMESTAMP,
   },
 ];
 
