@@ -120,60 +120,39 @@ export default function Financas() {
 
   const loadCustomers = async () => {
     try {
-      // Check if mocks are enabled
-      const { USE_MOCKS, mockCustomers } = await import('@/lib/mocks');
-      
-      if (USE_MOCKS) {
-        // Load mock data from centralized file
-        setCustomers(mockCustomers);
-      } else {
-        // Load real data from database
-        // TODO: Implement real data loading
-        setCustomers([]);
-      }
+      const { loadCustomers: loadCustomersData } = await import('@/lib/data-loader');
+      const data = await loadCustomersData();
+      setCustomers(data);
     } catch (error) {
       console.error('Error loading customers:', error);
+      setCustomers([]);
     }
   };
 
   const loadExpenses = async () => {
     try {
-      // Check if mocks are enabled
-      const { USE_MOCKS, mockExpenses } = await import('@/lib/mocks');
-      
-      if (USE_MOCKS) {
-        // Load mock data from centralized file
-        const convertedExpenses = mockExpenses.map(expense => ({
-          ...expense,
-          paid: Boolean(expense.paid),
-          recurring: Boolean(expense.recurring)
-        }));
-        setExpenses(convertedExpenses);
-      } else {
-        // Load real data from database
-        // TODO: Implement real data loading
-        setExpenses([]);
-      }
+      const { loadExpenses: loadExpensesData } = await import('@/lib/data-loader');
+      const data = await loadExpensesData();
+      const convertedExpenses = data.map((expense: any) => ({
+        ...expense,
+        paid: Boolean(expense.paid),
+        recurring: Boolean(expense.recurring)
+      }));
+      setExpenses(convertedExpenses);
     } catch (error) {
       console.error('Error loading expenses:', error);
+      setExpenses([]);
     }
   };
 
   const loadSales = async () => {
     try {
-      // Check if mocks are enabled
-      const { USE_MOCKS, mockSales } = await import('@/lib/mocks');
-      
-      if (USE_MOCKS) {
-        // Load mock data from centralized file
-        setSales(mockSales);
-      } else {
-        // Load real data from database
-        // TODO: Implement real data loading
-        setSales([]);
-      }
+      const { loadSales: loadSalesData } = await import('@/lib/data-loader');
+      const data = await loadSalesData();
+      setSales(data);
     } catch (error) {
       console.error('Error loading sales:', error);
+      setSales([]);
     }
   };
 

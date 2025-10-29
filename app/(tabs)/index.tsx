@@ -55,30 +55,20 @@ export default function Dashboard() {
 
   const loadDashboardData = async () => {
     try {
-      // Load data for current month
-      const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-      
-      // Check if mocks are enabled
-      const { USE_MOCKS, mockDashboardStats } = await import('@/lib/mocks');
-      
-      if (USE_MOCKS) {
-        // Load mock data from centralized file
-        setStats(mockDashboardStats);
-      } else {
-        // Load real data from database
-        // TODO: Implement real data loading
-        setStats({
-          dailySales: 0,
-          dailyRevenue: 0,
-          lowStockCount: 0,
-          totalCustomers: 0,
-          monthlyExpenses: 0,
-          topProducts: [],
-          peakHours: [],
-        });
-      }
+      const { loadDashboardStats } = await import('@/lib/data-loader');
+      const data = await loadDashboardStats();
+      setStats(data);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
+      setStats({
+        dailySales: 0,
+        dailyRevenue: 0,
+        lowStockCount: 0,
+        totalCustomers: 0,
+        monthlyExpenses: 0,
+        topProducts: [],
+        peakHours: [],
+      });
     }
   };
 

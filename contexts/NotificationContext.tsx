@@ -24,7 +24,11 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  const unreadCount = notifications.filter(n => !n.resolved).length;
+  // Memoize unread count to avoid recalculating on every render (performance optimization)
+  const unreadCount = React.useMemo(
+    () => notifications.filter(n => !n.resolved).length,
+    [notifications]
+  );
 
   useEffect(() => {
     loadNotifications();
@@ -49,7 +53,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  const addNotification = (notification: Omit<Notification, 'id' | 'timestamp' | 'resolved'>) => {
+  const addNotification = React.useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'resolved'>) => {
     const newNotification: Notification = {
       ...notification,
       id: Date.now().toString(),
@@ -57,32 +61,39 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       resolved: false,
     };
 
-    const updated = [newNotification, ...notifications];
-    setNotifications(updated);
-    saveNotifications(updated);
-  };
+    setNotifications(prev => {
+      const updated = [newNotification, ...prev];
+      saveNotifications(updated);
+      return updated;
+    });
+  }, []);
 
-  const markAsResolved = (id: string) => {
-    const updated = notifications.map(n => 
-      n.id === id ? { ...n, resolved: true } : n
-    );
-    setNotifications(updated);
-    saveNotifications(updated);
-  };
+  const markAsResolved = React.useCallback((id: string) => {
+    setNotifications(prev => {
+      const updated = prev.map(n => 
+        n.id === id ? { ...n, resolved: true } : n
+      );
+      saveNotifications(updated);
+      return updated;
+    });
+  }, []);
 
-  const clearAll = () => {
+  const clearAll = React.useCallback(() => {
     setNotifications([]);
     saveNotifications([]);
-  };
+  }, []);
+
+  // Memoize context value to prevent unnecessary re-renders (performance optimization)
+  const contextValue = React.useMemo(() => ({
+    notifications,
+    unreadCount,
+    addNotification,
+    markAsResolved,
+    clearAll,
+  }), [notifications, unreadCount, addNotification, markAsResolved, clearAll]);
 
   return (
-    <NotificationContext.Provider value={{
-      notifications,
-      unreadCount,
-      addNotification,
-      markAsResolved,
-      clearAll,
-    }}>
+    <NotificationContext.Provider value={contextValue}>
       {children}
     </NotificationContext.Provider>
   );

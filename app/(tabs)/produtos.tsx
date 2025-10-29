@@ -72,17 +72,12 @@ export default function Produtos() {
   const loadProducts = async () => {
     setIsLoading(true);
     try {
-      // Check if mocks are enabled
-      const { USE_MOCKS, mockProducts } = await import('@/lib/mocks');
-      
-      if (USE_MOCKS) {
-        // Load mock data from centralized file
-        setProducts(mockProducts as Product[]);
-      } else {
-        // Load real data from database
-        // TODO: Implement real data loading
-        setProducts([]);
-      }
+      const { loadProducts: loadProductsData } = await import('@/lib/data-loader');
+      const data = await loadProductsData();
+      setProducts(data as Product[]);
+    } catch (error) {
+      console.error('Error loading products:', error);
+      setProducts([]);
     } finally {
       setIsLoading(false);
     }

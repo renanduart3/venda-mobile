@@ -88,21 +88,9 @@ export default function Settings() {
   // Função de teste removida para produção
 
   const loadStoreSettings = async () => {
-    // Check if mocks are enabled
-    const { USE_MOCKS, mockStoreSettings } = await import('@/lib/mocks');
-    
-    if (USE_MOCKS) {
-      // Load mock store settings from centralized file
-      setStoreSettings(mockStoreSettings);
-    } else {
-      // Load real settings from database
-      // TODO: Implement real settings loading
-      setStoreSettings({
-        storeName: '',
-        ownerName: '',
-        pixKeys: [''],
-      });
-    }
+    const { loadStoreSettings: loadStoreSettingsData } = await import('@/lib/data-loader');
+    const data = await loadStoreSettingsData();
+    setStoreSettings(data);
   };
 
   const saveStoreSettings = async () => {

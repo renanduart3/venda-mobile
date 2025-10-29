@@ -26,6 +26,7 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { isPremium, enablePremium } from '@/lib/premium';
+import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp } from '@/lib/utils';
 
 interface Product {
   id: string;
@@ -78,30 +79,6 @@ export default function Vendas() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
 
-  // Função para filtrar vendas do dia atual
-  const getTodaySales = () => {
-    const today = new Date();
-    const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD
-    
-    return sales.filter(sale => {
-      try {
-        // Verificar se timestamp é válido
-        if (!sale.timestamp) return false;
-        
-        const saleDate = new Date(sale.timestamp);
-        
-        // Verificar se a data é válida
-        if (isNaN(saleDate.getTime())) return false;
-        
-        const saleDateString = saleDate.toISOString().split('T')[0];
-        return saleDateString === todayString;
-      } catch (error) {
-        console.error('Erro ao processar data da venda:', error);
-        return false;
-      }
-    });
-  };
-
   // Função para deletar venda
   const handleDeleteSale = (saleId: string) => {
     Alert.alert(
@@ -137,52 +114,46 @@ export default function Vendas() {
   }, []);
 
   const loadData = async () => {
-    // Check if mocks are enabled
-    const { USE_MOCKS, mockProducts, mockCustomers, mockSales } = await import('@/lib/mocks');
+    const { loadProducts: loadProductsData, loadCustomers: loadCustomersData, loadSales: loadSalesData } = await import('@/lib/data-loader');
     
-    if (USE_MOCKS) {
-      // Load mock data from centralized file
-      setProducts(mockProducts as Product[]);
-      setCustomers(mockCustomers);
-      
-      // Garantir que as vendas tenham timestamps válidos e converter para interface Sale
-      const salesWithValidTimestamps = (mockSales as any[]).map(sale => ({
-        id: sale.id,
-        items: sale.items.map((item: any) => ({
-          product: {
-            id: item.product_id,
-            name: item.product_name,
-            price: item.unit_price,
-            stock: 0,
-            type: 'product' as const
-          },
-          quantity: item.quantity,
-          total: item.total
-        })),
-        customer: sale.customer_name,
-        paymentMethod: sale.payment_method.toLowerCase() as 'cash' | 'credit' | 'debit' | 'pix',
-        total: sale.total,
-        timestamp: sale.created_at,
-        observation: sale.observation
-      }));
-      
-      setSales(salesWithValidTimestamps);
-    } else {
-      // Load real data from database
-      // TODO: Implement real data loading
-      setProducts([]);
-      setCustomers([]);
-      setSales([]);
-    }
+    const [productsData, customersData, salesData] = await Promise.all([
+      loadProductsData(),
+      loadCustomersData(),
+      loadSalesData()
+    ]);
+    
+    setProducts(productsData as Product[]);
+    setCustomers(customersData);
+    
+    // Convert sales data to the expected format
+    const salesWithValidTimestamps = (salesData as any[]).map(sale => ({
+      id: sale.id,
+      items: sale.items.map((item: any) => ({
+        product: {
+          id: item.product_id,
+          name: item.product_name,
+          price: item.unit_price,
+          stock: 0,
+          type: 'product' as const
+        },
+        quantity: item.quantity,
+        total: item.total
+      })),
+      customer: sale.customer_name,
+      paymentMethod: sale.payment_method.toLowerCase() as 'cash' | 'credit' | 'debit' | 'pix',
+      total: sale.total,
+      timestamp: sale.created_at,
+      observation: sale.observation
+    }));
+    
+    setSales(salesWithValidTimestamps);
 
+    const { isPremium } = await import('@/lib/premium');
     const p = await isPremium();
     setPremium(p);
   };
 
-  const filteredCustomers = customers.filter(c =>
-    c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-    c.phone.includes(customerSearch)
-  );
+  const filteredCustomers = filterCustomers(customers, customerSearch);
 
   const handleCustomerSelect = (customer: any) => {
     setSelectedCustomer(customer.name);
@@ -696,7 +667,7 @@ export default function Vendas() {
   );
 
   const SalesHistoryTab = () => {
-    const todaySales = getTodaySales();
+    const todaySales = getTodaySalesUtil(sales);
     
     return (
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -758,15 +729,7 @@ export default function Vendas() {
               
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
-                  {(() => {
-                    try {
-                      const date = new Date(sale.timestamp);
-                      if (isNaN(date.getTime())) return 'Horário inválido';
-                      return date.toLocaleTimeString('pt-BR');
-                    } catch (error) {
-                      return 'Horário inválido';
-                    }
-                  })()}
+                  {formatTimestamp(sale.timestamp)}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <Text style={{ 
