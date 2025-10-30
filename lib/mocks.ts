@@ -1,5 +1,5 @@
 // Configuração para ativar/desativar mocks
-export const USE_MOCKS = false; // Ativado para visualizar relatórios premium
+export const USE_MOCKS = true; // Ativado para visualizar relatórios premium
 
 // Cache timestamps to avoid repeated Date object creation (performance optimization)
 const CURRENT_TIMESTAMP = new Date().toISOString();
@@ -496,6 +496,6 @@ export const mockStoreSettings = {
     'joao.silva@email.com',
     '(11) 98765-4321',
     '123.456.789-00',
-    'Banco do Brasil - 12345-6'
+    'chave-aleatoria-xyz'
   ],
 };

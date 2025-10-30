@@ -12,6 +12,8 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '@/contexts/ThemeContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { useRouter, useSegments } from 'expo-router';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { OfflineProvider } from '@/contexts/OfflineContext';
 import db from '@/lib/db';
@@ -19,6 +21,26 @@ import { initializeIAP } from '@/lib/iap';
 import { checkSubscriptionFromDatabase } from '@/lib/premium';
 
 SplashScreen.preventAutoHideAsync();
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, loading } = useAuth();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (loading) return;
+    const inLogin = segments.join('/') === 'login';
+    if (!isAuthenticated && !inLogin) {
+      router.replace('/login');
+    }
+    if (isAuthenticated && inLogin) {
+      router.replace('/');
+    }
+  }, [isAuthenticated, loading, segments]);
+
+  if (loading) return null;
+  return <>{children}</>;
+}
 
 export default function RootLayout() {
   useFrameworkReady();
@@ -55,21 +77,26 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <OfflineProvider>
-          <NotificationProvider>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="settings" />
-              <Stack.Screen name="relatorios" />
-              <Stack.Screen name="premium" />
-              <Stack.Screen name="planos" />
-              <Stack.Screen name="notifications" />
-              <Stack.Screen name="cliente-detalhe" />
-              <Stack.Screen name="+not-found" />
-            </Stack>
-            <StatusBar style="auto" />
-          </NotificationProvider>
-        </OfflineProvider>
+        <AuthProvider>
+          <OfflineProvider>
+            <NotificationProvider>
+              <AuthGate>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="login" />
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="settings" />
+                  <Stack.Screen name="relatorios" />
+                  <Stack.Screen name="premium" />
+                  <Stack.Screen name="planos" />
+                  <Stack.Screen name="notifications" />
+                  <Stack.Screen name="cliente-detalhe" />
+                  <Stack.Screen name="+not-found" />
+                </Stack>
+              </AuthGate>
+              <StatusBar style="auto" />
+            </NotificationProvider>
+          </OfflineProvider>
+        </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

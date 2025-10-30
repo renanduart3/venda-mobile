@@ -8,7 +8,8 @@
     "build:web": "expo export --platform web",
     "lint": "expo lint",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "build:android:release": "cd android && gradlew.bat clean bundleRelease"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.2.3",

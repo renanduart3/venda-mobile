@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Loja Inteligente",
-    "slug": "loja-inteligente-mobile",
+    "name": "Loja Inteligente — Vendas & Estoque",
+    "slug": "venda-mobile",
     "version": "1.0.0",
     "sdkVersion": "54.0.0",
     "icon": "./assets/images/icon.png",
@@ -25,10 +25,8 @@
       "typedRoutes": true
     },
     "android": {
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ],
-      "package": "com.anonymous.lojainteligentemobile"
+      "permissions": [],
+      "package": "com.renanduart3.vendamobile"
     }
   }
 }

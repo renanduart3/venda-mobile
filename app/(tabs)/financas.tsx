@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -50,15 +50,32 @@ export default function Financas() {
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   
   // Filtros
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  // Util para lidar com meses sem problemas de fuso/UTC
+  const getCurrentMonthLocal = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  };
+  const addMonths = (monthStr: string, delta: number) => {
+    const [yStr, mStr] = monthStr.split('-');
+    const y = parseInt(yStr, 10);
+    const m0 = parseInt(mStr, 10) - 1;
+    const d = new Date(y, m0, 1);
+    d.setMonth(d.getMonth() + delta);
+    const yy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${yy}-${mm}`;
+  };
+  const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthLocal());
   const [expenseStatusFilter, setExpenseStatusFilter] = useState<'all' | 'pending' | 'paid' | 'overdue'>('all');
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
 
   // Funções de filtro
-  const getFilteredExpenses = () => {
-    let filtered = expenses.filter(expense => {
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter(expense => {
       // Filtro por mês
       const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
       if (expenseMonth !== selectedMonth) return false;
@@ -78,18 +95,14 @@ export default function Financas() {
           return true;
       }
     });
-    
-    return filtered;
-  };
+  }, [expenses, selectedMonth, expenseStatusFilter]);
 
-  const getExpenseStats = () => {
-    const filtered = getFilteredExpenses();
-    const total = filtered.reduce((sum, expense) => sum + expense.amount, 0);
-    const paid = filtered.filter(e => e.paid).reduce((sum, expense) => sum + expense.amount, 0);
-    const pending = filtered.filter(e => !e.paid).reduce((sum, expense) => sum + expense.amount, 0);
-    
-    return { total, paid, pending, count: filtered.length };
-  };
+  const expenseStats = useMemo(() => {
+    const total = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const paid = filteredExpenses.filter(e => e.paid).reduce((sum, expense) => sum + expense.amount, 0);
+    const pending = filteredExpenses.filter(e => !e.paid).reduce((sum, expense) => sum + expense.amount, 0);
+    return { total, paid, pending, count: filteredExpenses.length };
+  }, [filteredExpenses]);
 
   // Report filters
   const [reportFilter, setReportFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -266,7 +279,7 @@ export default function Financas() {
     setExpenses(expenses.map(e => e.id === expense.id ? updatedExpense : e));
   };
 
-  const stats = getExpenseStats();
+  const stats = expenseStats;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('pt-BR');
@@ -282,29 +295,22 @@ export default function Financas() {
   };
 
   // Report functions
-  const getFinancialData = () => {
+  const financialData = useMemo(() => {
     const currentMonth = selectedMonth;
-
-    // Filter expenses by month
     const monthlyExpenses = expenses.filter(expense => {
       const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
       return expenseMonth === currentMonth;
     });
-
-    // Filter sales by month
     const monthlySales = sales.filter(sale => {
       const saleMonth = sale.created_at.slice(0, 7);
       return saleMonth === currentMonth;
     });
-
-
-    // Combine and format data
-    const financialData = [
+    const combined = [
       ...monthlyExpenses.map(expense => ({
         id: `expense-${expense.id}`,
         type: 'expense' as const,
         description: expense.name,
-        amount: -expense.amount, // Negative for expenses
+        amount: -expense.amount,
         date: expense.created_at,
         customer: expense.customer_id ? customers.find(c => c.id === expense.customer_id)?.name : null,
         status: expense.paid ? 'Pago' : 'Pendente',
@@ -314,33 +320,28 @@ export default function Financas() {
         id: `sale-${sale.id}`,
         type: 'income' as const,
         description: `Venda - ${sale.customer_name}`,
-        amount: sale.total, // Positive for income
+        amount: sale.total,
         date: sale.created_at,
         customer: sale.customer_name,
         status: 'Pago',
         category: 'Venda'
       }))
     ];
+    return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [expenses, sales, customers, selectedMonth]);
 
-    // Sort by date (newest first)
-    return financialData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  };
-
-  const getFilteredData = () => {
-    const data = getFinancialData();
-
+  const filteredData = useMemo(() => {
     switch (reportFilter) {
       case 'income':
-        return data.filter(item => item.type === 'income');
+        return financialData.filter(item => item.type === 'income');
       case 'expense':
-        return data.filter(item => item.type === 'expense');
+        return financialData.filter(item => item.type === 'expense');
       default:
-        return data;
+        return financialData;
     }
-  };
+  }, [financialData, reportFilter]);
 
-  const getPaginatedData = () => {
-    const filteredData = getFilteredData();
+  const paginatedData = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
     return {
@@ -348,21 +349,14 @@ export default function Financas() {
       totalPages: Math.ceil(filteredData.length / itemsPerPage),
       totalItems: filteredData.length
     };
-  };
+  }, [filteredData, currentPage]);
 
-  const getMonthSummary = () => {
-    const data = getFinancialData();
-    const totalIncome = data.filter(item => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
-    const totalExpenses = Math.abs(data.filter(item => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0));
+  const monthSummary = useMemo(() => {
+    const totalIncome = financialData.filter(item => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
+    const totalExpenses = Math.abs(financialData.filter(item => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0));
     const balance = totalIncome - totalExpenses;
-
-    return {
-      totalIncome,
-      totalExpenses,
-      balance,
-      transactionCount: data.length
-    };
-  };
+    return { totalIncome, totalExpenses, balance, transactionCount: financialData.length };
+  }, [financialData]);
 
   const styles = StyleSheet.create({
     container: {
@@ -973,9 +967,7 @@ export default function Financas() {
           <TouchableOpacity 
             style={styles.monthButton}
             onPress={() => {
-              const prevMonth = new Date(selectedMonth + '-01');
-              prevMonth.setMonth(prevMonth.getMonth() - 1);
-              setSelectedMonth(prevMonth.toISOString().slice(0, 7));
+              setSelectedMonth(addMonths(selectedMonth, -1));
             }}
           >
             <Text style={styles.monthButtonText}>‹</Text>
@@ -989,9 +981,7 @@ export default function Financas() {
           <TouchableOpacity 
             style={styles.monthButton}
             onPress={() => {
-              const nextMonth = new Date(selectedMonth + '-01');
-              nextMonth.setMonth(nextMonth.getMonth() + 1);
-              setSelectedMonth(nextMonth.toISOString().slice(0, 7));
+              setSelectedMonth(addMonths(selectedMonth, 1));
             }}
           >
             <Text style={styles.monthButtonText}>›</Text>
@@ -1012,7 +1002,7 @@ export default function Financas() {
             styles.statusFilterText,
             expenseStatusFilter === 'all' && styles.statusFilterTextActive
           ]}>
-            Todos ({getExpenseStats().count})
+            Todos ({expenseStats.count})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -1026,7 +1016,7 @@ export default function Financas() {
             styles.statusFilterText,
             expenseStatusFilter === 'paid' && styles.statusFilterTextActive
           ]}>
-            Pago ({getFilteredExpenses().filter(e => e.paid).length})
+            Pago ({filteredExpenses.filter(e => e.paid).length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -1040,7 +1030,7 @@ export default function Financas() {
             styles.statusFilterText,
             expenseStatusFilter === 'pending' && styles.statusFilterTextActive
           ]}>
-            Pendente ({getFilteredExpenses().filter(e => !e.paid).length})
+            Pendente ({filteredExpenses.filter(e => !e.paid).length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -1054,7 +1044,7 @@ export default function Financas() {
             styles.statusFilterText,
             expenseStatusFilter === 'overdue' && styles.statusFilterTextActive
           ]}>
-            Vencidas ({getFilteredExpenses().filter(e => {
+            Vencidas ({filteredExpenses.filter(e => {
               const today = new Date().toISOString().split('T')[0];
               return e.due_date && e.due_date < today && !e.paid;
             }).length})
@@ -1064,26 +1054,26 @@ export default function Financas() {
 
       {/* Stats */}
       <View style={styles.statsContainer}>
-        <StatCard
+          <StatCard
           icon={<DollarSign size={20} color={colors.primary} />}
-          value={`R$ ${getExpenseStats().total.toFixed(2)}`}
+          value={`R$ ${expenseStats.total.toFixed(2)}`}
           label="Total do Mês"
         />
         <StatCard
           icon={<CheckCircle size={20} color={colors.success} />}
-          value={`R$ ${getExpenseStats().paid.toFixed(2)}`}
+          value={`R$ ${expenseStats.paid.toFixed(2)}`}
           label="Pago"
           color={colors.success}
         />
         <StatCard
           icon={<XCircle size={20} color={colors.warning} />}
-          value={`R$ ${getExpenseStats().pending.toFixed(2)}`}
+          value={`R$ ${expenseStats.pending.toFixed(2)}`}
           label="Pendente"
           color={colors.warning}
         />
         <StatCard
           icon={<Calendar size={20} color={colors.error} />}
-          value={getFilteredExpenses().filter(e => {
+          value={filteredExpenses.filter(e => {
             const today = new Date().toISOString().split('T')[0];
             return e.due_date && e.due_date < today && !e.paid;
           }).length}
@@ -1097,7 +1087,7 @@ export default function Financas() {
         Despesas do Mês
       </Text>
 
-      {getFilteredExpenses().map((expense) => (
+      {filteredExpenses.map((expense) => (
         <Card key={expense.id} style={styles.expenseCard}>
           <View style={styles.expenseItem}>
             <View style={[
@@ -1167,17 +1157,17 @@ export default function Financas() {
   const ReportTab = () => {
     // Simplified version for testing
     const currentMonth = selectedMonth;
-    const monthlyExpenses = expenses.filter(expense => {
+    const monthlyExpenses = useMemo(() => expenses.filter(expense => {
       const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
       return expenseMonth === currentMonth;
-    });
-    const monthlySales = sales.filter(sale => {
+    }), [expenses, currentMonth]);
+    const monthlySales = useMemo(() => sales.filter(sale => {
       const saleMonth = sale.created_at.slice(0, 7);
       return saleMonth === currentMonth;
-    });
+    }), [sales, currentMonth]);
 
-    const totalIncome = monthlySales.reduce((sum, sale) => sum + sale.total, 0);
-    const totalExpenses = monthlyExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const totalIncome = useMemo(() => monthlySales.reduce((sum, sale) => sum + sale.total, 0), [monthlySales]);
+    const totalExpenses = useMemo(() => monthlyExpenses.reduce((sum, expense) => sum + expense.amount, 0), [monthlyExpenses]);
     const balance = totalIncome - totalExpenses;
 
     return (
@@ -1200,9 +1190,7 @@ export default function Financas() {
             <TouchableOpacity 
               style={styles.monthButton}
               onPress={() => {
-                const prevMonth = new Date(selectedMonth + '-01');
-                prevMonth.setMonth(prevMonth.getMonth() - 1);
-                setSelectedMonth(prevMonth.toISOString().slice(0, 7));
+                setSelectedMonth(addMonths(selectedMonth, -1));
               }}
             >
               <Text style={styles.monthButtonText}>‹</Text>
@@ -1216,9 +1204,7 @@ export default function Financas() {
             <TouchableOpacity 
               style={styles.monthButton}
               onPress={() => {
-                const nextMonth = new Date(selectedMonth + '-01');
-                nextMonth.setMonth(nextMonth.getMonth() + 1);
-                setSelectedMonth(nextMonth.toISOString().slice(0, 7));
+                setSelectedMonth(addMonths(selectedMonth, 1));
               }}
             >
               <Text style={styles.monthButtonText}>›</Text>

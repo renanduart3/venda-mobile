@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   Alert,
   Switch,
-  Clipboard
+  Clipboard,
+  Modal
 } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -90,7 +91,13 @@ export default function Settings() {
   const loadStoreSettings = async () => {
     const { loadStoreSettings: loadStoreSettingsData } = await import('@/lib/data-loader');
     const data = await loadStoreSettingsData();
-    setStoreSettings(data);
+    // Normaliza: se vier como objetos { value }, converte para string
+    if (Array.isArray((data as any).pixKeys) && typeof (data as any).pixKeys[0] === 'object') {
+      const converted = (data as any).pixKeys.map((k: any) => (k?.value ?? ''));
+      setStoreSettings({ ...(data as any), pixKeys: converted });
+      return;
+    }
+    setStoreSettings(data as any);
   };
 
   const saveStoreSettings = async () => {
@@ -133,10 +140,7 @@ export default function Settings() {
   const updatePixKey = (index: number, value: string) => {
     const newPixKeys = [...storeSettings.pixKeys];
     newPixKeys[index] = value;
-    setStoreSettings({
-      ...storeSettings,
-      pixKeys: newPixKeys
-    });
+    setStoreSettings({ ...storeSettings, pixKeys: newPixKeys });
   };
 
   const applyCustomColors = () => {
@@ -156,41 +160,33 @@ export default function Settings() {
     setSecondaryColor(defaultSecondary);
   };
 
-  // Reset Database Functions
-  const resetDatabase = async () => {
-    Alert.prompt(
-      '⚠️ ZONA DE PERIGO - AÇÃO IRREVERSÍVEL',
-      'Esta ação irá APAGAR TODOS os dados do aplicativo permanentemente:\n\n• Todos os clientes\n• Todos os produtos\n• Todas as vendas\n• Todas as despesas\n• Todas as configurações\n\nEsta ação NÃO PODE ser desfeita!\n\nPara confirmar, digite exatamente:\n"eu tenho certeza que quero deletar o banco"',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'APAGAR TUDO',
-          style: 'destructive',
-          onPress: async (confirmationText) => {
-            if (confirmationText !== 'eu tenho certeza que quero deletar o banco') {
-              Alert.alert('Confirmação Incorreta', 'Digite exatamente: "eu tenho certeza que quero deletar o banco"');
-              return;
-            }
-            
-            setIsResetting(true);
-            try {
-              // Aqui você implementaria a limpeza real do banco
-              // Por enquanto, apenas simular
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              
-              Alert.alert('✅ Banco Resetado', 'Todos os dados foram apagados com sucesso!');
-            } catch (error) {
-              Alert.alert('❌ Erro', 'Não foi possível resetar o banco de dados.');
-            } finally {
-              setIsResetting(false);
-            }
-          }
-        }
-      ],
-      'plain-text',
-      '',
-      'default'
-    );
+  // Reset Database - Modal de confirmação (compatível com Android)
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+
+  const performDatabaseReset = async () => {
+    setIsResetting(true);
+    try {
+      const { default: FileSystem } = await import('expo-file-system');
+      const dbPath = FileSystem.documentDirectory + 'SQLite/venda.db';
+      const info = await FileSystem.getInfoAsync(dbPath);
+      if (info.exists) {
+        await FileSystem.deleteAsync(dbPath, { idempotent: true });
+      }
+      // Mantemos credenciais OAuth (em AsyncStorage) intactas deliberadamente
+      setShowResetModal(false);
+      setResetConfirmText('');
+      Alert.alert('✅ Banco Resetado', 'Todos os dados foram apagados com sucesso!');
+      router.replace('/');
+    } catch (error) {
+      Alert.alert('❌ Erro', 'Não foi possível resetar o banco de dados.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const resetDatabase = () => {
+    setShowResetModal(true);
   };
 
   // Export/Import Functions
@@ -695,7 +691,7 @@ export default function Settings() {
                         style={[styles.input, styles.pixKeyInput]}
                         value={pixKey}
                         onChangeText={(text) => updatePixKey(index, text)}
-                        placeholder="email@exemplo.com ou telefone"
+                        placeholder="Digite sua chave (texto livre)"
                         placeholderTextColor={colors.textSecondary}
                       />
                       {storeSettings.pixKeys.length > 1 && (
@@ -752,31 +748,24 @@ export default function Settings() {
             </Text>
 
             <View style={styles.themeOptions}>
-              {[
-                { key: 'light', label: 'Claro', icon: <Sun size={20} color={colors.text} /> },
-                { key: 'dark', label: 'Escuro', icon: <Moon size={20} color={colors.text} /> },
-                { key: 'system', label: 'Sistema', icon: <Smartphone size={20} color={colors.text} /> },
-              ].map((option) => (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.themeOption,
-                    theme === option.key && styles.themeOptionActive,
-                  ]}
-                  onPress={() => setTheme(option.key as any)}
-                >
-                  <View style={styles.themeOptionLeft}>
-                    {option.icon}
-                    <Text style={styles.themeOptionText}>{option.label}</Text>
-                  </View>
-                  <Switch
-                    value={theme === option.key}
-                    onValueChange={() => setTheme(option.key as any)}
-                    trackColor={{ false: colors.border, true: colors.primary }}
-                    thumbColor={colors.white}
-                  />
-                </TouchableOpacity>
-              ))}
+              <TouchableOpacity
+                style={[
+                  styles.themeOption,
+                  theme === 'dark' && styles.themeOptionActive,
+                ]}
+                onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              >
+                <View style={styles.themeOptionLeft}>
+                  {theme === 'dark' ? <Moon size={20} color={colors.text} /> : <Sun size={20} color={colors.text} />}
+                  <Text style={styles.themeOptionText}>{theme === 'dark' ? 'Escuro' : 'Claro'}</Text>
+                </View>
+                <Switch
+                  value={theme === 'dark'}
+                  onValueChange={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor={colors.white}
+                />
+              </TouchableOpacity>
             </View>
           </Card>
         </View>
@@ -881,6 +870,40 @@ export default function Settings() {
           </Card>
         </View>
       </ScrollView>
+
+      {/* Modal de Reset */}
+      <Modal visible={showResetModal} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 20, width: '100%', maxWidth: 420 }}>
+            <Text style={{ fontSize: 18, fontFamily: 'Inter-Bold', color: colors.text, marginBottom: 12 }}>⚠️ ZONA DE PERIGO</Text>
+            <Text style={{ color: colors.textSecondary, marginBottom: 12 }}>
+              Esta ação irá APAGAR TODOS os dados do aplicativo permanentemente. Digite exatamente:
+            </Text>
+            <Text style={{ fontFamily: 'Inter-Bold', color: colors.error, marginBottom: 12 }}>
+              deletar o banco
+            </Text>
+            <TextInput
+              style={[styles.input, styles.confirmationInput]}
+              value={resetConfirmText}
+              onChangeText={setResetConfirmText}
+              placeholder="Digite aqui para confirmar"
+              placeholderTextColor={colors.textSecondary}
+            />
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+              <Button title="Cancelar" variant="outline" onPress={() => { setShowResetModal(false); setResetConfirmText(''); }} style={{ flex: 1 }} />
+              <Button
+                title={isResetting ? 'Resetando...' : 'Apagar Tudo'}
+                onPress={performDatabaseReset}
+                disabled={isResetting || resetConfirmText.trim().toLowerCase() !== 'deletar o banco'}
+                style={{ flex: 1 }}
+              />
+            </View>
+            <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 8 }}>
+              Observação: credenciais de login (OAuth) não serão apagadas.
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
