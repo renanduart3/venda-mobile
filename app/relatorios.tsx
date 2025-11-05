@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
   ScrollView,
   TouchableOpacity,
   Alert,
-  Modal
+  Modal,
+  ActivityIndicator
 } from 'react-native';
 import { 
   Trophy,
@@ -25,9 +26,8 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { router } from 'expo-router';
 import { isPremium } from '@/lib/premium';
-// TODO: Implementar funções de relatórios avançados
-// import { getReportData } from '@/lib/advanced-reports';
-// import { generateReportHTML, reportToPDF } from '@/lib/export';
+import { getReportData } from '@/lib/advanced-reports';
+import { generateReportHTML, reportToPDF, exportReportToCSV } from '@/lib/export';
 
 const premiumReports = [
   { 
@@ -99,6 +99,10 @@ export default function Relatorios() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [userIsPremium, setUserIsPremium] = useState(true); // Iniciar como premium para evitar flash
   const [isLoading, setIsLoading] = useState(true);
+  const [reportData, setReportData] = useState<any[]>([]);
+  const [isFetchingReport, setIsFetchingReport] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportValidation, setReportValidation] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     checkPremiumStatus();
@@ -113,7 +117,146 @@ export default function Relatorios() {
     }
   };
 
-  // Função de teste removida para produção
+  const getPeriodText = useCallback(() => {
+    if (selectedPeriod === 'month') {
+      const monthNames = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+      ];
+      return `${monthNames[selectedMonth - 1]} de ${selectedYear}`;
+    }
+    return `Ano ${selectedYear}`;
+  }, [selectedPeriod, selectedMonth, selectedYear]);
+
+  const buildSelectedPeriodRange = useCallback(() => {
+    const msInMonth = 1000 * 60 * 60 * 24 * 30;
+
+    const start = selectedPeriod === 'month'
+      ? new Date(selectedYear, selectedMonth - 1, 1)
+      : new Date(selectedYear, 0, 1);
+
+    let endReference = selectedPeriod === 'month'
+      ? new Date(selectedYear, selectedMonth, 1)
+      : new Date(selectedYear + 1, 0, 1);
+
+    let end = new Date(endReference.getTime() - 1000);
+    if (end.getTime() - start.getTime() < msInMonth) {
+      end = new Date(start.getTime() + msInMonth - 1000);
+    }
+
+    return { start, end, label: getPeriodText() };
+  }, [selectedPeriod, selectedYear, selectedMonth, getPeriodText]);
+
+  const verifyReportsForPremium = useCallback(async () => {
+    if (!userIsPremium) return;
+
+    try {
+      const { start, end } = buildSelectedPeriodRange();
+      const options = {
+        period: 'custom' as const,
+        start: start.toISOString(),
+        end: end.toISOString()
+      };
+
+      const results = await Promise.allSettled(
+        premiumReports.map(report => getReportData(report.id, options))
+      );
+
+      const statusUpdates: Record<string, boolean> = {};
+      results.forEach((result, index) => {
+        const reportId = premiumReports[index].id;
+        if (result.status === 'fulfilled') {
+          const normalized = Array.isArray(result.value)
+            ? result.value
+            : result.value
+              ? [result.value]
+              : [];
+          statusUpdates[reportId] = normalized.length > 0;
+          console.info(`Verificação do relatório ${reportId} concluída com ${normalized.length} registros.`);
+        } else {
+          statusUpdates[reportId] = false;
+          console.warn(`Verificação do relatório ${reportId} falhou:`, result.reason);
+        }
+      });
+
+      setReportValidation(prev => ({ ...prev, ...statusUpdates }));
+    } catch (error) {
+      console.warn('Não foi possível verificar os relatórios premium:', error);
+    }
+  }, [userIsPremium, buildSelectedPeriodRange]);
+
+  useEffect(() => {
+    if (userIsPremium && !isLoading) {
+      verifyReportsForPremium();
+    }
+  }, [userIsPremium, isLoading, verifyReportsForPremium]);
+
+  useEffect(() => {
+    if (!showPeriodModal || !selectedReport) {
+      return;
+    }
+
+    let isMounted = true;
+    const loadReportData = async () => {
+      setIsFetchingReport(true);
+      setReportError(null);
+
+      try {
+        const { start, end } = buildSelectedPeriodRange();
+        const data = await getReportData(selectedReport.id, {
+          period: 'custom',
+          start: start.toISOString(),
+          end: end.toISOString()
+        });
+
+        if (!isMounted) return;
+
+        const normalized = Array.isArray(data)
+          ? data
+          : data
+            ? [data]
+            : [];
+
+        setReportData(normalized);
+        setReportValidation(prev => ({
+          ...prev,
+          [selectedReport.id]: normalized.length > 0
+        }));
+      } catch (error) {
+        console.error('Erro ao carregar dados do relatório:', error);
+        if (!isMounted) return;
+        setReportData([]);
+        setReportError(error instanceof Error ? error.message : 'Não foi possível carregar os dados do relatório.');
+      } finally {
+        if (isMounted) {
+          setIsFetchingReport(false);
+        }
+      }
+    };
+
+    loadReportData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [showPeriodModal, selectedReport, buildSelectedPeriodRange]);
+
+  useEffect(() => {
+    if (!showPeriodModal) {
+      setReportData([]);
+      setReportError(null);
+      setIsFetchingReport(false);
+    }
+  }, [showPeriodModal]);
+
+  const handleCloseModal = () => {
+    setShowPeriodModal(false);
+    setSelectedReport(null);
+    setSelectedFormat(null);
+    setReportData([]);
+    setReportError(null);
+    setIsFetchingReport(false);
+  };
 
   const handleReportPress = (report: any) => {
     if (!userIsPremium) {
@@ -127,48 +270,50 @@ export default function Relatorios() {
       );
       return;
     }
-    
+
     setSelectedReport(report);
     setSelectedFormat(null); // Reset formato selecionado
+    setReportData([]);
+    setReportError(null);
+    setIsFetchingReport(true);
     setShowPeriodModal(true);
   };
 
   const handleGenerateReport = async () => {
     if (!selectedReport || !selectedFormat) return;
 
+    if (isFetchingReport) {
+      Alert.alert('Carregando dados', 'Aguarde enquanto coletamos as informações do relatório antes de exportar.');
+      return;
+    }
+
+    if (reportError) {
+      Alert.alert('Erro', reportError);
+      return;
+    }
+
     setIsGenerating(true);
-    
+
     try {
-      // TODO: Implementar coleta de dados reais do banco
-      // Por enquanto, simular dados
-      const reportData = [];
-      
+      const rows = Array.isArray(reportData) ? reportData : reportData ? [reportData] : [];
+      const periodLabel = getPeriodText();
+
       if (selectedFormat === 'pdf') {
-        // TODO: Implementar geração de PDF real
-        // Por enquanto, simular
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
+        const html = generateReportHTML(selectedReport.title, rows, periodLabel);
+        const uri = await reportToPDF(html);
+
         Alert.alert(
           'PDF Gerado',
-          `O relatório "${selectedReport.title}" foi gerado em PDF com sucesso!\n\nDados encontrados: ${Array.isArray(reportData) ? reportData.length : 'N/A'} registros`,
-          [{ text: 'OK', onPress: () => {
-            setShowPeriodModal(false);
-            setSelectedReport(null);
-            setSelectedFormat(null);
-          }}]
+          `O relatório "${selectedReport.title}" foi gerado em PDF com sucesso!\n\nRegistros exportados: ${rows.length}\nArquivo: ${uri}`,
+          [{ text: 'OK', onPress: handleCloseModal }]
         );
       } else {
-        // Simular geração do relatório Excel
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
+        const csvPath = await exportReportToCSV(selectedReport.title, rows);
+
         Alert.alert(
-          'Relatório Gerado',
-          `O relatório "${selectedReport.title}" foi gerado com sucesso!\n\nDados encontrados: ${Array.isArray(reportData) ? reportData.length : 'N/A'} registros`,
-          [{ text: 'OK', onPress: () => {
-            setShowPeriodModal(false);
-            setSelectedReport(null);
-            setSelectedFormat(null);
-          }}]
+          'Relatório Exportado',
+          `O relatório "${selectedReport.title}" foi exportado com sucesso para Excel/CSV!\n\nRegistros exportados: ${rows.length}\nArquivo: ${csvPath}`,
+          [{ text: 'OK', onPress: handleCloseModal }]
         );
       }
     } catch (error) {
@@ -179,16 +324,7 @@ export default function Relatorios() {
     }
   };
 
-  const getPeriodText = () => {
-    if (selectedPeriod === 'month') {
-      const monthNames = [
-        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-      ];
-      return `${monthNames[selectedMonth - 1]} de ${selectedYear}`;
-    }
-    return `Ano ${selectedYear}`;
-  };
+  const canGenerateReport = selectedFormat !== null && !isFetchingReport && !reportError;
 
   const styles = StyleSheet.create({
     container: {
@@ -310,6 +446,37 @@ export default function Relatorios() {
     },
     exportSection: {
       marginBottom: 20,
+    },
+    dataStatusContainer: {
+      marginBottom: 20,
+      padding: 12,
+      backgroundColor: colors.background,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 8,
+    },
+    dataStatusContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    dataStatusText: {
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
+      color: colors.text,
+    },
+    dataStatusError: {
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
+      color: colors.error,
+      lineHeight: 20,
+    },
+    dataStatusWarning: {
+      fontSize: 12,
+      fontFamily: 'Inter-Regular',
+      color: colors.warning,
+      lineHeight: 18,
     },
     exportButtons: {
       flexDirection: 'row',
@@ -619,7 +786,29 @@ export default function Relatorios() {
                 )}
               </View>
             </View>
-            
+
+            <View style={styles.dataStatusContainer}>
+              {isFetchingReport ? (
+                <View style={styles.dataStatusContent}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.dataStatusText}>Carregando dados do relatório...</Text>
+                </View>
+              ) : reportError ? (
+                <Text style={styles.dataStatusError}>{reportError}</Text>
+              ) : (
+                <>
+                  <Text style={styles.dataStatusText}>
+                    Registros encontrados: {reportData.length}
+                  </Text>
+                  {selectedReport && reportValidation[selectedReport.id] === false && reportData.length === 0 && (
+                    <Text style={styles.dataStatusWarning}>
+                      Não encontramos dados anteriores para este relatório no período padrão. Ajuste o período e tente novamente.
+                    </Text>
+                  )}
+                </>
+              )}
+            </View>
+
             <View style={styles.exportSection}>
               <Text style={styles.sectionTitle}>Formato de Exportação</Text>
               <View style={styles.exportButtons}>
@@ -656,18 +845,18 @@ export default function Relatorios() {
             <View style={styles.generateButtons}>
               <TouchableOpacity
                 style={[
-                  styles.generateButton, 
-                  { 
-                    backgroundColor: (selectedFormat && selectedPeriod) ? colors.primary : colors.border,
-                    opacity: (selectedFormat && selectedPeriod) ? 1 : 0.5
+                  styles.generateButton,
+                  {
+                    backgroundColor: canGenerateReport ? colors.primary : colors.border,
+                    opacity: canGenerateReport ? 1 : 0.5
                   }
                 ]}
                 onPress={handleGenerateReport}
-                disabled={isGenerating || !selectedFormat || !selectedPeriod}
+                disabled={isGenerating || !canGenerateReport}
               >
-                <Text style={{ 
-                  color: (selectedFormat && selectedPeriod) ? colors.white : colors.text, 
-                  textAlign: 'center' 
+                <Text style={{
+                  color: canGenerateReport ? colors.white : colors.text,
+                  textAlign: 'center'
                 }}>
                   {isGenerating ? "Gerando..." : "Gerar Relatório"}
                 </Text>
@@ -675,10 +864,7 @@ export default function Relatorios() {
               
               <TouchableOpacity
                 style={[styles.generateButton, { backgroundColor: colors.border }]}
-                onPress={() => {
-                  setShowPeriodModal(false);
-                  setSelectedFormat(null);
-                }}
+                onPress={handleCloseModal}
               >
                 <Text style={{ color: colors.text, textAlign: 'center' }}>Cancelar</Text>
               </TouchableOpacity>
