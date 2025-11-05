@@ -27,6 +27,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useRouter } from 'expo-router';
 import { SkeletonCard, EmptyState } from '@/components/ui/Skeleton';
+import db from '@/lib/db';
 
 interface Customer {
   id: string;
@@ -130,36 +131,43 @@ export default function Clientes() {
     }
 
     try {
-      const customerData = {
+      const now = new Date().toISOString();
+      const customerPayload = {
         name: formData.name.trim(),
-        phone: formData.phone.trim() || undefined,
-        email: formData.email.trim() || undefined,
+        phone: formData.phone.trim() ? formData.phone.trim() : null,
+        email: formData.email.trim() ? formData.email.trim() : null,
         whatsapp: formData.whatsapp,
+        updated_at: now,
       };
 
       if (editingCustomer) {
-        // Update existing customer
-        const updatedCustomer: Customer = {
-          ...editingCustomer,
-          ...customerData,
-          updated_at: new Date().toISOString(),
-        };
-        setCustomers(customers.map(c => c.id === editingCustomer.id ? updatedCustomer : c));
+        await db.update('customers', customerPayload, 'id = ?', [editingCustomer.id]);
       } else {
-        // Create new customer
-        const newCustomer: Customer = {
-          id: Date.now().toString(),
-          ...customerData,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setCustomers([...customers, newCustomer]);
+        const id = Date.now().toString();
+        await db.insert('customers', {
+          id,
+          ...customerPayload,
+          created_at: now,
+        });
       }
 
+      await loadCustomers();
       closeCustomerModal();
       Alert.alert('Sucesso', 'Cliente salvo com sucesso!');
     } catch (error) {
+      console.error('Error saving customer:', error);
       Alert.alert('Erro', 'Não foi possível salvar o cliente.');
+    }
+  };
+
+  const handleDeleteCustomer = async (customerId: string) => {
+    try {
+      await db.del('customers', 'id = ?', [customerId]);
+      await loadCustomers();
+      Alert.alert('Sucesso', 'Cliente excluído com sucesso!');
+    } catch (error) {
+      console.error('Error deleting customer:', error);
+      Alert.alert('Erro', 'Não foi possível excluir o cliente.');
     }
   };
 
@@ -173,7 +181,7 @@ export default function Clientes() {
           text: 'Excluir',
           style: 'destructive',
           onPress: () => {
-            setCustomers(customers.filter(c => c.id !== customer.id));
+            handleDeleteCustomer(customer.id);
           },
         },
       ]

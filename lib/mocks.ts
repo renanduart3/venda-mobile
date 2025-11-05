@@ -1,5 +1,5 @@
 // Configuração para ativar/desativar mocks
-export const USE_MOCKS = true; // Ativado para visualizar relatórios premium
+export const USE_MOCKS = false;
 
 // Cache timestamps to avoid repeated Date object creation (performance optimization)
 const CURRENT_TIMESTAMP = new Date().toISOString();
