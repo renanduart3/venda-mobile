@@ -1,22 +1,18 @@
-import { Platform, Alert } from 'react-native';
+import { Platform } from 'react-native';
+import RNIap, {
+  purchaseUpdatedListener,
+  purchaseErrorListener,
+  type Product as IAPProduct,
+  type Purchase,
+  type SubscriptionPurchase,
+  finishTransaction,
+  getSubscriptions,
+  requestSubscription,
+  initConnection,
+  endConnection as endIAPConnection,
+  getAvailablePurchases,
+} from 'react-native-iap';
 import { validateSubscription } from './premium';
-
-// TODO: Instalar react-native-iap quando necessário
-// import RNIap, {
-//   purchaseUpdatedListener,
-//   purchaseErrorListener,
-//   type Product,
-//   type Purchase,
-//   type SubscriptionPurchase,
-//   finishTransaction,
-//   getProducts as getIAPProducts,
-//   getSubscriptions,
-//   requestPurchase,
-//   requestSubscription,
-//   initConnection,
-//   endConnection as endIAPConnection,
-//   getAvailablePurchases,
-// } from 'react-native-iap';
 
 // SKUs reais do Google Play Console
 export const PRODUCT_IDS = {
@@ -40,31 +36,127 @@ export interface Product {
   type: 'subs';
 }
 
-export interface Purchase {
-  productId: string;
-  transactionId: string;
-  transactionDate: number;
-  transactionReceipt: string;
-  purchaseToken: string;
+export interface PurchaseResult {
+  success: boolean;
+  error?: string;
 }
 
 let iapAvailable = false;
-let purchaseUpdateSubscription: any = null;
-let purchaseErrorSubscription: any = null;
+let purchaseUpdateSubscription: ReturnType<typeof purchaseUpdatedListener> | null = null;
+let purchaseErrorSubscription: ReturnType<typeof purchaseErrorListener> | null = null;
+const purchaseResultQueue: Array<(result: PurchaseResult) => void> = [];
+
+function mapProduct(product: IAPProduct): Product {
+  return {
+    productId: product.productId,
+    title: product.title ?? '',
+    description: product.description ?? '',
+    price: product.price ?? '',
+    localizedPrice: product.localizedPrice ?? product.price ?? '',
+    currency: product.currency ?? '',
+    type: 'subs',
+  };
+}
+
+function resolveNextPurchase(result: PurchaseResult) {
+  const resolver = purchaseResultQueue.shift();
+  if (resolver) {
+    resolver(result);
+  }
+}
+
+async function processPurchase(
+  purchase: Purchase | SubscriptionPurchase,
+  source: 'purchase' | 'restore'
+): Promise<PurchaseResult> {
+  try {
+    const transactionReceipt = purchase.transactionReceipt;
+    const productId = Array.isArray(purchase.productId)
+      ? purchase.productId[0]
+      : purchase.productId;
+
+    if (!transactionReceipt) {
+      throw new Error('Missing transaction receipt');
+    }
+
+    if (!productId) {
+      throw new Error('Missing product identifier');
+    }
+
+    await finishTransaction({ purchase, isConsumable: false });
+
+    const platform: 'android' | 'ios' = Platform.OS === 'ios' ? 'ios' : 'android';
+    const subscriptionPurchase = purchase as SubscriptionPurchase;
+    const purchaseToken =
+      platform === 'ios'
+        ? transactionReceipt
+        : subscriptionPurchase.purchaseToken;
+
+    if (!purchaseToken) {
+      throw new Error('Missing purchase token');
+    }
+
+    const validation = await validateSubscription(platform, purchaseToken, productId);
+
+    if (!validation.success) {
+      throw new Error(validation.error || 'Subscription validation failed');
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error(`Error processing ${source} purchase:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
 
 export async function initializeIAP(): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    console.log('IAP not available on web');
+    return false;
+  }
+
   try {
-    if (Platform.OS === 'web') {
-      console.log('IAP not available on web');
+    const connected = await initConnection();
+
+    if (!connected) {
+      console.warn('Failed to initialize IAP connection');
       return false;
     }
 
-    // Simular inicialização do IAP para teste
-    console.log('IAP initialized for testing');
+    if (Platform.OS === 'android') {
+      await RNIap.flushFailedPurchasesCachedAsPendingAndroid?.();
+    } else if (Platform.OS === 'ios') {
+      await RNIap.clearTransactionIOS?.();
+    }
+
+    purchaseUpdateSubscription?.remove?.();
+    purchaseErrorSubscription?.remove?.();
+
+    purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase) => {
+      const result = await processPurchase(purchase, 'purchase');
+      if (!result.success) {
+        resolveNextPurchase(result);
+      } else {
+        resolveNextPurchase({ success: true });
+      }
+    });
+
+    purchaseErrorSubscription = purchaseErrorListener((error) => {
+      console.error('Purchase error:', error);
+      resolveNextPurchase({
+        success: false,
+        error: error.message,
+      });
+    });
+
     iapAvailable = true;
     return true;
   } catch (error) {
     console.error('Error initializing IAP:', error);
+    iapAvailable = false;
     return false;
   }
 }
@@ -76,83 +168,71 @@ export async function getProducts(): Promise<Product[]> {
       return [];
     }
 
-    // Simular produtos para teste
-    console.log('Getting products for testing');
-    return [
-      {
-        productId: PRODUCT_IDS.MONTHLY,
-        title: 'Plano Premium Mensal',
-        description: 'Acesso a todos os recursos premium por 1 mês',
-        price: '9.99',
-        localizedPrice: 'R$ 9,99',
-        currency: 'BRL',
-        type: 'subs' as const,
-      },
-      {
-        productId: PRODUCT_IDS.ANNUAL,
-        title: 'Plano Premium Anual',
-        description: 'Acesso a todos os recursos premium por 1 ano',
-        price: '99.99',
-        localizedPrice: 'R$ 99,99',
-        currency: 'BRL',
-        type: 'subs' as const,
-      },
-    ];
+    const products = await getSubscriptions({ skus: SKUS });
+    return products.map(mapProduct);
   } catch (error) {
     console.error('Error getting products:', error);
     return [];
   }
 }
 
-export async function purchaseSubscription(productId: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    if (!iapAvailable) {
-      return { success: false, error: 'IAP not available' };
-    }
-
-    if (Platform.OS === 'web') {
-      return { success: false, error: 'Purchases not available on web' };
-    }
-
-    // Simular compra para teste - vai abrir o Google Pay
-    console.log(`Attempting to purchase: ${productId}`);
-    
-    // Simular abertura do Google Pay
-    Alert.alert(
-      'Google Pay',
-      `Tentando comprar: ${productId}\n\nIsso abriria o Google Pay em produção.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Simular Sucesso', 
-          onPress: () => {
-            // Simular sucesso da compra
-            console.log('Purchase simulated successfully');
-          }
-        }
-      ]
-    );
-    
-    return { success: false, error: 'Simulação - Google Pay seria aberto aqui' };
-  } catch (error) {
-    console.error('Error purchasing subscription:', error);
-    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+export async function purchaseSubscription(productId: string): Promise<PurchaseResult> {
+  if (!iapAvailable) {
+    return { success: false, error: 'IAP not available' };
   }
+
+  if (Platform.OS === 'web') {
+    return { success: false, error: 'Purchases not available on web' };
+  }
+
+  return new Promise(async (resolve) => {
+    purchaseResultQueue.push(resolve);
+
+    try {
+      await requestSubscription({ sku: productId });
+    } catch (error) {
+      purchaseResultQueue.pop();
+      console.error('Error requesting subscription:', error);
+      resolve({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
 }
 
 export async function restorePurchases(): Promise<{ success: boolean; error?: string; restored: number }> {
+  if (!iapAvailable) {
+    return { success: false, error: 'IAP not available', restored: 0 };
+  }
+
+  if (Platform.OS === 'web') {
+    return { success: false, error: 'Restore not available on web', restored: 0 };
+  }
+
   try {
-    if (!iapAvailable) {
-      return { success: false, error: 'IAP not available', restored: 0 };
+    const purchases = await getAvailablePurchases();
+    let restored = 0;
+    let lastError: string | undefined;
+
+    for (const purchase of purchases) {
+      const result = await processPurchase(purchase, 'restore');
+      if (result.success) {
+        restored += 1;
+      } else {
+        lastError = result.error;
+      }
     }
 
-    if (Platform.OS === 'web') {
-      return { success: false, error: 'Restore not available on web', restored: 0 };
+    if (restored > 0) {
+      return { success: true, restored };
     }
 
-    // TODO: Implementar com react-native-iap quando instalado
-    console.log('restorePurchases temporarily disabled - install react-native-iap to enable');
-    return { success: false, error: 'IAP temporarily disabled - install react-native-iap to enable', restored: 0 };
+    return {
+      success: false,
+      restored: 0,
+      error: lastError || 'No purchases available to restore',
+    };
   } catch (error) {
     console.error('Error restoring purchases:', error);
     return {
@@ -165,12 +245,17 @@ export async function restorePurchases(): Promise<{ success: boolean; error?: st
 
 export async function endConnection(): Promise<void> {
   try {
+    purchaseUpdateSubscription?.remove?.();
+    purchaseErrorSubscription?.remove?.();
+    purchaseUpdateSubscription = null;
+    purchaseErrorSubscription = null;
+
     if (iapAvailable) {
-      // TODO: Implementar com react-native-iap quando instalado
-      console.log('endConnection temporarily disabled - install react-native-iap to enable');
-      iapAvailable = false;
+      await endIAPConnection();
     }
   } catch (error) {
     console.error('Error ending IAP connection:', error);
+  } finally {
+    iapAvailable = false;
   }
 }
