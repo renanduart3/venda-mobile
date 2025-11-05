@@ -27,6 +27,7 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
+import db from '@/lib/db';
 
 interface Expense {
   id: string;
@@ -215,41 +216,54 @@ export default function Financas() {
 
     try {
       const now = new Date();
+      const timestamp = now.toISOString();
       const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-      const expenseData = {
+      const amountValue = parseFloat(formData.amount.replace(',', '.'));
+      if (Number.isNaN(amountValue)) {
+        Alert.alert('Erro', 'Informe um valor válido.');
+        return;
+      }
+
+      const expensePayload = {
         name: formData.name.trim(),
-        amount: parseFloat(formData.amount),
+        amount: amountValue,
         due_date: formData.due_date || null,
         paid: formData.paid,
         recurring: formData.recurring,
         customer_id: formData.customer_id || null,
         created_month: editingExpense?.created_month || currentMonth,
+        updated_at: timestamp,
       };
 
       if (editingExpense) {
-        // Update existing expense
-        const updatedExpense: Expense = {
-          ...editingExpense,
-          ...expenseData,
-          updated_at: new Date().toISOString(),
-        };
-        setExpenses(expenses.map(e => e.id === editingExpense.id ? updatedExpense : e));
+        await db.update('expenses', expensePayload, 'id = ?', [editingExpense.id]);
       } else {
-        // Create new expense
-        const newExpense: Expense = {
-          id: Date.now().toString(),
-          ...expenseData,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setExpenses([...expenses, newExpense]);
+        const id = Date.now().toString();
+        await db.insert('expenses', {
+          id,
+          ...expensePayload,
+          created_at: timestamp,
+        });
       }
 
+      await loadExpenses();
       closeExpenseModal();
       Alert.alert('Sucesso', 'Despesa salva com sucesso!');
     } catch (error) {
+      console.error('Error saving expense:', error);
       Alert.alert('Erro', 'Não foi possível salvar a despesa.');
+    }
+  };
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    try {
+      await db.del('expenses', 'id = ?', [expenseId]);
+      await loadExpenses();
+      Alert.alert('Sucesso', 'Despesa excluída com sucesso!');
+    } catch (error) {
+      console.error('Error deleting expense:', error);
+      Alert.alert('Erro', 'Não foi possível excluir a despesa.');
     }
   };
 
@@ -263,20 +277,27 @@ export default function Financas() {
           text: 'Excluir',
           style: 'destructive',
           onPress: () => {
-            setExpenses(expenses.filter(e => e.id !== expense.id));
+            handleDeleteExpense(expense.id);
           },
         },
       ]
     );
   };
 
-  const togglePaidStatus = (expense: Expense) => {
-    const updatedExpense = {
-      ...expense,
-      paid: !expense.paid,
-      updated_at: new Date().toISOString(),
-    };
-    setExpenses(expenses.map(e => e.id === expense.id ? updatedExpense : e));
+  const togglePaidStatus = async (expense: Expense) => {
+    try {
+      const updatedAt = new Date().toISOString();
+      await db.update(
+        'expenses',
+        { paid: !expense.paid, updated_at: updatedAt },
+        'id = ?',
+        [expense.id]
+      );
+      await loadExpenses();
+    } catch (error) {
+      console.error('Error toggling expense status:', error);
+      Alert.alert('Erro', 'Não foi possível atualizar o status da despesa.');
+    }
   };
 
   const stats = expenseStats;

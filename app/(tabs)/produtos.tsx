@@ -24,6 +24,7 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { SkeletonCard, EmptyState } from '@/components/ui/Skeleton';
+import db from '@/lib/db';
 
 interface Product {
   id: string;
@@ -152,7 +153,7 @@ export default function Produtos() {
   };
 
   const saveProduct = async () => {
-    if (!formData.name || !formData.price) {
+    if (!formData.name.trim() || !formData.price) {
       Alert.alert('Erro', 'Preencha todos os campos obrigatórios.');
       return;
     }
@@ -163,40 +164,63 @@ export default function Produtos() {
     }
 
     try {
-      const productData = {
-        name: formData.name,
-        price: parseFloat(formData.price),
-        stock: formData.type === 'service' ? 0 : parseInt(formData.stock),
-        min_stock: formData.type === 'service' ? 0 : (parseInt(formData.min_stock) || 0),
-        barcode: formData.barcode || undefined,
+      const now = new Date().toISOString();
+      const priceValue = parseFloat(formData.price.replace(',', '.'));
+      if (Number.isNaN(priceValue)) {
+        Alert.alert('Erro', 'Informe um preço válido.');
+        return;
+      }
+
+      const stockValue = formData.type === 'service' ? 0 : parseInt(formData.stock, 10);
+      if (formData.type === 'product' && Number.isNaN(stockValue)) {
+        Alert.alert('Erro', 'Informe um estoque válido.');
+        return;
+      }
+
+      const minStockValue = formData.type === 'service'
+        ? 0
+        : Math.max(0, parseInt(formData.min_stock, 10) || 0);
+
+      const productPayload = {
+        name: formData.name.trim(),
+        price: priceValue,
+        stock: formData.type === 'service' ? 0 : Math.max(0, stockValue),
+        min_stock: minStockValue,
+        barcode: formData.barcode.trim() ? formData.barcode.trim() : null,
         type: formData.type,
-        description: formData.description || undefined,
+        description: formData.description.trim() ? formData.description.trim() : null,
+        image_url: editingProduct?.image_url || null,
+        updated_at: now,
       };
 
       if (editingProduct) {
-        // Update existing product
-        const updatedProduct: Product = {
-          ...editingProduct,
-          ...productData,
-          updated_at: new Date().toISOString(),
-        };
-        setProducts(products.map(p => p.id === editingProduct.id ? updatedProduct : p));
+        await db.update('products', productPayload, 'id = ?', [editingProduct.id]);
       } else {
-        // Create new product
-        const newProduct: Product = {
-          id: Date.now().toString(),
-          ...productData,
-          image_url: undefined,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setProducts([...products, newProduct]);
+        const id = Date.now().toString();
+        await db.insert('products', {
+          id,
+          ...productPayload,
+          created_at: now,
+        });
       }
 
+      await loadProducts();
       closeProductModal();
       Alert.alert('Sucesso', 'Produto salvo com sucesso!');
     } catch (error) {
+      console.error('Error saving product:', error);
       Alert.alert('Erro', 'Não foi possível salvar o produto.');
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    try {
+      await db.del('products', 'id = ?', [productId]);
+      await loadProducts();
+      Alert.alert('Sucesso', 'Produto excluído com sucesso!');
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      Alert.alert('Erro', 'Não foi possível excluir o produto.');
     }
   };
 
@@ -210,7 +234,7 @@ export default function Produtos() {
           text: 'Excluir',
           style: 'destructive',
           onPress: () => {
-            setProducts(products.filter(p => p.id !== product.id));
+            handleDeleteProduct(product.id);
           },
         },
       ]

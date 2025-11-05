@@ -25,8 +25,9 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { isPremium, enablePremium } from '@/lib/premium';
+import { isPremium } from '@/lib/premium';
 import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp } from '@/lib/utils';
+import db from '@/lib/db';
 
 interface Product {
   id: string;
@@ -62,6 +63,7 @@ export default function Vendas() {
   // New Sale State
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerSuggestionsVisible, setCustomerSuggestionsVisible] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'debit' | 'pix'>('credit');
@@ -80,22 +82,42 @@ export default function Vendas() {
   const [customers, setCustomers] = useState<any[]>([]);
 
   // Função para deletar venda
-  const handleDeleteSale = (saleId: string) => {
+  const handleDeleteSale = (sale: Sale) => {
     Alert.alert(
       'Confirmar Exclusão',
       'Tem certeza que deseja excluir esta venda? Esta ação não pode ser desfeita.',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { 
-          text: 'Excluir', 
+        {
+          text: 'Excluir',
           style: 'destructive',
           onPress: () => {
-            setSales(prevSales => prevSales.filter(sale => sale.id !== saleId));
-            Alert.alert('Sucesso', 'Venda excluída com sucesso!');
+            confirmDeleteSale(sale);
           }
         }
       ]
     );
+  };
+
+  const confirmDeleteSale = async (sale: Sale) => {
+    try {
+      const timestamp = new Date().toISOString();
+      for (const item of sale.items) {
+        if (item.product.type === 'service') continue;
+        await db.query(
+          'UPDATE products SET stock = stock + ?, updated_at = ? WHERE id = ?;',
+          [item.quantity, timestamp, item.product.id]
+        );
+      }
+
+      await db.del('sale_items', 'sale_id = ?', [sale.id]);
+      await db.del('sales', 'id = ?', [sale.id]);
+      await loadData();
+      Alert.alert('Sucesso', 'Venda excluída com sucesso!');
+    } catch (error) {
+      console.error('Error deleting sale:', error);
+      Alert.alert('Erro', 'Não foi possível excluir a venda.');
+    }
   };
 
   // Função para editar venda
@@ -124,28 +146,31 @@ export default function Vendas() {
     
     setProducts(productsData as Product[]);
     setCustomers(customersData);
-    
+
     // Convert sales data to the expected format
-    const salesWithValidTimestamps = (salesData as any[]).map(sale => ({
-      id: sale.id,
-      items: sale.items.map((item: any) => ({
-        product: {
-          id: item.product_id,
-          name: item.product_name,
-          price: item.unit_price,
-          stock: 0,
-          type: 'product' as const
-        },
-        quantity: item.quantity,
-        total: item.total
-      })),
-      customer: sale.customer_name,
-      paymentMethod: sale.payment_method.toLowerCase() as 'cash' | 'credit' | 'debit' | 'pix',
-      total: sale.total,
-      timestamp: sale.created_at,
-      observation: sale.observation
-    }));
-    
+    const salesWithValidTimestamps = (salesData as any[]).map(sale => {
+      const items = Array.isArray(sale.items) ? sale.items : [];
+      return {
+        id: sale.id,
+        items: items.map((item: any) => ({
+          product: {
+            id: item.product_id,
+            name: item.product_name,
+            price: Number(item.unit_price ?? 0),
+            stock: 0,
+            type: item.product_type === 'service' ? 'service' : 'product',
+          },
+          quantity: Number(item.quantity ?? 0),
+          total: Number(item.total ?? 0),
+        })),
+        customer: sale.customer_name || '',
+        paymentMethod: ((sale.payment_method || 'cash').toLowerCase()) as 'cash' | 'credit' | 'debit' | 'pix',
+        total: Number(sale.total ?? 0),
+        timestamp: sale.created_at,
+        observation: sale.observation,
+      };
+    });
+
     setSales(salesWithValidTimestamps);
 
     const { isPremium } = await import('@/lib/premium');
@@ -157,6 +182,7 @@ export default function Vendas() {
 
   const handleCustomerSelect = (customer: any) => {
     setSelectedCustomer(customer.name);
+    setSelectedCustomerId(customer.id ?? null);
     setCustomerSearch(customer.name);
     setCustomerSuggestionsVisible(false);
   };
@@ -164,6 +190,7 @@ export default function Vendas() {
   const handleCustomerSearchChange = (text: string) => {
     setCustomerSearch(text);
     setSelectedCustomer(text);
+    setSelectedCustomerId(null);
     setCustomerSuggestionsVisible(text.length > 0);
   };
 
@@ -232,26 +259,84 @@ export default function Vendas() {
           text: 'Confirmar',
           onPress: async () => {
             try {
-              const newSale: Sale = {
-                id: Date.now().toString(),
-                items: saleItems,
-                customer: selectedCustomer || undefined,
-                paymentMethod,
-                total: totalSale,
-                timestamp: new Date().toISOString(),
-                observation: observation || undefined,
-              };
+              const now = new Date();
+              const timestamp = now.toISOString();
+              const trimmedCustomer = selectedCustomer.trim();
 
-              setSales([newSale, ...sales]);
+              let customerId = selectedCustomerId;
+
+              if (customerId) {
+                const existingCustomer = customers.find((c: any) => c.id === customerId);
+              } else if (trimmedCustomer) {
+                const existingCustomer = customers.find(
+                  (c: any) => c.name?.toLowerCase() === trimmedCustomer.toLowerCase()
+                );
+                if (existingCustomer) {
+                  customerId = existingCustomer.id;
+                } else {
+                  const newCustomerId = `${Date.now()}-customer`;
+                  await db.insert('customers', {
+                    id: newCustomerId,
+                    name: trimmedCustomer,
+                    phone: null,
+                    email: null,
+                    whatsapp: false,
+                    created_at: timestamp,
+                    updated_at: timestamp,
+                  });
+                  customerId = newCustomerId;
+                }
+              }
+
+              const saleId = Date.now().toString();
+              await db.insert('sales', {
+                id: saleId,
+                customer_id: customerId,
+                total: totalSale,
+                payment_method: paymentMethod.toUpperCase(),
+                observation: observation.trim() ? observation.trim() : null,
+                created_at: timestamp,
+              });
+
+              await Promise.all(
+                saleItems.map(async (item, index) => {
+                  const saleItemId = `${saleId}-${index}`;
+                  await db.insert('sale_items', {
+                    id: saleItemId,
+                    sale_id: saleId,
+                    product_id: item.product.id,
+                    quantity: item.quantity,
+                    unit_price: item.product.price,
+                    total: item.total,
+                  });
+
+                  if (item.product.type !== 'service') {
+                    const currentProduct = products.find(p => p.id === item.product.id);
+                    const currentStock = currentProduct ? currentProduct.stock : 0;
+                    const newStock = Math.max(0, currentStock - item.quantity);
+                    await db.update(
+                      'products',
+                      { stock: newStock, updated_at: timestamp },
+                      'id = ?',
+                      [item.product.id]
+                    );
+                  }
+                })
+              );
+
+              await loadData();
 
               setSaleItems([]);
               setSelectedCustomer('');
+              setSelectedCustomerId(null);
               setCustomerSearch('');
               setPaymentMethod('credit');
               setObservation('');
+              setCustomerSuggestionsVisible(false);
 
               Alert.alert('✅ Sucesso', `Venda de R$ ${totalSale.toFixed(2)} realizada com sucesso!`);
             } catch (error) {
+              console.error('Error finalizing sale:', error);
               Alert.alert('❌ Erro', 'Não foi possível finalizar a venda. Tente novamente.');
             }
           },
@@ -699,7 +784,7 @@ export default function Vendas() {
                     <Edit size={16} color={colors.primary} />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={() => handleDeleteSale(sale.id)}
+                    onPress={() => handleDeleteSale(sale)}
                     style={{ padding: 4 }}
                   >
                     <Trash2 size={16} color={colors.error} />
