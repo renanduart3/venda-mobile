@@ -256,3 +256,36 @@ export function generateReportHTML(reportTitle: string, reportData: any[], perio
     </html>
   `;
 }
+
+export async function exportReportToCSV(reportTitle: string, reportData: any[]) {
+  const premium = await isPremium();
+  if (!premium) throw new Error('Funcionalidade premium: exportar relatórios.');
+
+  const normalizedData = Array.isArray(reportData)
+    ? reportData
+    : reportData
+      ? [reportData]
+      : [];
+
+  const csv = normalizedData.length > 0
+    ? toCSV(normalizedData)
+    : 'Nenhum dado disponível para o período selecionado.';
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const safeTitle = reportTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'relatorio';
+  const filename = `${safeTitle}_${timestamp}.csv`;
+  const path = `${FileSystem.documentDirectory}${filename}`;
+
+  await FileSystem.writeAsStringAsync(path, csv, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
+
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(path, { mimeType: 'text/csv' });
+  }
+
+  return path;
+}
