@@ -8,4 +8,11 @@
         <item name="android:windowTranslucentStatus">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
+    
+    <!-- Splash screen theme referenced in AndroidManifest -->
+    <style name="Theme.App.SplashScreen" parent="AppTheme">
+        <!-- Use a solid background to avoid blank screen; replace with @drawable/splashscreen if present -->
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
 </resources>

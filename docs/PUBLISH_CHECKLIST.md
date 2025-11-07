@@ -1,14 +1,14 @@
 ## Checklist de Publicação (Google Play)
 
 ### 1) Preparação local
-- [ ] Gerar keystore de upload (apenas uma vez)
+- [ x ] Gerar keystore de upload (apenas uma vez)
   - `keytool -genkeypair -v -keystore upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 36500`
   - Mover para `android/app/upload-keystore.jks`
-- [ ] Definir variáveis de ambiente no terminal antes do build
+- [ x ] Definir variáveis de ambiente no terminal antes do build
   - `set UPLOAD_STORE_PASSWORD=SUASENHA`
   - `set UPLOAD_KEY_ALIAS=upload`
   - `set UPLOAD_KEY_PASSWORD=SUASENHA`
-- [ ] Conferir versão
+- [x] Conferir versão
   - `android/app/build.gradle` → `versionCode` (incrementar cada upload), `versionName`
 
 ### 2) Build do artefato
