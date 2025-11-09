@@ -1,45 +1,83 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react';
 import { TextInput as RNTextInput, TextInputProps, StyleSheet, Platform } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 
 interface CustomTextInputProps extends TextInputProps {
   variant?: 'default' | 'outlined';
+  /**
+   * Debounce user input before calling onChangeText (ms). Useful to avoid heavy renders that can blur the input.
+   */
+  debounce?: number;
 }
 
 export const TextInput = forwardRef<RNTextInput, CustomTextInputProps>(
-  ({ style, variant = 'default', ...props }, ref) => {
+  (
+    {
+      style,
+      variant = 'default',
+      debounce = 0,
+      onChangeText,
+      returnKeyType = 'next',
+      blurOnSubmit = false,
+      ...props
+    },
+    ref
+  ) => {
     const { colors } = useTheme();
 
     const defaultStyle = [
       styles.base,
       variant === 'outlined' && styles.outlined,
       {
-        borderColor: colors.border,
+        borderColor: colors.inputBorder,
         color: colors.text,
         backgroundColor: colors.surface,
       },
       style,
     ];
 
+    // Keep latest onChangeText in a ref to avoid changing handler identity
+    const onChangeRef = useRef<typeof onChangeText>(onChangeText);
+    useEffect(() => {
+      onChangeRef.current = onChangeText;
+    }, [onChangeText]);
+
+    // Debounced, stable handler to prevent Android focus loss on heavy re-renders
+    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    }, []);
+
+    const handleChangeText = useCallback((text: string) => {
+      if (!onChangeRef.current) return;
+      if (debounce <= 0) {
+        onChangeRef.current?.(text);
+        return;
+      }
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        onChangeRef.current?.(text);
+      }, debounce);
+    }, [debounce]);
+
     return (
       <RNTextInput
         ref={ref}
         style={defaultStyle}
         placeholderTextColor={colors.textSecondary}
-        // Configurações para melhorar o comportamento em emuladores
         autoCorrect={false}
         autoComplete="off"
         spellCheck={false}
-        // Configurações específicas para Android
+        // Android specifics
         {...(Platform.OS === 'android' && {
           importantForAutofill: 'no',
           textContentType: 'none',
           autoCorrect: false,
           autoComplete: 'off',
         })}
-        // Configurações para melhorar o foco
-        blurOnSubmit={false}
-        returnKeyType="next"
+        blurOnSubmit={blurOnSubmit}
+        returnKeyType={returnKeyType}
+        onChangeText={handleChangeText}
         {...props}
       />
     );

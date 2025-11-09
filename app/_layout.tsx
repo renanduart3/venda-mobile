@@ -11,14 +11,14 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
-import { ThemeProvider } from '@/contexts/ThemeContext';
+import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { useRouter, useSegments } from 'expo-router';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { OfflineProvider } from '@/contexts/OfflineContext';
 import db from '@/lib/db';
-import { initializeIAP } from '@/lib/iap';
-import { checkSubscriptionFromDatabase } from '@/lib/premium';
+import { initializeIAP, restorePurchases } from '@/lib/iap';
+import { checkSubscriptionFromDatabase, isPremium } from '@/lib/premium';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -58,6 +58,10 @@ export default function RootLayout() {
         await db.initDB();
         await initializeIAP();
         await checkSubscriptionFromDatabase();
+        const premium = await isPremium();
+        if (!premium) {
+          try { await restorePurchases(); } catch {}
+        }
       } catch (err) {
         console.error('Error initializing app:', err);
       }
@@ -93,11 +97,19 @@ export default function RootLayout() {
                   <Stack.Screen name="+not-found" />
                 </Stack>
               </AuthGate>
-              <StatusBar style="auto" />
+              <ThemedStatusBar />
             </NotificationProvider>
           </OfflineProvider>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>
+  );
+}
+
+function ThemedStatusBar() {
+  // Color the status bar to match the header and force light icons for contrast
+  const { colors } = useTheme();
+  return (
+    <StatusBar backgroundColor={colors.topbar} style="light" />
   );
 }

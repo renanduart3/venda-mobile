@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, DollarSign, Calendar, CheckCircle, XCircle } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
+import { toTitleCase } from '@/lib/utils';
 
 interface Customer {
   id: string;
@@ -20,6 +22,7 @@ interface Expense {
   due_date: string;
   paid: boolean;
   customer_id: string | null;
+  paid_at?: string | null;
 }
 
 export default function ClienteDetalhe() {
@@ -32,20 +35,22 @@ export default function ClienteDetalhe() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [editDueDate, setEditDueDate] = useState<string>('');
 
   useEffect(() => {
     loadCustomerData();
   }, [customerId]);
 
   const loadCustomerData = async () => {
-    const { mockCustomers, mockExpenses } = await import('@/lib/mocks');
-
-    const foundCustomer = mockCustomers.find((c: any) => c.id === customerId);
+    const { loadCustomers, loadExpenses } = await import('@/lib/data-loader');
+    const [customers, allExpenses] = await Promise.all([loadCustomers(), loadExpenses()]);
+    const foundCustomer = (customers as any[]).find((c) => c.id === customerId);
     if (foundCustomer) {
       setCustomer(foundCustomer as Customer);
+    } else {
+      setCustomer(null);
     }
-
-    const customerExpenses = mockExpenses.filter((e: any) => e.customer_id === customerId);
+    const customerExpenses = (allExpenses as any[]).filter((e) => e.customer_id === customerId);
     setExpenses(customerExpenses as Expense[]);
   };
 
@@ -60,9 +65,56 @@ export default function ClienteDetalhe() {
     } as any);
   };
 
+  // Helper: robust date formatting for display
+  const formatDate = (dateString: string | undefined | null) => {
+    if (!dateString) return 'Sem vencimento';
+    // DD/MM/YYYY
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) return dateString;
+    // DD-MM-YYYY -> convert to DD/MM/YYYY
+    if (/^\d{2}-\d{2}-\d{4}$/.test(dateString)) return dateString.replace(/-/g, '/');
+    const d = new Date(dateString);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+    return 'Data inválida';
+  };
+
   const openExpenseModal = (expense: Expense) => {
     setSelectedExpense(expense);
+    setEditDueDate(formatDate(expense.due_date));
     setShowExpenseModal(true);
+  };
+
+  const persistDueDateValue = (value: string): string | null => {
+    if (!value || value === 'Sem vencimento' || value === 'Data inválida') return null;
+    // store as DD/MM/YYYY string (consistent with Finanças input)
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) return value;
+    if (/^\d{2}-\d{2}-\d{4}$/.test(value)) return value.replace(/-/g, '/');
+    // Fallback try parse to ISO and back to dd/MM/yyyy
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yyyy = d.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+    return null;
+  };
+
+  const updateExpenseDueDate = async () => {
+    if (!selectedExpense) return;
+    try {
+      const due = persistDueDateValue(editDueDate);
+      const updated_at = new Date().toISOString();
+      await (await import('@/lib/db')).default.update(
+        'expenses',
+        { due_date: due, updated_at },
+        'id = ?',
+        [selectedExpense.id]
+      );
+      await loadCustomerData();
+      Alert.alert('Sucesso', 'Vencimento atualizado!');
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível atualizar o vencimento.');
+    }
   };
 
   const markAsPaid = async (expenseId: string) => {
@@ -75,15 +127,15 @@ export default function ClienteDetalhe() {
           text: 'Confirmar',
           onPress: async () => {
             try {
-              // Aqui você implementaria a lógica para atualizar no banco de dados
-              // Por enquanto, vamos apenas atualizar o estado local
-              setExpenses(prev => 
-                prev.map(expense => 
-                  expense.id === expenseId 
-                    ? { ...expense, paid: true }
-                    : expense
-                )
+              const updated_at = new Date().toISOString();
+              const due = persistDueDateValue(editDueDate);
+              await (await import('@/lib/db')).default.update(
+                'expenses',
+                { paid: true, due_date: due, updated_at, paid_at: updated_at },
+                'id = ?',
+                [expenseId]
               );
+              await loadCustomerData();
               setShowExpenseModal(false);
               Alert.alert('Sucesso', 'Despesa marcada como paga!');
             } catch (error) {
@@ -101,25 +153,24 @@ export default function ClienteDetalhe() {
       backgroundColor: colors.background,
     },
     header: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.topbar,
       paddingHorizontal: 20,
       paddingTop: 50,
       paddingBottom: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      borderBottomWidth: 0,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 16,
     },
     backButton: {
-      padding: 8,
-      borderRadius: 8,
+      padding: 10,
+      borderRadius: 10,
       backgroundColor: colors.card,
     },
     headerTitle: {
-      fontSize: 20,
+      fontSize: 22,
       fontFamily: 'Inter-Bold',
-      color: colors.text,
+      color: colors.onTopbar,
       flex: 1,
     },
     content: {
@@ -153,23 +204,34 @@ export default function ClienteDetalhe() {
       color: colors.text,
     },
     debtCard: {
-      backgroundColor: colors.error + '20',
-      borderColor: colors.error,
+      backgroundColor: colors.error + '10',
       borderWidth: 1,
+      borderColor: colors.error,
       marginBottom: 16,
-    },
-    debtAmount: {
-      fontSize: 32,
-      fontFamily: 'Inter-Bold',
-      color: colors.error,
-      textAlign: 'center',
+      borderRadius: 12,
+      paddingVertical: 16,
+      paddingHorizontal: 16,
+      // Remove Card shadow visually for this variant
+      elevation: 0,
+      shadowColor: 'transparent',
+      shadowOpacity: 0,
+      shadowRadius: 0,
+      shadowOffset: { width: 0, height: 0 },
     },
     debtLabel: {
-      fontSize: 14,
+      fontSize: 12,
       fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
+      color: colors.error,
+      textTransform: 'uppercase',
+      letterSpacing: 1,
       textAlign: 'center',
-      marginTop: 4,
+      marginBottom: 6,
+    },
+    debtAmount: {
+      fontSize: 28,
+      fontFamily: 'Inter-Black',
+      color: colors.error,
+      textAlign: 'center',
     },
     expenseCard: {
       marginBottom: 12,
@@ -333,7 +395,7 @@ export default function ClienteDetalhe() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{customer.name}</Text>
+        <Text style={styles.headerTitle}>{toTitleCase(customer.name)}</Text>
       </View>
 
       <ScrollView style={styles.content}>
@@ -383,7 +445,7 @@ export default function ClienteDetalhe() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     <Calendar size={12} color={colors.textSecondary} />
                     <Text style={styles.expenseDate}>
-                      {new Date(expense.due_date).toLocaleDateString('pt-BR')}
+                      {formatDate(expense.due_date)}
                     </Text>
                   </View>
 
@@ -468,9 +530,19 @@ export default function ClienteDetalhe() {
               
               <View style={styles.detailRow}>
                 <Text style={styles.detailLabel}>Vencimento:</Text>
-                <Text style={styles.detailValue}>
-                  {new Date(selectedExpense.due_date).toLocaleDateString('pt-BR')}
-                </Text>
+                <TextInput
+                  style={[styles.detailValue, { borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6 }]}
+                  value={editDueDate}
+                  onChangeText={(text) => {
+                    let v = text.replace(/\D/g, '');
+                    if (v.length >= 2) v = v.substring(0,2) + '/' + v.substring(2);
+                    if (v.length >= 5) v = v.substring(0,5) + '/' + v.substring(5,9);
+                    setEditDueDate(v);
+                  }}
+                  placeholder="DD/MM/AAAA"
+                  keyboardType="numeric"
+                  maxLength={10}
+                />
               </View>
               
               <View style={styles.detailRow}>
@@ -499,24 +571,27 @@ export default function ClienteDetalhe() {
             </View>
 
             <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: colors.primary }]}
+                onPress={updateExpenseDueDate}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.white }]}>Salvar Vencimento</Text>
+              </TouchableOpacity>
+
               {!selectedExpense.paid && (
                 <TouchableOpacity
                   style={[styles.modalButton, { backgroundColor: colors.success }]}
                   onPress={() => markAsPaid(selectedExpense.id)}
                 >
-                  <Text style={[styles.modalButtonText, { color: colors.white }]}>
-                    Marcar como Paga
-                  </Text>
+                  <Text style={[styles.modalButtonText, { color: colors.white }]}>Marcar como Paga</Text>
                 </TouchableOpacity>
               )}
-              
+
               <TouchableOpacity
                 style={[styles.modalButton, { backgroundColor: colors.border }]}
                 onPress={() => setShowExpenseModal(false)}
               >
-                <Text style={[styles.modalButtonText, { color: colors.text }]}>
-                  Fechar
-                </Text>
+                <Text style={[styles.modalButtonText, { color: colors.text }]}>Fechar</Text>
               </TouchableOpacity>
             </View>
           </View>

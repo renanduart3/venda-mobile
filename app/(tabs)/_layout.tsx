@@ -21,15 +21,22 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
+  tabBarActiveTintColor: colors.onBottombar,
+  tabBarInactiveTintColor: 'rgba(255,255,255,0.7)',
         tabBarStyle: {
-          backgroundColor: colors.surface,
+          backgroundColor: colors.bottombar,
           borderTopColor: colors.border,
           borderTopWidth: 1,
+          // Revert global extra height; we'll handle screen-specific bottom spacing where needed
           paddingBottom: hasBottomBar ? bottom + 8 : 8,
           paddingTop: 8,
           height: hasBottomBar ? 65 + bottom : 65,
+          // subtle elevation/shadow for separation from system nav area
+          shadowColor: '#000',
+          shadowOpacity: 0.05,
+          shadowOffset: { width: 0, height: -2 },
+            shadowRadius: 6,
+          elevation: 8,
         },
         tabBarItemStyle: {
           paddingVertical: 4,
@@ -38,6 +45,7 @@ export default function TabLayout() {
           fontSize: 12,
           fontFamily: 'Inter-Medium',
           marginTop: 4,
+          color: colors.onBottombar,
         },
       }}>
       <Tabs.Screen

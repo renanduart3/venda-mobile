@@ -19,14 +19,32 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "react-native-iap",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "2.1.10"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
     },
     "android": {
       "permissions": [],
-      "package": "com.renanduart3.vendamobile"
+      "package": "com.renanduart3.vendamobile",
+      "navigationBar": {
+        "backgroundColor": "#3b3b4c",
+        "barStyle": "light-content"
+      },
+      "statusBar": {
+        "backgroundColor": "#3b3b4c",
+        "barStyle": "light-content",
+        "translucent": false
+      }
     }
   }
 }

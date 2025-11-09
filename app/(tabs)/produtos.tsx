@@ -418,7 +418,7 @@ export default function Produtos() {
     },
     input: {
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.inputBorder,
       borderRadius: 8,
       paddingHorizontal: 12,
       paddingVertical: 10,
@@ -476,7 +476,7 @@ export default function Produtos() {
             {editingProduct ? 'Editar Produto' : 'Novo Produto'}
           </Text>
           
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={styles.formGroup}>
               <Text style={styles.label}>Tipo *</Text>
               <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -782,7 +782,136 @@ export default function Produtos() {
         )}
       </View>
 
-      <ProductModal />
+      {showProductModal && (
+        <Modal visible transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                {editingProduct ? 'Editar Produto' : 'Novo Produto'}
+              </Text>
+              
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Tipo *</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      style={[
+                        styles.input,
+                        { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+                        formData.type === 'product' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                      ]}
+                      onPress={() => setFormData({ ...formData, type: 'product' })}
+                    >
+                      <Text style={[{ color: colors.text }, formData.type === 'product' && { color: colors.white }]}>Produto</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.input,
+                        { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+                        formData.type === 'service' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                      ]}
+                      onPress={() => setFormData({ ...formData, type: 'service' })}
+                    >
+                      <Text style={[{ color: colors.text }, formData.type === 'service' && { color: colors.white }]}>Serviço</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Nome *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.name}
+                    onChangeText={(text) => setFormData({ ...formData, name: text })}
+                    placeholder={formData.type === 'service' ? 'Nome do serviço' : 'Nome do produto'}
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+
+                {formData.type === 'service' && (
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Descrição</Text>
+                    <TextInput
+                      style={[styles.input, { minHeight: 80, textAlignVertical: 'top' }]}
+                      value={formData.description}
+                      onChangeText={(text) => setFormData({ ...formData, description: text })}
+                      placeholder="Descrição do serviço"
+                      placeholderTextColor={colors.textSecondary}
+                      multiline
+                      numberOfLines={4}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Preço *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.price}
+                    onChangeText={(text) => setFormData({ ...formData, price: text })}
+                    placeholder="0,00"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                {formData.type === 'product' && (
+                  <>
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Quantidade em Estoque *</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={formData.stock}
+                        onChangeText={(text) => setFormData({ ...formData, stock: text })}
+                        placeholder="0"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="numeric"
+                      />
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Estoque Mínimo</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={formData.min_stock}
+                        onChangeText={(text) => setFormData({ ...formData, min_stock: text })}
+                        placeholder="0"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="numeric"
+                      />
+                    </View>
+
+                    <View style={styles.formGroup}>
+                      <Text style={styles.label}>Código de Barras</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={formData.barcode}
+                        onChangeText={(text) => setFormData({ ...formData, barcode: text })}
+                        placeholder="Código de barras"
+                        placeholderTextColor={colors.textSecondary}
+                      />
+                    </View>
+                  </>
+                )}
+              </ScrollView>
+
+              <View style={styles.modalButtons}>
+                <Button
+                  title="Cancelar"
+                  onPress={closeProductModal}
+                  variant="outline"
+                  style={styles.modalButton}
+                />
+                <Button
+                  title="Salvar"
+                  onPress={saveProduct}
+                  style={styles.modalButton}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }

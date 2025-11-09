@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -37,9 +38,10 @@ interface Expense {
   paid: boolean;
   recurring: boolean;
   customer_id?: string | null;
-  created_month: string; // Mês de cadastro (YYYY-MM)
+  created_month?: string; // Mês de cadastro (YYYY-MM)
   created_at: string;
   updated_at: string;
+  paid_at?: string | null;
 }
 
 export default function Financas() {
@@ -75,23 +77,69 @@ export default function Financas() {
   const [selectedPeriod, setSelectedPeriod] = useState('month');
 
   // Funções de filtro
+  const toMonthKey = (dateString?: string | null): string | null => {
+    if (!dateString) return null;
+    // DD/MM/YYYY
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
+      const [dd, mm, yyyy] = dateString.split('/').map(Number);
+      const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
+      if (!isNaN(d.getTime())) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      }
+      return null;
+    }
+    // DD-MM-YYYY
+    if (/^\d{2}-\d{2}-\d{4}$/.test(dateString)) {
+      const [dd, mm, yyyy] = dateString.split('-').map(Number);
+      const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
+      if (!isNaN(d.getTime())) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      }
+      return null;
+    }
+    const d = new Date(dateString);
+    if (!isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    return null;
+  };
+
+  // Helper: check if an expense is overdue (based on full date parsing)
+  const isOverdue = (expense: Expense) => {
+    if (expense.paid || !expense.due_date) return false;
+    const parseDate = (value: string): Date | null => {
+      if (/^\d{2}[\/-]\d{2}[\/-]\d{4}$/.test(value)) {
+        const sep = value.includes('/') ? '/' : '-';
+        const [dd, mm, yyyy] = value.split(sep).map(Number);
+        const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? null : d;
+    };
+    const dueDate = parseDate(expense.due_date as any);
+    if (!dueDate) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return dueDate < today;
+  };
+
   const filteredExpenses = useMemo(() => {
     return expenses.filter(expense => {
-      // Filtro por mês
-      const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
-      if (expenseMonth !== selectedMonth) return false;
+      // Filtro por mês usando due_date quando existir; senão created_at
+      const monthKey = toMonthKey(expense.due_date) || expense.created_month || toMonthKey(expense.created_at);
+      if (monthKey !== selectedMonth) return false;
       
       // Filtro por status
-      const today = new Date().toISOString().split('T')[0];
-      const isOverdue = expense.due_date && expense.due_date < today && !expense.paid;
+      const overdue = isOverdue(expense);
       
       switch (expenseStatusFilter) {
         case 'pending':
-          return !expense.paid && !isOverdue;
+          return !expense.paid && !overdue;
         case 'paid':
           return expense.paid;
         case 'overdue':
-          return isOverdue;
+          return overdue;
         default:
           return true;
       }
@@ -126,6 +174,15 @@ export default function Financas() {
     loadSales();
     loadCustomers();
   }, []);
+
+  // Recarrega dados ao focar a aba, garantindo estado atualizado (ex.: marcar paga no detalhe do cliente)
+  useFocusEffect(
+    React.useCallback(() => {
+      loadExpenses();
+      loadSales();
+      loadCustomers();
+    }, [])
+  );
 
   // Reset page when filter or month changes
   useEffect(() => {
@@ -232,8 +289,8 @@ export default function Financas() {
         paid: formData.paid,
         recurring: formData.recurring,
         customer_id: formData.customer_id || null,
-        created_month: editingExpense?.created_month || currentMonth,
         updated_at: timestamp,
+        paid_at: formData.paid ? timestamp : null,
       };
 
       if (editingExpense) {
@@ -289,7 +346,7 @@ export default function Financas() {
       const updatedAt = new Date().toISOString();
       await db.update(
         'expenses',
-        { paid: !expense.paid, updated_at: updatedAt },
+        { paid: !expense.paid, updated_at: updatedAt, paid_at: !expense.paid ? updatedAt : null },
         'id = ?',
         [expense.id]
       );
@@ -302,8 +359,19 @@ export default function Financas() {
 
   const stats = expenseStats;
 
+  // Robust date formatting: supports ISO and DD/MM/YYYY
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
+    if (!dateString) return 'Sem vencimento';
+    // Try DD/MM/YYYY
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
+      const [dd, mm, yyyy] = dateString.split('/').map(Number);
+      const parsed = new Date(yyyy, (mm || 1) - 1, dd || 1);
+      if (!isNaN(parsed.getTime())) return parsed.toLocaleDateString('pt-BR');
+      return 'Data inválida';
+    }
+    const d = new Date(dateString);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString('pt-BR');
+    return 'Data inválida';
   };
 
   const formatDateForDisplay = (dateString: string | null) => {
@@ -311,21 +379,36 @@ export default function Financas() {
     return formatDate(dateString);
   };
 
-  const isOverdue = (expense: Expense) => {
-    return !expense.paid && expense.due_date && new Date(expense.due_date) < new Date();
-  };
+  
 
   // Report functions
+  const monthSales = useMemo(() => {
+    return sales.filter(sale => {
+      const saleMonth = (sale.created_at || '').slice(0, 7);
+      return saleMonth === selectedMonth;
+    });
+  }, [sales, selectedMonth]);
+
+  const monthExpenses = useMemo(() => {
+    return expenses.filter(expense => {
+      const monthKey = toMonthKey(expense.due_date) || expense.created_month || toMonthKey(expense.created_at) || '';
+      return monthKey === selectedMonth;
+    });
+  }, [expenses, selectedMonth]);
+
+  // Payments received for customer-linked expenses in the selected month
+  const monthReceipts = useMemo(() => {
+    return expenses.filter(exp => {
+      if (!exp.paid || !exp.customer_id) return false;
+      const paidMonth = toMonthKey(exp.paid_at || undefined);
+      return paidMonth === selectedMonth;
+    });
+  }, [expenses, selectedMonth]);
+
   const financialData = useMemo(() => {
     const currentMonth = selectedMonth;
-    const monthlyExpenses = expenses.filter(expense => {
-      const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
-      return expenseMonth === currentMonth;
-    });
-    const monthlySales = sales.filter(sale => {
-      const saleMonth = sale.created_at.slice(0, 7);
-      return saleMonth === currentMonth;
-    });
+    const monthlyExpenses = monthExpenses;
+    const monthlySales = monthSales;
     const combined = [
       ...monthlyExpenses.map(expense => ({
         id: `expense-${expense.id}`,
@@ -373,11 +456,12 @@ export default function Financas() {
   }, [filteredData, currentPage]);
 
   const monthSummary = useMemo(() => {
-    const totalIncome = financialData.filter(item => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
-    const totalExpenses = Math.abs(financialData.filter(item => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0));
+    const receiptsIncome = monthReceipts.reduce((sum, r) => sum + r.amount, 0);
+    const totalIncome = monthSales.reduce((sum, sale) => sum + sale.total, 0) + receiptsIncome;
+    const totalExpenses = monthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
     const balance = totalIncome - totalExpenses;
     return { totalIncome, totalExpenses, balance, transactionCount: financialData.length };
-  }, [financialData]);
+  }, [monthSales, monthExpenses, monthReceipts, financialData.length]);
 
   const styles = StyleSheet.create({
     container: {
@@ -554,6 +638,7 @@ export default function Financas() {
       alignItems: 'center',
       justifyContent: 'space-between',
       marginBottom: 8,
+      overflow: 'hidden',
     },
     expenseAmount: {
       fontSize: 14,
@@ -561,9 +646,11 @@ export default function Financas() {
       color: colors.primary,
     },
     expenseDate: {
-      fontSize: 12,
+      fontSize: 11,
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
+      maxWidth: '55%',
+      textAlign: 'right',
     },
     expenseTags: {
       flexDirection: 'row',
@@ -648,7 +735,7 @@ export default function Financas() {
     },
     input: {
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.inputBorder,
       borderRadius: 8,
       paddingHorizontal: 12,
       paddingVertical: 10,
@@ -974,7 +1061,11 @@ export default function Financas() {
   );
 
   const NewExpenseTab = () => (
-    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.content}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Add Expense Button */}
       <TouchableOpacity style={styles.addButton} onPress={() => openExpenseModal()}>
         <Plus size={20} color={colors.white} />
@@ -1192,7 +1283,11 @@ export default function Financas() {
     const balance = totalIncome - totalExpenses;
 
     return (
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Header */}
         <View style={styles.reportHeader}>
           <Text style={styles.reportTitle}>Relatórios Financeiros</Text>
@@ -1361,7 +1456,7 @@ export default function Financas() {
               {editingExpense ? 'Editar Despesa' : 'Nova Despesa'}
             </Text>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Nome da Despesa *</Text>
                 <TextInput
@@ -1546,9 +1641,547 @@ export default function Financas() {
       </View>
 
       {/* Tab Content */}
-      {activeTab === 'new' ? <NewExpenseTab /> : <ReportTab />}
+      {activeTab === 'new' ? (
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Add Expense Button */}
+          <TouchableOpacity style={styles.addButton} onPress={() => openExpenseModal()}>
+            <Plus size={20} color={colors.white} />
+            <Text style={styles.addButtonText}>Nova Despesa</Text>
+          </TouchableOpacity>
 
-      <ExpenseModal />
+          {/* Filtro de Mês */}
+          <View style={styles.filterContainer}>
+            <Text style={styles.filterLabel}>Mês de Referência:</Text>
+            <View style={styles.monthFilterContainer}>
+              <TouchableOpacity 
+                style={styles.monthButton}
+                onPress={() => {
+                  setSelectedMonth(addMonths(selectedMonth, -1));
+                }}
+              >
+                <Text style={styles.monthButtonText}>‹</Text>
+              </TouchableOpacity>
+              <Text style={styles.monthText}>
+                {new Date(selectedMonth + '-01').toLocaleDateString('pt-BR', { 
+                  month: 'long', 
+                  year: 'numeric' 
+                })}
+              </Text>
+              <TouchableOpacity 
+                style={styles.monthButton}
+                onPress={() => {
+                  setSelectedMonth(addMonths(selectedMonth, 1));
+                }}
+              >
+                <Text style={styles.monthButtonText}>›</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Filtros de Status */}
+          <View style={styles.statusFilterContainer}>
+            <TouchableOpacity
+              style={[
+                styles.statusFilterButton,
+                expenseStatusFilter === 'all' && styles.statusFilterButtonActive
+              ]}
+              onPress={() => setExpenseStatusFilter('all')}
+            >
+              <Text style={[
+                styles.statusFilterText,
+                expenseStatusFilter === 'all' && styles.statusFilterTextActive
+              ]}>
+                Todos ({expenseStats.count})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.statusFilterButton,
+                expenseStatusFilter === 'paid' && styles.statusFilterButtonActive
+              ]}
+              onPress={() => setExpenseStatusFilter('paid')}
+            >
+              <Text style={[
+                styles.statusFilterText,
+                expenseStatusFilter === 'paid' && styles.statusFilterTextActive
+              ]}>
+                Pago ({filteredExpenses.filter(e => e.paid).length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.statusFilterButton,
+                expenseStatusFilter === 'pending' && styles.statusFilterButtonActive
+              ]}
+              onPress={() => setExpenseStatusFilter('pending')}
+            >
+              <Text style={[
+                styles.statusFilterText,
+                expenseStatusFilter === 'pending' && styles.statusFilterTextActive
+              ]}>
+                Pendente ({filteredExpenses.filter(e => !e.paid).length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.statusFilterButton,
+                expenseStatusFilter === 'overdue' && styles.statusFilterButtonActive
+              ]}
+              onPress={() => setExpenseStatusFilter('overdue')}
+            >
+              <Text style={[
+                styles.statusFilterText,
+                expenseStatusFilter === 'overdue' && styles.statusFilterTextActive
+              ]}>
+                Vencidas ({filteredExpenses.filter(e => {
+                  const today = new Date().toISOString().split('T')[0];
+                  return e.due_date && e.due_date < today && !e.paid;
+                }).length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Stats */}
+          <View style={styles.statsContainer}>
+            <StatCard
+              icon={<DollarSign size={20} color={colors.primary} />}
+              value={`R$ ${expenseStats.total.toFixed(2)}`}
+              label="Total do Mês"
+            />
+            <StatCard
+              icon={<CheckCircle size={20} color={colors.success} />}
+              value={`R$ ${expenseStats.paid.toFixed(2)}`}
+              label="Pago"
+              color={colors.success}
+            />
+            <StatCard
+              icon={<XCircle size={20} color={colors.warning} />}
+              value={`R$ ${expenseStats.pending.toFixed(2)}`}
+              label="Pendente"
+              color={colors.warning}
+            />
+            <StatCard
+              icon={<Calendar size={20} color={colors.error} />}
+              value={filteredExpenses.filter(e => {
+                const today = new Date().toISOString().split('T')[0];
+                return e.due_date && e.due_date < today && !e.paid;
+              }).length}
+              label="Vencidas"
+              color={colors.error}
+            />
+          </View>
+
+          {/* Expenses List */}
+          <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 16 }}>
+            Despesas do Mês
+          </Text>
+
+          {filteredExpenses.map((expense) => (
+            <TouchableOpacity key={expense.id} activeOpacity={0.8} onPress={() => openExpenseModal(expense)}>
+              <Card style={styles.expenseCard}>
+              <View style={styles.expenseItem}>
+                <View style={[
+                  styles.expenseIcon,
+                  { backgroundColor: expense.paid ? colors.success + '20' : colors.warning + '20' }
+                ]}>
+                  {expense.paid
+                    ? <CheckCircle size={20} color={colors.success} />
+                    : <XCircle size={20} color={colors.warning} />
+                  }
+                </View>
+
+                <View style={styles.expenseInfo}>
+                  <Text style={styles.expenseName} numberOfLines={2} ellipsizeMode="tail">
+                    {expense.name}
+                  </Text>
+                  {expense.customer_id && (
+                    <Text style={styles.expenseCustomer}>
+                      Cliente: {customers.find(c => c.id === expense.customer_id)?.name || 'Cliente não encontrado'}
+                    </Text>
+                  )}
+                  <View style={styles.expenseDetails}>
+                    <Text style={styles.expenseAmount}>
+                      R$ {expense.amount.toFixed(2)}
+                    </Text>
+                    <Text style={styles.expenseDate} numberOfLines={1} ellipsizeMode="tail">
+                      Venc: {formatDateForDisplay(expense.due_date || null)}
+                    </Text>
+                  </View>
+                  <View style={styles.expenseTags}>
+                    <View style={styles.tagsContainer}>
+                      {isOverdue(expense) && (
+                        <View style={[styles.tag, styles.overdueTag]}>
+                          <Text style={[styles.tagText, styles.overdueTagText]}>VENCIDA</Text>
+                        </View>
+                      )}
+                      {expense.recurring && (
+                        <View style={[styles.tag, styles.recurringTag]}>
+                          <Text style={[styles.tagText, styles.recurringTagText]}>RECORRENTE</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={(e) => { e.stopPropagation?.(); deleteExpense(expense); }}
+                  >
+                    <Trash2 size={16} color={colors.error} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              </Card>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      ) : (
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={styles.reportHeader}>
+            <Text style={styles.reportTitle}>Relatórios Financeiros</Text>
+            <TouchableOpacity
+              style={styles.premiumButton}
+              onPress={() => router.push('/relatorios')}
+            >
+              <Text style={styles.premiumButtonText}>Relatórios Premium</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Month Selector */}
+          <View style={styles.monthSelector}>
+            <Text style={styles.selectorLabel}>Mês:</Text>
+            <View style={styles.monthFilterContainer}>
+              <TouchableOpacity 
+                style={styles.monthButton}
+                onPress={() => {
+                  setSelectedMonth(addMonths(selectedMonth, -1));
+                }}
+              >
+                <Text style={styles.monthButtonText}>‹</Text>
+              </TouchableOpacity>
+              <Text style={styles.monthText}>
+                {new Date(selectedMonth + '-01').toLocaleDateString('pt-BR', { 
+                  month: 'long', 
+                  year: 'numeric' 
+                })}
+              </Text>
+              <TouchableOpacity 
+                style={styles.monthButton}
+                onPress={() => {
+                  setSelectedMonth(addMonths(selectedMonth, 1));
+                }}
+              >
+                <Text style={styles.monthButtonText}>›</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Summary Cards */}
+          <View style={styles.summaryContainer}>
+            <Card style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Entradas</Text>
+              <Text style={[styles.summaryValue, { color: colors.success }]}>
+                R$ {(monthSales.reduce((s: number, sale: any) => s + sale.total, 0) + monthReceipts.reduce((s: number, r: any) => s + r.amount, 0)).toFixed(2)}
+              </Text>
+            </Card>
+            <Card style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Saídas</Text>
+              <Text style={[styles.summaryValue, { color: colors.error }]}>
+                R$ {monthExpenses.reduce((s: number, e: any) => s + e.amount, 0).toFixed(2)}
+              </Text>
+            </Card>
+            <Card style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Saldo</Text>
+              <Text style={[
+                styles.summaryValue,
+                { color: (monthSales.reduce((s: number, sale: any) => s + sale.total, 0) - monthExpenses.reduce((s: number, e: any) => s + e.amount, 0)) >= 0 ? colors.success : colors.error }
+              ]}>
+                R$ {(monthSales.reduce((s: number, sale: any) => s + sale.total, 0) - monthExpenses.reduce((s: number, e: any) => s + e.amount, 0)).toFixed(2)}
+              </Text>
+            </Card>
+          </View>
+
+          {/* Filter Buttons */}
+          <View style={styles.filterContainer}>
+            <TouchableOpacity
+              style={[styles.filterButton, reportFilter === 'all' && styles.filterButtonActive]}
+              onPress={() => setReportFilter('all')}
+            >
+              <Text style={[styles.filterButtonText, reportFilter === 'all' && styles.filterButtonTextActive]}>
+                Todos ({monthExpenses.length + monthSales.length + monthReceipts.length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButton, reportFilter === 'income' && styles.filterButtonActive]}
+              onPress={() => setReportFilter('income')}
+            >
+              <Text style={[styles.filterButtonText, reportFilter === 'income' && styles.filterButtonTextActive]}>
+                Entradas ({monthSales.length + monthReceipts.length})
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButton, reportFilter === 'expense' && styles.filterButtonActive]}
+              onPress={() => setReportFilter('expense')}
+            >
+              <Text style={[styles.filterButtonText, reportFilter === 'expense' && styles.filterButtonTextActive]}>
+                Saídas ({monthExpenses.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Financial Data List */}
+          <View style={styles.dataContainer}>
+            <Text style={styles.dataTitle}>
+              Transações do Mês
+            </Text>
+
+            {(reportFilter === 'all' || reportFilter === 'income') && (
+              <>
+                {monthSales.map((sale: any) => (
+                  <Card key={`sale-${sale.id}`} style={styles.transactionCard}>
+                  <View style={styles.transactionHeader}>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">Venda - {sale.customer_name}</Text>
+                      <Text style={styles.transactionDate}>
+                        {formatDate(sale.created_at)} • Venda
+                      </Text>
+                      <Text style={styles.transactionCustomer} numberOfLines={1} ellipsizeMode="tail">Cliente: {sale.customer_name}</Text>
+                    </View>
+                    <View style={styles.transactionAmount}>
+                      <Text style={[styles.amountText, { color: colors.success }]}>
+                        +R$ {sale.total.toFixed(2)}
+                      </Text>
+                      <Text style={styles.statusText}>Pago</Text>
+                    </View>
+                  </View>
+                </Card>
+                ))}
+                {monthReceipts.map((rec: any) => (
+                  <Card key={`receipt-${rec.id}`} style={styles.transactionCard}>
+                    <View style={styles.transactionHeader}>
+                      <View style={styles.transactionInfo}>
+                        <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">Recebimento - {customers.find(c => c.id === rec.customer_id)?.name || 'Cliente'}</Text>
+                        <Text style={styles.transactionDate}>
+                          {formatDate(rec.paid_at)} • Recebimento
+                        </Text>
+                      </View>
+                      <View style={styles.transactionAmount}>
+                        <Text style={[styles.amountText, { color: colors.success }]}>+R$ {rec.amount.toFixed(2)}</Text>
+                        <Text style={styles.statusText}>Pago</Text>
+                      </View>
+                    </View>
+                  </Card>
+                ))}
+              </>
+            )}
+
+            {(reportFilter === 'all' || reportFilter === 'expense') && (
+              monthExpenses.map((expense: any) => (
+                <Card key={`expense-${expense.id}`} style={styles.transactionCard}>
+                  <View style={styles.transactionHeader}>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">{expense.name}</Text>
+                      <Text style={styles.transactionDate}>
+                        {formatDate(expense.created_at)} • Despesa
+                      </Text>
+                      {expense.customer_id && (
+                        <Text style={styles.transactionCustomer} numberOfLines={1} ellipsizeMode="tail">
+                          Cliente: {customers.find(c => c.id === expense.customer_id)?.name || 'Cliente não encontrado'}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.transactionAmount}>
+                      <Text style={[styles.amountText, { color: colors.error }]}>
+                        -R$ {expense.amount.toFixed(2)}
+                      </Text>
+                      <Text style={styles.statusText}>{expense.paid ? 'Pago' : 'Pendente'}</Text>
+                    </View>
+                  </View>
+                </Card>
+              ))
+            )}
+
+            {monthExpenses.length === 0 && monthSales.length === 0 && (
+              <Card>
+                <Text style={styles.emptyText}>Nenhuma transação encontrada para este mês</Text>
+              </Card>
+            )}
+          </View>
+        </ScrollView>
+      )}
+
+      {showExpenseModal && (
+        <Modal visible transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                {editingExpense ? 'Editar Despesa' : 'Nova Despesa'}
+              </Text>
+
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Nome da Despesa *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.name}
+                    onChangeText={(text) => setFormData({ ...formData, name: text })}
+                    placeholder="Ex: Aluguel, Conta de Luz..."
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Valor *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.amount}
+                    onChangeText={(text) => setFormData({ ...formData, amount: text })}
+                    placeholder="0,00"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="numeric"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Data de Vencimento (opcional)</Text>
+                  <View style={styles.dateInputContainer}>
+                    <TextInput
+                      style={[styles.input, styles.dateInput]}
+                      value={formData.due_date}
+                      onChangeText={(text) => {
+                        let formatted = text.replace(/\D/g, '');
+                        if (formatted.length >= 2) {
+                          formatted = formatted.substring(0, 2) + '/' + formatted.substring(2);
+                        }
+                        if (formatted.length >= 5) {
+                          formatted = formatted.substring(0, 5) + '/' + formatted.substring(5, 9);
+                        }
+                        setFormData({ ...formData, due_date: formatted });
+                      }}
+                      placeholder="DD/MM/AAAA (ex: 25/12/2024)"
+                      placeholderTextColor={colors.textSecondary}
+                      keyboardType="numeric"
+                      maxLength={10}
+                    />
+                    <TouchableOpacity
+                      style={styles.dateButton}
+                      onPress={() => {
+                        const today = new Date();
+                        const day = String(today.getDate()).padStart(2, '0');
+                        const month = String(today.getMonth() + 1).padStart(2, '0');
+                        const year = today.getFullYear();
+                        setFormData({ ...formData, due_date: `${day}/${month}/${year}` });
+                      }}
+                    >
+                      <Text style={styles.dateButtonText}>Hoje</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Cliente (opcional)</Text>
+                  <View style={styles.customerSelector}>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.customer_id ? (customers.find(c => c.id === formData.customer_id)?.name || '') : customerSearchQuery}
+                      onChangeText={(text) => {
+                        setCustomerSearchQuery(text);
+                        if (!text) {
+                          setFormData({ ...formData, customer_id: '' });
+                        }
+                      }}
+                      placeholder="Digite o nome do cliente..."
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                    {formData.customer_id && (
+                      <TouchableOpacity
+                        style={styles.clearButton}
+                        onPress={() => {
+                          setFormData({ ...formData, customer_id: '' });
+                          setCustomerSearchQuery('');
+                        }}
+                      >
+                        <Text style={styles.clearButtonText}>✕</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {customerSearchQuery && customerSearchQuery.length > 0 && (
+                    <View style={styles.customerSuggestions}>
+                      {customers
+                        .filter(customer =>
+                          customer.name.toLowerCase().includes(customerSearchQuery.toLowerCase())
+                        )
+                        .slice(0, 5)
+                        .map((customer) => (
+                          <TouchableOpacity
+                            key={customer.id}
+                            style={styles.customerSuggestion}
+                            onPress={() => {
+                              setFormData({ ...formData, customer_id: customer.id });
+                              setCustomerSearchQuery('');
+                            }}
+                          >
+                            <Text style={styles.customerSuggestionName}>{customer.name}</Text>
+                            {customer.email && (
+                              <Text style={styles.customerSuggestionEmail}>{customer.email}</Text>
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.formGroup}>
+                  <TouchableOpacity
+                    style={styles.checkboxContainer}
+                    onPress={() => setFormData({ ...formData, paid: !formData.paid })}
+                  >
+                    <View style={[styles.checkbox, formData.paid && styles.checkboxChecked]}>
+                      {formData.paid && <CheckCircle size={12} color={colors.white} />}
+                    </View>
+                    <Text style={styles.checkboxText}>Pago</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.checkboxContainer}
+                    onPress={() => setFormData({ ...formData, recurring: !formData.recurring })}
+                  >
+                    <View style={[styles.checkbox, formData.recurring && styles.checkboxChecked]}>
+                      {formData.recurring && <RotateCcw size={12} color={colors.white} />}
+                    </View>
+                    <Text style={styles.checkboxText}>Recorrente</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+
+              <View style={styles.modalButtons}>
+                <Button
+                  title="Cancelar"
+                  onPress={closeExpenseModal}
+                  variant="outline"
+                  style={styles.modalButton}
+                />
+                <Button
+                  title="Salvar"
+                  onPress={saveExpense}
+                  style={styles.modalButton}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }

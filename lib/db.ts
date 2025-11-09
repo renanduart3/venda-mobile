@@ -1,26 +1,24 @@
 import * as SQLite from 'expo-sqlite';
 
+// We support both the new expo-sqlite v15+ API (openDatabaseSync + runAsync/getAllAsync)
+// and the legacy WebSQL-style API (openDatabase + transaction/executeSql).
+// The execSql helper normalizes results into a common shape used elsewhere.
+
 let db: SQLite.SQLiteDatabase | null = null;
 const DB_NAME = 'venda.db';
 
-// Initialize database function
-async function initializeDatabase(): Promise<SQLite.SQLiteDatabase | null> {
+function initializeDatabase(): SQLite.SQLiteDatabase | null {
   try {
-    // Use the correct API for expo-sqlite
     if (SQLite.openDatabaseSync) {
+      // New synchronous open (RN only). Returns an object with async helpers.
       return SQLite.openDatabaseSync(DB_NAME);
-    } else if (SQLite.openDatabase) {
-      return new Promise((resolve, reject) => {
-        SQLite.openDatabase(DB_NAME, (database) => {
-          resolve(database);
-        }, (error) => {
-          reject(error);
-        });
-      });
-    } else {
-      console.warn('No valid SQLite database method available');
-      return null;
     }
+    if ((SQLite as any).openDatabase) {
+      // Legacy WebSQL style (returns DB with transaction()).
+      return (SQLite as any).openDatabase(DB_NAME);
+    }
+    console.warn('No valid SQLite database method available');
+    return null;
   } catch (e) {
     console.warn('Could not open SQLite database:', e);
     return null;
@@ -33,33 +31,44 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
     return { rows: { length: 0, item: () => null, _array: [] } };
   }
 
-  // Check if the database has the exec method (newer API)
-  if (db.exec) {
+  const isSelect = /^\s*SELECT/i.test(sql);
+
+  // New API detection: runAsync/getAllAsync/withTransactionAsync
+  const hasNewApi = typeof (db as any).runAsync === 'function' && typeof (db as any).getAllAsync === 'function';
+
+  if (hasNewApi) {
     try {
-      const result = db.exec(sql, params);
-      return {
-        rows: {
-          length: result.length,
-          item: (i: number) => result[i],
-          _array: result
-        }
-      };
+      if (isSelect) {
+        const rows: any[] = await (db as any).getAllAsync(sql, params);
+        return {
+          rows: {
+            length: rows.length,
+            item: (i: number) => rows[i],
+            _array: rows,
+          },
+        };
+      } else {
+        // Mutating statement
+        await (db as any).runAsync(sql, params);
+        return { rows: { length: 0, item: () => null, _array: [] } };
+      }
     } catch (error) {
-      console.error('SQL execution error:', error);
+      console.error('SQL execution error (new API):', error, sql);
       throw error;
     }
   }
 
-  // Fallback to transaction-based API
+  // Legacy transaction path
   return new Promise((resolve, reject) => {
-    if (!db.transaction) {
+    const legacyDb: any = db as any;
+    if (!legacyDb.transaction) {
       console.error('Database transaction method not available');
       reject(new Error('Database transaction method not available'));
       return;
     }
 
-    db.transaction(
-      (tx) => {
+    legacyDb.transaction(
+      (tx: any) => {
         if (!tx.executeSql) {
           console.error('Transaction executeSql method not available');
           reject(new Error('Transaction executeSql method not available'));
@@ -69,23 +78,23 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
         tx.executeSql(
           sql,
           params,
-          (_, result) => {
+          (_: any, result: any) => {
             resolve({
               rows: {
                 length: result.rows.length,
                 item: (i: number) => result.rows.item(i),
-                _array: result.rows._array || []
-              }
+                _array: result.rows._array || [],
+              },
             });
           },
-          (_, error) => {
-            console.error('SQL execution error:', error);
+          (_: any, error: any) => {
+            console.error('SQL execution error (legacy):', error, sql);
             reject(error);
             return false;
           }
         );
       },
-      (error) => {
+      (error: any) => {
         console.error('Transaction error:', error);
         reject(error);
       }
@@ -94,9 +103,8 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
 }
 
 export async function initDB() {
-  // Initialize database if not already done
   if (!db) {
-    db = await initializeDatabase();
+    db = initializeDatabase();
     if (!db) {
       console.warn('Database not available - skipping initialization');
       return;
@@ -167,6 +175,18 @@ export async function initDB() {
         updated_at TEXT
       );
     `);
+
+    // Lightweight migration: add paid_at column iff missing
+    // Approach: probe the column; if SELECT fails, add the column.
+    try {
+      await execSql(`SELECT paid_at FROM expenses LIMIT 1;`);
+    } catch (_err) {
+      try {
+        await execSql(`ALTER TABLE expenses ADD COLUMN paid_at TEXT;`);
+      } catch (_e) {
+        // ignore if another race added it
+      }
+    }
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS store_settings (

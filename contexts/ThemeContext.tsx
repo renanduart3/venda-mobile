@@ -11,10 +11,16 @@ interface Colors {
   secondaryLight: string;
   background: string;
   surface: string;
+  // New: dedicated bars for top header and bottom navigation for better contrast
+  topbar: string;
+  bottombar: string;
+  onTopbar: string;
+  onBottombar: string;
   card: string;
   text: string;
   textSecondary: string;
   border: string;
+  inputBorder: string;
   success: string;
   warning: string;
   error: string;
@@ -38,10 +44,15 @@ const lightColors: Colors = {
   secondaryLight: '#a78bfa',
   background: '#ffffff',
   surface: '#f8fafc',
+  topbar: '#3b3b4c',
+  bottombar: '#3b3b4c',
+  onTopbar: '#ffffff',
+  onBottombar: '#ffffff',
   card: '#ffffff',
   text: '#1e293b',
   textSecondary: '#64748b',
   border: '#e2e8f0',
+  inputBorder: '#cbd5e1',
   success: '#10b981',
   warning: '#f59e0b',
   error: '#ef4444',
@@ -56,10 +67,15 @@ const darkColors: Colors = {
   secondaryLight: '#a78bfa',
   background: '#0f172a',
   surface: '#1e293b',
+  topbar: '#515163',
+  bottombar: '#515163',
+  onTopbar: '#ffffff',
+  onBottombar: '#ffffff',
   card: '#334155',
   text: '#f1f5f9',
   textSecondary: '#94a3b8',
   border: '#475569',
+  inputBorder: '#334155',
   success: '#10b981',
   warning: '#f59e0b',
   error: '#ef4444',

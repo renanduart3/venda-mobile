@@ -1,17 +1,12 @@
 import { Platform } from 'react-native';
-import RNIap, {
-  purchaseUpdatedListener,
-  purchaseErrorListener,
-  type Product as IAPProduct,
-  type Purchase,
-  type SubscriptionPurchase,
-  finishTransaction,
-  getSubscriptions,
-  requestSubscription,
-  initConnection,
-  endConnection as endIAPConnection,
-  getAvailablePurchases,
-} from 'react-native-iap';
+// IMPORTANT: Avoid static importing react-native-iap.
+// In Expo Go (no native nitro modules), requiring RN IAP will throw
+// "Failed to get NitroModules" at module evaluation time. We dynamically
+// require it only when NitroModules are available.
+// Use loose runtime-only types to avoid importing from react-native-iap at module scope
+type IAPProduct = any;
+type Purchase = any;
+type SubscriptionPurchase = any;
 import { validateSubscription } from './premium';
 
 // SKUs reais do Google Play Console
@@ -42,17 +37,37 @@ export interface PurchaseResult {
 }
 
 let iapAvailable = false;
-let purchaseUpdateSubscription: ReturnType<typeof purchaseUpdatedListener> | null = null;
-let purchaseErrorSubscription: ReturnType<typeof purchaseErrorListener> | null = null;
+// Use loose types to avoid importing functions/types at module scope
+let purchaseUpdateSubscription: { remove?: () => void } | null = null;
+let purchaseErrorSubscription: { remove?: () => void } | null = null;
 const purchaseResultQueue: Array<(result: PurchaseResult) => void> = [];
+
+// Cache for the dynamically loaded module
+let RNIap: any | null = null;
+
+function hasNitroModules(): boolean {
+  // react-native-nitro-modules registers global NitroModules in new arch builds
+  return typeof (globalThis as any).NitroModules !== 'undefined';
+}
+
+function tryLoadIap(): any | null {
+  if (!hasNitroModules()) return null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('react-native-iap');
+    return mod;
+  } catch (_e) {
+    return null;
+  }
+}
 
 function mapProduct(product: IAPProduct): Product {
   return {
-    productId: product.productId,
+    productId: (product as any).productId,
     title: product.title ?? '',
     description: product.description ?? '',
-    price: product.price ?? '',
-    localizedPrice: product.localizedPrice ?? product.price ?? '',
+    price: String((product as any).price ?? ''),
+    localizedPrice: String(((product as any).localizedPrice ?? (product as any).price) ?? ''),
     currency: product.currency ?? '',
     type: 'subs',
   };
@@ -83,7 +98,7 @@ async function processPurchase(
       throw new Error('Missing product identifier');
     }
 
-    await finishTransaction({ purchase, isConsumable: false });
+  await RNIap!.finishTransaction({ purchase, isConsumable: false });
 
     const platform: 'android' | 'ios' = Platform.OS === 'ios' ? 'ios' : 'android';
     const subscriptionPurchase = purchase as SubscriptionPurchase;
@@ -119,6 +134,22 @@ export async function initializeIAP(): Promise<boolean> {
   }
 
   try {
+    RNIap = tryLoadIap();
+    if (!RNIap) {
+      console.warn('IAP disabled: NitroModules not available (likely running in Expo Go).');
+      iapAvailable = false;
+      return false;
+    }
+
+    const {
+      initConnection,
+      flushFailedPurchasesCachedAsPendingAndroid,
+      clearTransactionIOS,
+      purchaseUpdatedListener,
+      purchaseErrorListener,
+      finishTransaction,
+    } = RNIap;
+
     const connected = await initConnection();
 
     if (!connected) {
@@ -127,16 +158,16 @@ export async function initializeIAP(): Promise<boolean> {
     }
 
     if (Platform.OS === 'android') {
-      await RNIap.flushFailedPurchasesCachedAsPendingAndroid?.();
+      await flushFailedPurchasesCachedAsPendingAndroid?.();
     } else if (Platform.OS === 'ios') {
-      await RNIap.clearTransactionIOS?.();
+      await clearTransactionIOS?.();
     }
 
     purchaseUpdateSubscription?.remove?.();
     purchaseErrorSubscription?.remove?.();
 
-    purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase) => {
-      const result = await processPurchase(purchase, 'purchase');
+    purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase: any) => {
+      const result = await processPurchase(purchase as any, 'purchase');
       if (!result.success) {
         resolveNextPurchase(result);
       } else {
@@ -144,7 +175,7 @@ export async function initializeIAP(): Promise<boolean> {
       }
     });
 
-    purchaseErrorSubscription = purchaseErrorListener((error) => {
+    purchaseErrorSubscription = purchaseErrorListener((error: any) => {
       console.error('Purchase error:', error);
       resolveNextPurchase({
         success: false,
@@ -168,6 +199,7 @@ export async function getProducts(): Promise<Product[]> {
       return [];
     }
 
+    const { getSubscriptions } = RNIap!;
     const products = await getSubscriptions({ skus: SKUS });
     return products.map(mapProduct);
   } catch (error) {
@@ -189,6 +221,7 @@ export async function purchaseSubscription(productId: string): Promise<PurchaseR
     purchaseResultQueue.push(resolve);
 
     try {
+      const { requestSubscription } = RNIap!;
       await requestSubscription({ sku: productId });
     } catch (error) {
       purchaseResultQueue.pop();
@@ -211,12 +244,13 @@ export async function restorePurchases(): Promise<{ success: boolean; error?: st
   }
 
   try {
+    const { getAvailablePurchases, finishTransaction } = RNIap!;
     const purchases = await getAvailablePurchases();
     let restored = 0;
     let lastError: string | undefined;
 
     for (const purchase of purchases) {
-      const result = await processPurchase(purchase, 'restore');
+      const result = await processPurchase(purchase as any, 'restore');
       if (result.success) {
         restored += 1;
       } else {
@@ -250,8 +284,9 @@ export async function endConnection(): Promise<void> {
     purchaseUpdateSubscription = null;
     purchaseErrorSubscription = null;
 
-    if (iapAvailable) {
-      await endIAPConnection();
+    if (iapAvailable && RNIap) {
+      const { endConnection } = RNIap;
+      await endConnection?.();
     }
   } catch (error) {
     console.error('Error ending IAP connection:', error);

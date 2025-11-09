@@ -96,3 +96,25 @@ export function paginateItems<T>(items: T[], currentPage: number, itemsPerPage: 
     endIndex,
   };
 }
+
+/**
+ * Convert a string to Title Case (Capital Case) with simple PT-BR tweaks.
+ * - Capitalizes first letter of each word
+ * - Keeps common short prepositions/conjunctions in lowercase unless first or last
+ */
+export function toTitleCase(input: string): string {
+  if (!input) return '';
+  const lower = input.toLowerCase().trim().replace(/\s+/g, ' ');
+  const smallWords = new Set([
+    'da','de','do','das','dos','e','em','para','por','a','o','as','os','no','na','nos','nas','du','d\'','di'
+  ]);
+  const words = lower.split(' ');
+  const result = words.map((w, i) => {
+    if (!w) return w;
+    const isEdge = i === 0 || i === words.length - 1;
+    if (!isEdge && smallWords.has(w)) return w;
+    // handle hyphenated words: ana-maria -> Ana-Maria
+    return w.split('-').map(part => part ? part[0].toUpperCase() + part.slice(1) : part).join('-');
+  });
+  return result.join(' ');
+}

@@ -38,9 +38,11 @@ import { Button } from '@/components/ui/Button';
 import { router, useFocusEffect } from 'expo-router';
 import { isPremium } from '@/lib/premium';
 import { useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function Settings() {
   const { colors, theme, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
+  const insets = useSafeAreaInsets();
   const isOnline = true;
   const lastSync = null;
   const syncData = async () => { };
@@ -168,7 +170,7 @@ export default function Settings() {
     setIsResetting(true);
     try {
       const { default: FileSystem } = await import('expo-file-system');
-      const dbPath = FileSystem.documentDirectory + 'SQLite/venda.db';
+  const dbPath = (FileSystem as any).documentDirectory + 'SQLite/venda.db';
       const info = await FileSystem.getInfoAsync(dbPath);
       if (info.exists) {
         await FileSystem.deleteAsync(dbPath, { idempotent: true });
@@ -201,7 +203,7 @@ export default function Settings() {
     setIsExporting(true);
     try {
       // Obter o arquivo do banco SQLite
-      const dbPath = FileSystem.documentDirectory + 'SQLite/venda.db';
+  const dbPath = (FileSystem as any).documentDirectory + 'SQLite/venda.db';
       
       // Verificar se o arquivo existe
       const fileInfo = await FileSystem.getInfoAsync(dbPath);
@@ -214,7 +216,7 @@ export default function Settings() {
       // Criar nome do arquivo de backup com timestamp
       const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
       const fileName = `loja_backup_${timestamp}.db`;
-      const backupPath = FileSystem.documentDirectory + fileName;
+  const backupPath = (FileSystem as any).documentDirectory + fileName;
       
       // Copiar arquivo do banco para backup
       await FileSystem.copyAsync({
@@ -280,8 +282,8 @@ export default function Settings() {
             onPress: async () => {
               try {
                 // Fazer backup do banco atual antes de substituir
-                const currentDbPath = FileSystem.documentDirectory + 'SQLite/venda.db';
-                const backupPath = FileSystem.documentDirectory + `backup_before_import_${Date.now()}.db`;
+                const currentDbPath = (FileSystem as any).documentDirectory + 'SQLite/venda.db';
+                const backupPath = (FileSystem as any).documentDirectory + `backup_before_import_${Date.now()}.db`;
                 
                 // Verificar se o banco atual existe e fazer backup
                 const currentDbInfo = await FileSystem.getInfoAsync(currentDbPath);
@@ -327,7 +329,8 @@ export default function Settings() {
       backgroundColor: colors.background,
     },
     header: {
-      backgroundColor: colors.surface,
+      // Use dedicated topbar color for consistent dark bar styling
+      backgroundColor: colors.topbar,
       paddingHorizontal: 20,
       paddingTop: 50,
       paddingBottom: 16,
@@ -336,16 +339,21 @@ export default function Settings() {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 16,
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 6,
+      elevation: 3,
     },
     backButton: {
       padding: 8,
       borderRadius: 8,
-      backgroundColor: colors.card,
+      backgroundColor: colors.topbar,
     },
     title: {
       fontSize: 24,
       fontFamily: 'Inter-Bold',
-      color: colors.text,
+      color: colors.white,
     },
     content: {
       flex: 1,
@@ -573,6 +581,8 @@ export default function Settings() {
       fontFamily: 'Inter-Medium',
     },
   });
+  // Increase spacer: minimum 24, cap 36, add +12 to inset for comfort
+  const bottomSpacer = Math.max(24, Math.min((insets.bottom || 0) + 12, 36));
 
   return (
     <View style={styles.container}>
@@ -582,12 +592,16 @@ export default function Settings() {
           style={styles.backButton}
           onPress={() => router.back()}
         >
-          <ArrowLeft size={24} color={colors.text} />
+          <ArrowLeft size={24} color={colors.white} />
         </TouchableOpacity>
         <Text style={styles.title}>Configurações</Text>
       </View>
 
-      <ScrollView style={[styles.content, { marginBottom: 30 }]} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: 0 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Premium */}
         <View style={styles.section}>
           <Card>
@@ -869,7 +883,9 @@ export default function Settings() {
             </View>
           </Card>
         </View>
-      </ScrollView>
+  </ScrollView>
+  {/* Discreet dark bottom area only for settings screen */}
+  <View style={{ backgroundColor: colors.bottombar, height: bottomSpacer }} />
 
       {/* Modal de Reset */}
       <Modal visible={showResetModal} transparent animationType="fade">

@@ -7,9 +7,11 @@ import { getPremiumStatus, checkSubscriptionFromDatabase, type PremiumStatus } f
 import { initializeIAP, getProducts, purchaseSubscription, restorePurchases, PRODUCT_IDS, type Product } from '@/lib/iap';
 import { useRouter } from 'expo-router';
 import { ArrowLeft, Check } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function PremiumPage() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -154,6 +156,8 @@ export default function PremiumPage() {
       lineHeight: 18
     },
   });
+  // Increase spacer: minimum 24, cap 36, add +12 to inset for comfort
+  const bottomSpacer = Math.max(24, Math.min((insets.bottom || 0) + 12, 36));
 
   if (initializing) {
     return (
@@ -267,6 +271,8 @@ export default function PremiumPage() {
           Você pode cancelar a qualquer momento através das configurações da sua conta.
         </Text>
       </ScrollView>
+      {/* Discreet dark bottom area only for manage plan screen */}
+      <View style={{ backgroundColor: colors.bottombar, height: bottomSpacer }} />
     </View>
   );
 }

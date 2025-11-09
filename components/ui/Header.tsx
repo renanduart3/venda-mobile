@@ -34,7 +34,7 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
 
   const styles = StyleSheet.create({
     header: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.topbar,
       paddingHorizontal: 20,
       paddingTop: 50,
       paddingBottom: 16,
@@ -43,11 +43,17 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
+      // subtle elevation/shadow for a clean, modern separation
+      shadowColor: '#000',
+      shadowOpacity: 0.04,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 6,
+      elevation: 2,
     },
     title: {
       fontSize: 24,
       fontFamily: 'Inter-Bold',
-      color: colors.text,
+      color: colors.onTopbar,
     },
     rightSection: {
       flexDirection: 'row',
@@ -106,7 +112,7 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
           onPress={onBackPress || (() => router.back())}
           style={{ padding: 8, marginRight: 8 }}
         >
-          <ArrowLeft size={24} color={colors.text} />
+          <ArrowLeft size={24} color={colors.onTopbar} />
         </TouchableOpacity>
       )}
       <Text style={[styles.title, showBack && { flex: 1, textAlign: 'center' }]}>{title}</Text>
@@ -128,7 +134,7 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
           style={[styles.notificationButton, { padding: 6 }]}
           onPress={() => router.push('/notifications')}
         >
-          <Bell size={24} color={colors.text} />
+          <Bell size={24} color={colors.onTopbar} />
           {unreadCount > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>
@@ -147,7 +153,7 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
               console.error('Erro na navegação:', error);
             }
           }} style={{ padding: 6 }}>
-            <Settings size={24} color={colors.text} />
+            <Settings size={24} color={colors.onTopbar} />
           </TouchableOpacity>
         )}
 

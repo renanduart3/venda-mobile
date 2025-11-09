@@ -26,7 +26,9 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { SkeletonCard, EmptyState } from '@/components/ui/Skeleton';
+import { toTitleCase } from '@/lib/utils';
 import db from '@/lib/db';
 
 interface Customer {
@@ -60,6 +62,13 @@ export default function Clientes() {
   useEffect(() => {
     loadCustomers();
   }, []);
+
+  // Recarrega ao focar a aba para refletir pagamentos/mudanças recentes
+  useFocusEffect(
+    React.useCallback(() => {
+      loadCustomers();
+    }, [])
+  );
 
   const loadCustomers = async () => {
     setIsLoading(true);
@@ -132,8 +141,9 @@ export default function Clientes() {
 
     try {
       const now = new Date().toISOString();
+      const name = toTitleCase(formData.name.trim());
       const customerPayload = {
-        name: formData.name.trim(),
+        name,
         phone: formData.phone.trim() ? formData.phone.trim() : null,
         email: formData.email.trim() ? formData.email.trim() : null,
         whatsapp: formData.whatsapp,
@@ -251,17 +261,21 @@ export default function Clientes() {
       justifyContent: 'center',
     },
     customerCard: {
-      marginBottom: 12,
+      marginBottom: 14,
+      borderRadius: 12,
+      position: 'relative',
     },
     customerItem: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 12,
+      gap: 14,
+      paddingVertical: 14,
+      minHeight: 68,
     },
     customerIcon: {
-      width: 50,
-      height: 50,
-      borderRadius: 25,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
       backgroundColor: colors.primary + '20',
       alignItems: 'center',
       justifyContent: 'center',
@@ -270,7 +284,7 @@ export default function Clientes() {
       flex: 1,
     },
     customerName: {
-      fontSize: 16,
+      fontSize: 18,
       fontFamily: 'Inter-SemiBold',
       color: colors.text,
       marginBottom: 4,
@@ -298,11 +312,27 @@ export default function Clientes() {
       gap: 8,
     },
     actionButton: {
-      padding: 8,
-      borderRadius: 6,
+      padding: 10,
+      borderRadius: 8,
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
+    },
+    debtBadge: {
+      position: 'absolute',
+      top: 8,
+      right: 8,
+      backgroundColor: colors.error + '20',
+      borderRadius: 10,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderWidth: 1,
+      borderColor: colors.error,
+    },
+    debtBadgeText: {
+      fontSize: 11,
+      fontFamily: 'Inter-Bold',
+      color: colors.error,
     },
     
     // Modal styles
@@ -338,7 +368,7 @@ export default function Clientes() {
     },
     input: {
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.inputBorder,
       borderRadius: 8,
       paddingHorizontal: 12,
       paddingVertical: 10,
@@ -388,7 +418,7 @@ export default function Clientes() {
             {editingCustomer ? 'Editar Cliente' : 'Novo Cliente'}
           </Text>
           
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={styles.formGroup}>
               <Text style={styles.label}>Nome *</Text>
               <TextInput
@@ -521,17 +551,10 @@ export default function Clientes() {
                       </View>
 
                       <View style={styles.customerInfo}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <View style={{ marginBottom: 4 }}>
                           <Text style={styles.customerName} numberOfLines={1} ellipsizeMode="tail">
-                            {customer.name}
+                            {toTitleCase(customer.name)}
                           </Text>
-                          {debt > 0 ? (
-                            <View style={{ backgroundColor: colors.error + '20', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, marginLeft: 8 }}>
-                              <Text style={{ fontSize: 11, fontFamily: 'Inter-Bold', color: colors.error }}>
-                                R$ {debt.toFixed(2)}
-                              </Text>
-                            </View>
-                          ) : null}
                         </View>
 
                         {customer.phone ? (
@@ -547,7 +570,7 @@ export default function Clientes() {
                                 style={[styles.contactButton, styles.whatsappButton]}
                                 onPress={(e) => { e.stopPropagation(); openWhatsApp(customer.phone!); }}
                               >
-                                <MessageCircle size={12} color="white" />
+                                <MessageCircle size={16} color="white" />
                               </TouchableOpacity>
                             ) : null}
                           </View>
@@ -580,6 +603,11 @@ export default function Clientes() {
                         </TouchableOpacity>
                       </View>
                     </View>
+                    {debt > 0 && (
+                      <View style={styles.debtBadge}>
+                        <Text style={styles.debtBadgeText}>R$ {debt.toFixed(2)}</Text>
+                      </View>
+                    )}
                   </Card>
                 </TouchableOpacity>
               );
@@ -588,7 +616,81 @@ export default function Clientes() {
         )}
       </View>
 
-      <CustomerModal />
+      {showCustomerModal && (
+        <Modal visible transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                {editingCustomer ? 'Editar Cliente' : 'Novo Cliente'}
+              </Text>
+              
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Nome *</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.name}
+                    onChangeText={(text) => setFormData({ ...formData, name: text })}
+                    placeholder="Nome completo"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Telefone</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.phone}
+                    onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                    placeholder="(11) 99999-9999"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+                <View style={styles.formGroup}>
+                  <TouchableOpacity
+                    style={styles.checkboxContainer}
+                    onPress={() => setFormData({ ...formData, whatsapp: !formData.whatsapp })}
+                  >
+                    <View style={[styles.checkbox, formData.whatsapp && styles.checkboxChecked]}>
+                      {formData.whatsapp && <MessageCircle size={12} color={colors.white} />}
+                    </View>
+                    <Text style={styles.checkboxText}>Tem WhatsApp</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>E-mail</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.email}
+                    onChangeText={(text) => setFormData({ ...formData, email: text })}
+                    placeholder="email@exemplo.com"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+              </ScrollView>
+
+              <View style={styles.modalButtons}>
+                <Button
+                  title="Cancelar"
+                  onPress={closeCustomerModal}
+                  variant="outline"
+                  style={styles.modalButton}
+                />
+                <Button
+                  title="Salvar"
+                  onPress={saveCustomer}
+                  style={styles.modalButton}
+                />
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }

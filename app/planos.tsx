@@ -23,12 +23,17 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
 import { subscriptionManager, SUBSCRIPTION_PLANS, SubscriptionPlan } from '@/lib/subscriptions';
+import { enablePremium, disablePremium, isPremium } from '@/lib/premium';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function Planos() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [selectedPlan, setSelectedPlan] = useState<string>('yearly');
   const [isLoading, setIsLoading] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
+  // Increase spacer: ensure minimum 24, cap at 36 for very tall gesture areas
+  const bottomSpacer = Math.max(24, Math.min((insets.bottom || 0) + 12, 36));
 
   // Obter o plano atual baseado na seleção
   const currentPlan = SUBSCRIPTION_PLANS.find(plan => plan.id === selectedPlan);
@@ -91,13 +96,41 @@ export default function Planos() {
     }
   };
 
+  const handleDevEnablePremium = async () => {
+    setIsLoading(true);
+    try {
+      const now = new Date();
+      const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await enablePremium(in30Days, 'android', currentPlan?.sku || 'dev_sku');
+      Alert.alert('Dev', 'Premium ativado localmente por 30 dias.');
+      await loadActiveSubscription();
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível ativar premium em dev.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDevDisablePremium = async () => {
+    setIsLoading(true);
+    try {
+      await disablePremium();
+      Alert.alert('Dev', 'Premium desativado.');
+      await loadActiveSubscription();
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível desativar premium em dev.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const styles = StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: colors.background,
     },
     header: {
-      backgroundColor: colors.surface,
+      backgroundColor: colors.topbar,
       paddingHorizontal: 20,
       paddingTop: 50,
       paddingBottom: 16,
@@ -110,12 +143,12 @@ export default function Planos() {
     backButton: {
       padding: 8,
       borderRadius: 8,
-      backgroundColor: colors.card,
+      backgroundColor: colors.topbar,
     },
     title: {
       fontSize: 24,
       fontFamily: 'Inter-Bold',
-      color: colors.text,
+      color: colors.onTopbar,
     },
     content: {
       flex: 1,
@@ -305,12 +338,17 @@ export default function Planos() {
           style={styles.backButton}
           onPress={() => router.back()}
         >
-          <ArrowLeft size={24} color={colors.text} />
+          <ArrowLeft size={24} color={colors.onTopbar} />
         </TouchableOpacity>
         <Text style={styles.title}>Planos Premium</Text>
       </View>
+      {__DEV__ && (
+        <View style={{ alignSelf: 'center', marginTop: 8, backgroundColor: colors.warning + '20', borderColor: colors.warning, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+          <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.warning }}>Desenvolvimento</Text>
+        </View>
+      )}
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+  <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <View style={styles.heroSection}>
           <Text style={styles.heroTitle}>Proteja Seus Dados</Text>
@@ -404,13 +442,23 @@ export default function Planos() {
                 ))}
               </View>
 
-              <Button
-                title={activeSubscription ? 'Assinatura Ativa' : 'Assinar Agora'}
-                onPress={handleSubscribe}
-                disabled={!!activeSubscription || isLoading}
-                style={styles.subscribeButton}
-                variant="primary"
-              />
+              {__DEV__ || Platform.OS !== 'android' ? (
+                <Button
+                  title={activeSubscription ? 'Assinatura Ativa' : 'Assinar (disponível no build)'}
+                  onPress={() => {}}
+                  disabled
+                  style={styles.subscribeButton}
+                  variant="outline"
+                />
+              ) : (
+                <Button
+                  title={activeSubscription ? 'Assinatura Ativa' : 'Assinar Agora'}
+                  onPress={handleSubscribe}
+                  disabled={!!activeSubscription || isLoading}
+                  style={styles.subscribeButton}
+                  variant="primary"
+                />
+              )}
             </Card>
           </View>
         )}
@@ -423,6 +471,32 @@ export default function Planos() {
           style={styles.restoreButton}
           disabled={isLoading}
         />
+        <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginTop: 6 }}>
+          Reinstalou ou trocou de aparelho? Toque em "Restaurar Compras" para
+          recuperar sua assinatura ativa pela conta da loja.
+        </Text>
+
+        {__DEV__ && (
+          <View style={{ marginTop: 12, gap: 8 }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>
+              Ferramentas de desenvolvimento (somente em dev)
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center' }}>
+              <Button
+                title="Ativar Premium (Dev)"
+                onPress={handleDevEnablePremium}
+                variant="secondary"
+                size="sm"
+              />
+              <Button
+                title="Desativar Premium (Dev)"
+                onPress={handleDevDisablePremium}
+                variant="outline"
+                size="sm"
+              />
+            </View>
+          </View>
+        )}
 
         {/* Footer */}
         <View style={styles.footer}>
@@ -434,6 +508,8 @@ export default function Planos() {
           </Text>
         </View>
       </ScrollView>
+      {/* Discreet dark bottom area to align with system nav region on this screen only */}
+      <View style={{ backgroundColor: colors.bottombar, height: bottomSpacer }} />
     </View>
   );
 }

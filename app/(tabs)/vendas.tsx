@@ -26,7 +26,7 @@ import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { isPremium } from '@/lib/premium';
-import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp } from '@/lib/utils';
+import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp, toTitleCase } from '@/lib/utils';
 import db from '@/lib/db';
 
 interface Product {
@@ -130,6 +130,7 @@ export default function Vendas() {
   };
 
   const totalSale = saleItems.reduce((sum, item) => sum + item.total, 0);
+  const todaySales = React.useMemo(() => getTodaySalesUtil(sales), [sales]);
 
   useEffect(() => {
     loadData();
@@ -345,6 +346,31 @@ export default function Vendas() {
     );
   };
 
+  const clearSale = () => {
+    Alert.alert(
+      'Limpar Venda',
+      'Deseja remover todos os itens e limpar o formulário da venda?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Limpar',
+          style: 'destructive',
+          onPress: () => {
+            setSaleItems([]);
+            setSelectedCustomer('');
+            setSelectedCustomerId(null);
+            setCustomerSearch('');
+            setPaymentMethod('credit');
+            setObservation('');
+            setCustomerSuggestionsVisible(false);
+            setProductSearch('');
+            setSuggestionsVisible(false);
+          },
+        },
+      ]
+    );
+  };
+
 
   const handleProductSearchSelect = (product: Product) => {
     addItemToSale(product);
@@ -526,7 +552,7 @@ export default function Vendas() {
     },
     input: {
       borderWidth: 1,
-      borderColor: colors.border,
+      borderColor: colors.inputBorder,
       borderRadius: 8,
       paddingHorizontal: 12,
       paddingVertical: 10,
@@ -604,234 +630,7 @@ export default function Vendas() {
     
   });
 
-  const NewSaleTab = () => (
-    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-
-      {/* Product search / autocomplete */}
-      <Card style={{ marginBottom: 16 }}>
-        <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 8 }}>Buscar Produtos ou Serviços</Text>
-        <TextInput
-          style={[styles.input, { marginBottom: 8 }]}
-          placeholder="Digite nome, código ou código de barras"
-          placeholderTextColor={colors.textSecondary}
-          value={productSearch}
-          onChangeText={(t) => { setProductSearch(t); setSuggestionsVisible(true); }}
-          onSubmitEditing={handleProductSearchSubmit}
-        />
-        {suggestionsVisible && (
-          <View>
-            {filteredProducts.map(p => (
-              <TouchableOpacity key={p.id} onPress={() => handleProductSearchSelect(p)} style={{ paddingVertical: 8 }}>
-                <Text style={{ color: colors.text }}>{p.name} {p.barcode ? `• ${p.barcode}` : ''}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </Card>
-
-      {/* Sale Items */}
-      {saleItems.length > 0 && (
-        <View style={styles.saleItems}>
-          <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 12 }}>
-            Itens da Venda
-          </Text>
-          {saleItems.map((item) => (
-            <Card key={item.product.id} style={styles.saleItemCard}>
-              <View style={styles.saleItem}>
-                <View style={styles.saleItemInfo}>
-                  <Text style={styles.saleItemName}>{item.product.name}</Text>
-                  <Text style={styles.saleItemPrice}>R$ {item.product.price.toFixed(2)} cada</Text>
-                </View>
-                <View style={styles.quantityControls}>
-                  <TouchableOpacity
-                    style={styles.quantityButton}
-                    onPress={() => updateItemQuantity(item.product.id, item.quantity - 1)}
-                  >
-                    <Minus size={16} color={colors.white} />
-                  </TouchableOpacity>
-                  <Text style={styles.quantityText}>{item.quantity}</Text>
-                  <TouchableOpacity
-                    style={styles.quantityButton}
-                    onPress={() => updateItemQuantity(item.product.id, item.quantity + 1)}
-                    disabled={item.quantity >= item.product.stock}
-                  >
-                    <Plus size={16} color={colors.white} />
-                  </TouchableOpacity>
-                  <Text style={styles.itemTotal}>R$ {item.total.toFixed(2)}</Text>
-                </View>
-              </View>
-            </Card>
-          ))}
-        </View>
-      )}
-
-      {/* Sale Form */}
-      <View style={styles.saleForm}>
-        <View style={{ position: 'relative', zIndex: 1 }}>
-          <TextInput
-            style={styles.input}
-            placeholder="Cliente (opcional)"
-            placeholderTextColor={colors.textSecondary}
-            value={customerSearch}
-            onChangeText={handleCustomerSearchChange}
-            onFocus={() => setCustomerSuggestionsVisible(customerSearch.length > 0)}
-          />
-          {customerSuggestionsVisible && filteredCustomers.length > 0 && (
-            <View style={[styles.suggestionsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <ScrollView style={{ maxHeight: 150 }}>
-                {filteredCustomers.map((customer) => (
-                  <TouchableOpacity
-                    key={customer.id}
-                    style={[styles.suggestionItem, { borderBottomColor: colors.border }]}
-                    onPress={() => handleCustomerSelect(customer)}
-                  >
-                    <Text style={[styles.suggestionText, { color: colors.text }]}>{customer.name}</Text>
-                    <Text style={[styles.suggestionSubtext, { color: colors.textSecondary }]}>{customer.phone}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
-        </View>
-
-        <View>
-          <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text, marginBottom: 8 }}>
-            Forma de Pagamento
-          </Text>
-          <View style={styles.paymentMethods}>
-            {[
-              { key: 'cash', label: 'Dinheiro' },
-              { key: 'credit', label: 'Crédito' },
-              { key: 'debit', label: 'Débito' },
-              { key: 'pix', label: 'PIX' },
-            ].map((method) => (
-              <TouchableOpacity
-                key={method.key}
-                style={[
-                  styles.paymentButton,
-                  paymentMethod === method.key && styles.paymentButtonActive,
-                ]}
-                onPress={() => setPaymentMethod(method.key as any)}
-              >
-                <Text
-                  style={[
-                    styles.paymentButtonText,
-                    paymentMethod === method.key && styles.paymentButtonTextActive,
-                  ]}
-                >
-                  {method.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <TextInput
-          style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-          placeholder="Observação (opcional)"
-          placeholderTextColor={colors.textSecondary}
-          value={observation}
-          onChangeText={setObservation}
-          multiline
-        />
-      </View>
-
-      {/* Total */}
-      <View style={styles.totalSection}>
-        <Text style={styles.totalText}>Total: R$ {totalSale.toFixed(2)}</Text>
-      </View>
-
-      {/* Finalize Sale Button */}
-      <Button
-        title="Finalizar Venda"
-        onPress={finalizeSale}
-        disabled={saleItems.length === 0}
-        style={{ marginBottom: 40 }}
-      />
-    </ScrollView>
-  );
-
-  const SalesHistoryTab = () => {
-    const todaySales = getTodaySalesUtil(sales);
-    
-    return (
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 20 }}>
-          Histórico de Vendas do Dia
-        </Text>
-        
-        {todaySales.length === 0 ? (
-          <Card style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={{ fontSize: 16, fontFamily: 'Inter-Medium', color: colors.textSecondary, textAlign: 'center' }}>
-              Nenhuma venda realizada hoje
-            </Text>
-            <Text style={{ fontSize: 14, fontFamily: 'Inter-Regular', color: colors.textSecondary, textAlign: 'center', marginTop: 8 }}>
-              As vendas do dia aparecerão aqui
-            </Text>
-          </Card>
-        ) : (
-          todaySales.map((sale) => (
-            <Card key={sale.id} style={{ marginBottom: 12 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text }}>
-                  Venda #{sale.id.slice(-6)}
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TouchableOpacity
-                    onPress={() => handleEditSale(sale)}
-                    style={{ padding: 4 }}
-                  >
-                    <Edit size={16} color={colors.primary} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleDeleteSale(sale)}
-                    style={{ padding: 4 }}
-                  >
-                    <Trash2 size={16} color={colors.error} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-              
-              <View style={{ marginBottom: 8 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text }}>
-                  Cliente: {sale.customer || 'Cliente não informado'}
-                </Text>
-                <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text }}>
-                  Total: R$ {sale.total.toFixed(2)}
-                </Text>
-              </View>
-              
-              <View style={{ marginBottom: 8 }}>
-                <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
-                  Itens:
-                </Text>
-                {sale.items.map((item, index) => (
-                  <Text key={index} style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
-                    • {item.product.name} x{item.quantity} - R$ {item.total.toFixed(2)}
-                  </Text>
-                ))}
-              </View>
-              
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
-                  {formatTimestamp(sale.timestamp)}
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Text style={{ 
-                    fontSize: 12, 
-                    fontFamily: 'Inter-Medium', 
-                    color: sale.paymentMethod === 'credit' ? colors.success : colors.primary 
-                  }}>
-                    {sale.paymentMethod === 'credit' ? 'Crédito' : 'Dinheiro'}
-                  </Text>
-                </View>
-              </View>
-            </Card>
-          ))
-        )}
-      </ScrollView>
-    );
-  };
+  // NOTE: Avoid inline component definitions that remount on each render.
 
   return (
     <View style={styles.container}>
@@ -857,7 +656,241 @@ export default function Vendas() {
       </View>
 
       {/* Tab Content */}
-      {activeTab === 'new' ? <NewSaleTab /> : <SalesHistoryTab />}
+      {activeTab === 'new' ? (
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Button
+            title="Limpar venda"
+            onPress={clearSale}
+            variant="outline"
+            size="sm"
+            textStyle={{ color: colors.error }}
+            style={{ alignSelf: 'flex-end', marginTop: 8, marginBottom: 8 }}
+          />
+
+          <Card style={{ marginBottom: 16 }}>
+            <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 8 }}>
+              Buscar Produtos ou Serviços
+            </Text>
+            <TextInput
+              style={[styles.input, { marginBottom: 8 }]}
+              placeholder="Digite nome, código ou código de barras"
+              placeholderTextColor={colors.textSecondary}
+              value={productSearch}
+              onChangeText={(t) => { setProductSearch(t); setSuggestionsVisible(true); }}
+              onSubmitEditing={handleProductSearchSubmit}
+            />
+            {suggestionsVisible && (
+              <View>
+                {filteredProducts.map(p => (
+                  <TouchableOpacity key={p.id} onPress={() => handleProductSearchSelect(p)} style={{ paddingVertical: 8 }}>
+                    <Text style={{ color: colors.text }}>{p.name} {p.barcode ? `• ${p.barcode}` : ''}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </Card>
+
+          {saleItems.length > 0 && (
+            <View style={styles.saleItems}>
+              <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 12 }}>
+                Itens da Venda
+              </Text>
+              {saleItems.map((item) => (
+                <Card key={item.product.id} style={styles.saleItemCard}>
+                  <View style={styles.saleItem}>
+                    <View style={styles.saleItemInfo}>
+                      <Text style={styles.saleItemName}>{item.product.name}</Text>
+                      <Text style={styles.saleItemPrice}>R$ {item.product.price.toFixed(2)} cada</Text>
+                    </View>
+                    <View style={styles.quantityControls}>
+                      <TouchableOpacity
+                        style={styles.quantityButton}
+                        onPress={() => updateItemQuantity(item.product.id, item.quantity - 1)}
+                      >
+                        <Minus size={16} color={colors.white} />
+                      </TouchableOpacity>
+                      <Text style={styles.quantityText}>{item.quantity}</Text>
+                      <TouchableOpacity
+                        style={styles.quantityButton}
+                        onPress={() => updateItemQuantity(item.product.id, item.quantity + 1)}
+                        disabled={item.quantity >= item.product.stock}
+                      >
+                        <Plus size={16} color={colors.white} />
+                      </TouchableOpacity>
+                      <Text style={styles.itemTotal}>R$ {item.total.toFixed(2)}</Text>
+                    </View>
+                  </View>
+                </Card>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.saleForm}>
+            <View style={{ position: 'relative', zIndex: 1 }}>
+              <TextInput
+                style={styles.input}
+                placeholder="Cliente (opcional)"
+                placeholderTextColor={colors.textSecondary}
+                value={customerSearch}
+                onChangeText={handleCustomerSearchChange}
+                onFocus={() => setCustomerSuggestionsVisible(customerSearch.length > 0)}
+              />
+              {customerSuggestionsVisible && filteredCustomers.length > 0 && (
+                <View style={[styles.suggestionsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <ScrollView style={{ maxHeight: 150 }} keyboardShouldPersistTaps="handled">
+                    {filteredCustomers.map((customer) => (
+                      <TouchableOpacity
+                        key={customer.id}
+                        style={[styles.suggestionItem, { borderBottomColor: colors.border }]}
+                        onPress={() => handleCustomerSelect(customer)}
+                      >
+                        <Text style={[styles.suggestionText, { color: colors.text }]}>{toTitleCase(customer.name)}</Text>
+                        <Text style={[styles.suggestionSubtext, { color: colors.textSecondary }]}>{customer.phone}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </View>
+
+            <View>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text, marginBottom: 8 }}>
+                Forma de Pagamento
+              </Text>
+              <View style={styles.paymentMethods}>
+                {[
+                  { key: 'cash', label: 'Dinheiro' },
+                  { key: 'credit', label: 'Crédito' },
+                  { key: 'debit', label: 'Débito' },
+                  { key: 'pix', label: 'PIX' },
+                ].map((method) => (
+                  <TouchableOpacity
+                    key={method.key}
+                    style={[
+                      styles.paymentButton,
+                      paymentMethod === method.key && styles.paymentButtonActive,
+                    ]}
+                    onPress={() => setPaymentMethod(method.key as any)}
+                  >
+                    <Text
+                      style={[
+                        styles.paymentButtonText,
+                        paymentMethod === method.key && styles.paymentButtonTextActive,
+                      ]}
+                    >
+                      {method.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <TextInput
+              style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+              placeholder="Observação (opcional)"
+              placeholderTextColor={colors.textSecondary}
+              value={observation}
+              onChangeText={setObservation}
+              multiline
+            />
+          </View>
+
+          <View style={styles.totalSection}>
+            <Text style={styles.totalText}>Total: R$ {totalSale.toFixed(2)}</Text>
+          </View>
+          <Button
+            title="Finalizar Venda"
+            onPress={finalizeSale}
+            disabled={saleItems.length === 0}
+            style={{ marginBottom: 40 }}
+          />
+        </ScrollView>
+      ) : (
+        <ScrollView
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 20 }}>
+            Histórico de Vendas do Dia
+          </Text>
+          {todaySales.length === 0 ? (
+            <Card style={{ padding: 20, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontFamily: 'Inter-Medium', color: colors.textSecondary, textAlign: 'center' }}>
+                Nenhuma venda realizada hoje
+              </Text>
+              <Text style={{ fontSize: 14, fontFamily: 'Inter-Regular', color: colors.textSecondary, textAlign: 'center', marginTop: 8 }}>
+                As vendas do dia aparecerão aqui
+              </Text>
+            </Card>
+          ) : (
+            todaySales.map((sale) => (
+              <Card key={sale.id} style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text }}>
+                    Venda #{sale.id.slice(-6)}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      onPress={() => handleEditSale(sale)}
+                      style={{ padding: 4 }}
+                    >
+                      <Edit size={16} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteSale(sale)}
+                      style={{ padding: 4 }}
+                    >
+                      <Trash2 size={16} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text }}>
+                    Cliente: {sale.customer || 'Cliente não informado'}
+                  </Text>
+                  <Text style={{ fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text }}>
+                    Total: R$ {sale.total.toFixed(2)}
+                  </Text>
+                </View>
+
+                <View style={{ marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
+                    Itens:
+                  </Text>
+                  {sale.items.map((item: SaleItem, index: number) => (
+                    <Text key={index} style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
+                      • {item.product.name} x{item.quantity} - R$ {item.total.toFixed(2)}
+                    </Text>
+                  ))}
+                </View>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary }}>
+                    {formatTimestamp(sale.timestamp)}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontFamily: 'Inter-Medium',
+                        color: sale.paymentMethod === 'credit' ? colors.success : colors.primary,
+                      }}
+                    >
+                      {sale.paymentMethod === 'credit' ? 'Crédito' : 'Dinheiro'}
+                    </Text>
+                  </View>
+                </View>
+              </Card>
+            ))
+          )}
+        </ScrollView>
+      )}
 
     </View>
   );

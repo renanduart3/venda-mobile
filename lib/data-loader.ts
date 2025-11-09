@@ -141,15 +141,30 @@ export async function loadDashboardStats() {
         product.stock <= product.min_stock
     ).length;
 
+    const toMonthKey = (dateString: any): string | null => {
+      if (!dateString) return null;
+      if (typeof dateString === 'string' && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(dateString)) {
+        const sep = dateString.includes('/') ? '/' : '-';
+        const [dd, mm, yyyy] = dateString.split(sep).map((n: string) => parseInt(n, 10));
+        const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
+        if (!isNaN(d.getTime())) {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+        return null;
+      }
+      if (typeof dateString === 'string') {
+        const d = new Date(dateString);
+        if (!isNaN(d.getTime())) {
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+      }
+      return null;
+    };
+
     const monthlyExpensesTotal = expenses
       .filter((expense: any) => {
-        if (expense.created_month) {
-          return expense.created_month === currentMonth;
-        }
-        if (typeof expense.created_at === 'string') {
-          return expense.created_at.startsWith(currentMonth);
-        }
-        return false;
+        const monthKey = toMonthKey(expense.due_date) || expense.created_month || toMonthKey(expense.created_at);
+        return monthKey === currentMonth;
       })
       .reduce((sum: number, expense: any) => sum + Number(expense.amount ?? 0), 0);
 

@@ -28,6 +28,7 @@ import { router } from 'expo-router';
 import { isPremium } from '@/lib/premium';
 import { getReportData } from '@/lib/advanced-reports';
 import { generateReportHTML, reportToPDF, exportReportToCSV } from '@/lib/export';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const premiumReports = [
   { 
@@ -90,6 +91,7 @@ const premiumReports = [
 
 export default function Relatorios() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<'month' | 'year'>('month');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -618,6 +620,8 @@ export default function Relatorios() {
       textTransform: 'capitalize',
     },
   });
+  // Increase spacer: ensure minimum 24, cap at 36; add +12 to insets for comfort
+  const bottomSpacer = Math.max(24, Math.min((insets.bottom || 0) + 12, 36));
 
   return (
     <View style={styles.container}>
@@ -686,7 +690,9 @@ export default function Relatorios() {
         </View>
         </>
         )}
-      </ScrollView>
+  </ScrollView>
+  {/* Discreet dark bottom area only for this premium reports screen */}
+  <View style={{ backgroundColor: colors.bottombar, height: bottomSpacer }} />
 
       {/* Period Selection Modal */}
       <Modal visible={showPeriodModal} transparent animationType="fade">
