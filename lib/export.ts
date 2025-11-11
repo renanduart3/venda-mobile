@@ -1,291 +1,121 @@
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
+﻿import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
-import * as DocumentPicker from 'expo-document-picker';
-import db from './db';
-import { isPremium } from './premium';
+import * as FileSystem from 'expo-file-system/legacy';
+import { htmlShell, renderSummary, renderTable, renderHBarChart } from './report-templates';
 
-function toCSV(rows: any[]) {
-  if (!rows || rows.length === 0) return '';
-  const keys = Object.keys(rows[0]);
-  const header = keys.join(',');
-  const body = rows.map(r => keys.map(k => {
-    const v = r[k];
-    if (v === null || v === undefined) return '';
-    const stringValue = String(v);
-    if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-      return `"${stringValue.replace(/"/g, '""')}"`;
-    }
-    return stringValue;
-  }).join(','));
-  return [header].concat(body).join('\n');
-}
-
-function parseCSV(csvString: string): any[] {
-  const lines = csvString.split(/\r?\n/).filter(line => line.trim());
-  if (lines.length === 0) return [];
-
-  const keys = lines[0].split(',').map(k => k.trim());
-  const rows = lines.slice(1).map(line => {
-    const values: string[] = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-
-      if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (char === ',' && !inQuotes) {
-        values.push(current.trim());
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    values.push(current.trim());
-
-    const obj: any = {};
-    keys.forEach((k, i) => {
-      const value = values[i] || '';
-      if (value === '' || value === 'null' || value === 'undefined') {
-        obj[k] = null;
-      } else if (k === 'price' || k === 'stock' || k === 'min_stock' || k === 'whatsapp' || k === 'paid' || k === 'recurring' || k === 'quantity' || k === 'unit_price' || k === 'total' || k === 'amount') {
-        obj[k] = parseFloat(value) || 0;
-      } else {
-        obj[k] = value;
-      }
-    });
-    return obj;
-  });
-
-  return rows;
-}
-
-export async function exportDatabaseToCSV() {
-  const premium = await isPremium();
-  if (!premium) throw new Error('Funcionalidade premium: exportar banco de dados.');
-
-  const tables = ['products', 'customers', 'sales', 'sale_items', 'expenses', 'store_settings'];
-  const exports: { [key: string]: string } = {};
-
-  for (const table of tables) {
-    const rows = await db.all(table);
-    exports[table] = toCSV(rows);
-  }
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `database_export_${timestamp}.json`;
-  const path = `${FileSystem.documentDirectory}${filename}`;
-
-  await FileSystem.writeAsStringAsync(
-    path,
-    JSON.stringify(exports, null, 2),
-    { encoding: FileSystem.EncodingType.UTF8 }
-  );
-
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(path, { mimeType: 'application/json' });
-  }
-
-  return path;
-}
-
-export async function exportTableToCSV(table: string) {
-  const premium = await isPremium();
-  if (!premium) throw new Error('Funcionalidade premium: exportar dados.');
-  const rows = await db.all(table);
-  const csv = toCSV(rows);
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `${table}_${timestamp}.csv`;
-  const path = `${FileSystem.documentDirectory}${filename}`;
-  await FileSystem.writeAsStringAsync(path, csv, { encoding: FileSystem.EncodingType.UTF8 });
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(path, { mimeType: 'text/csv' });
-  }
-  return path;
-}
-
-export async function importDatabaseFromFile() {
-  const premium = await isPremium();
-  if (!premium) throw new Error('Funcionalidade premium: importar banco de dados.');
-
-  const result = await DocumentPicker.getDocumentAsync({
-    type: 'application/json',
-    copyToCacheDirectory: true,
-  });
-
-  if (result.canceled) {
-    throw new Error('Importação cancelada.');
-  }
-
-  const fileUri = result.assets[0].uri;
-  const content = await FileSystem.readAsStringAsync(fileUri, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
-
-  const exports = JSON.parse(content);
-  let totalImported = 0;
-
-  for (const [table, csvString] of Object.entries(exports)) {
-    if (typeof csvString === 'string') {
-      const rows = parseCSV(csvString);
-      for (const row of rows) {
-        await db.insert(table, row);
-        totalImported++;
-      }
-    }
-  }
-
-  return totalImported;
-}
-
-export async function importCSVFromFile(table: string) {
-  const premium = await isPremium();
-  if (!premium) throw new Error('Funcionalidade premium: importar dados.');
-
-  const result = await DocumentPicker.getDocumentAsync({
-    type: 'text/csv',
-    copyToCacheDirectory: true,
-  });
-
-  if (result.canceled) {
-    throw new Error('Importação cancelada.');
-  }
-
-  const fileUri = result.assets[0].uri;
-  const csvString = await FileSystem.readAsStringAsync(fileUri, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
-
-  const rows = parseCSV(csvString);
-
-  for (const row of rows) {
-    await db.insert(table, row);
-  }
-
-  return rows.length;
-}
-
-// Placeholder for Google Sheets export. Full integration requires OAuth credentials or a server-side proxy.
-export async function exportToGoogleSheets(_: string, __: any[]) {
-  const premium = await isPremium();
-  if (!premium) throw new Error('Funcionalidade premium: exportar para Google Sheets.');
-  throw new Error('Google Sheets export requires server-side credentials or OAuth flow. Implement a backend endpoint to accept CSV or rows and push to Google Sheets via Sheets API.');
-}
-
-export async function reportToPDF(html: string) {
-  const premium = await isPremium();
-  if (!premium) throw new Error('Funcionalidade premium: gerar relatório em PDF.');
-
+export async function reportToPDF(html: string, fileName?: string) {
   const { uri } = await Print.printToFileAsync({ html });
-  // Optionally share the PDF
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, { mimeType: 'application/pdf' });
-  }
-  return uri;
+  let finalUri = uri;
+  try {
+    if (fileName) {
+      const safe = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+      const dest = (FileSystem as any).documentDirectory + safe;
+      await FileSystem.copyAsync({ from: uri, to: dest });
+      try { await FileSystem.deleteAsync(uri, { idempotent: true }); } catch {}
+      finalUri = dest;
+    }
+  } catch {}
+  try {
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(finalUri, { mimeType: 'application/pdf' });
+    }
+  } catch {}
+  return finalUri;
 }
 
-// Função para gerar HTML de relatório
-export function generateReportHTML(reportTitle: string, reportData: any[], period: string): string {
+const LABEL_PT: Record<string, string> = {
+  productId: 'ID',
+  productName: 'Nome',
+  totalSold: 'Total',
+  totalRevenue: 'Lucro',
+  averagePrice: 'Média',
+  percentage: 'Percentual',
+  cumulativePercentage: 'Percentual Acumulado',
+  category: 'Categoria',
+  date: 'Data',
+  transactions: 'Transações',
+  total_sales: 'Receita',
+  average_ticket: 'Ticket Médio',
+  method: 'Método',
+  totalAmount: 'Valor Total',
+  transactionCount: 'Transações',
+  hour: 'Hora',
+  sales: 'Vendas',
+  customerId: 'Cliente ID',
+  customerName: 'Cliente',
+  totalPurchases: 'Compras',
+  totalSpent: 'Total Gasto',
+  lastPurchase: 'Última Compra',
+  purchaseFrequency: 'Frequência',
+  costPrice: 'Custo',
+  sellingPrice: 'Preço Venda',
+  profitPerUnit: 'Lucro/Un',
+  profitMarginPercentage: 'Margem %',
+};
+
+export function generateReportHTML(reportTitle: string, reportData: any[], period: string, extraHtml?: string): string {
   const currentDate = new Date().toLocaleDateString('pt-BR');
-  
-  let tableRows = '';
-  if (Array.isArray(reportData) && reportData.length > 0) {
-    const headers = Object.keys(reportData[0]);
-    const headerRow = headers.map(header => 
-      `<th style="border: 1px solid #ddd; padding: 8px; background-color: #f2f2f2;">${header}</th>`
-    ).join('');
-    
-    const dataRows = reportData.map(row => {
-      const cells = headers.map(header => {
-        const value = row[header];
-        const formattedValue = typeof value === 'number' ? value.toLocaleString('pt-BR') : value;
-        return `<td style="border: 1px solid #ddd; padding: 8px;">${formattedValue}</td>`;
-      }).join('');
-      return `<tr>${cells}</tr>`;
-    }).join('');
-    
-    tableRows = `
-      <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-        <thead>
-          <tr>${headerRow}</tr>
-        </thead>
-        <tbody>
-          ${dataRows}
-        </tbody>
-      </table>
-    `;
-  } else {
-    tableRows = '<p>Nenhum dado encontrado para o período selecionado.</p>';
-  }
-
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <title>${reportTitle}</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .header { text-align: center; margin-bottom: 30px; }
-        .title { font-size: 24px; font-weight: bold; color: #333; }
-        .subtitle { font-size: 16px; color: #666; margin-top: 10px; }
-        .date { font-size: 14px; color: #888; margin-top: 5px; }
-        .summary { margin: 20px 0; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <div class="title">${reportTitle}</div>
-        <div class="subtitle">Período: ${period}</div>
-        <div class="date">Gerado em: ${currentDate}</div>
-      </div>
-      
-      <div class="summary">
-        <strong>Resumo:</strong> ${Array.isArray(reportData) ? reportData.length : 0} registros encontrados
-      </div>
-      
-      ${tableRows}
-    </body>
-    </html>
-  `;
+  const sections: string[] = [];
+  if (extraHtml) sections.push(extraHtml);
+  sections.push(renderSummary(`<strong>Resumo:</strong> ${Array.isArray(reportData) ? reportData.length : 0} registros`));
+  sections.push(renderTable(reportData, LABEL_PT));
+  const body = sections.join('');
+  return htmlShell({ title: reportTitle, period, currentDate, body });
 }
 
-export async function exportReportToCSV(reportTitle: string, reportData: any[]) {
-  const premium = await isPremium();
-  if (!premium) throw new Error('Funcionalidade premium: exportar relatórios.');
-
-  const normalizedData = Array.isArray(reportData)
-    ? reportData
-    : reportData
-      ? [reportData]
-      : [];
-
-  const csv = normalizedData.length > 0
-    ? toCSV(normalizedData)
-    : 'Nenhum dado disponível para o período selecionado.';
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const safeTitle = reportTitle
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'relatorio';
-  const filename = `${safeTitle}_${timestamp}.csv`;
-  const path = `${FileSystem.documentDirectory}${filename}`;
-
-  await FileSystem.writeAsStringAsync(path, csv, {
-    encoding: FileSystem.EncodingType.UTF8,
-  });
-
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(path, { mimeType: 'text/csv' });
+export function generateReportChartHTML(reportId: string, reportData: any[]): string {
+  const rows = Array.isArray(reportData) ? reportData : (reportData ? [reportData] : []);
+  switch (reportId) {
+    case '1': {
+      const items = rows.map((r:any)=>({ label: String(r.productName||'Produto'), value: Number(r.totalSold||0) })).slice(0,10);
+      const totalQty = rows.reduce((a,r)=> a + Number((r as any).totalSold||0),0);
+      const totalRev = rows.reduce((a,r)=> a + Number((r as any).totalRevenue||0),0);
+      return renderHBarChart({ title: 'Top Produtos (Quantidade)', items, summary: `Quantidade total ${totalQty.toLocaleString('pt-BR')} · Receita total R$ ${totalRev.toLocaleString('pt-BR')}` });
+    }
+    case '2': {
+      let cumulative = 0;
+      const items = rows.map((r:any)=>{
+        const p = Number(r.percentage||0); cumulative += p;
+        const cat = r.category || (cumulative<=80?'A': cumulative<=95?'B':'C');
+        const color = cat==='A'?'#16a34a': cat==='B'?'#f59e0b':'#6b7280';
+        return { label: String(r.productName||'Produto'), value: p, color };
+      }).slice(0,10);
+      return renderHBarChart({ title: 'Curva ABC - % Receita por Produto', items, legend: 'Legenda: A (≤80%), B (≤95%), C (>95%)' });
+    }
+    case '3': {
+      const items = rows.map((r:any)=>({ label: formatDate(r.date), value: Number(r.total_sales||0) }));
+      return renderHBarChart({ title: 'Tendência de Vendas (Receita)', items });
+    }
+    case '4': {
+      const items = rows.map((r:any)=>({ label: String(r.method||'Método').toUpperCase(), value: Number(r.percentage||0) }));
+      return renderHBarChart({ title: 'Participação por Método de Pagamento (%)', items });
+    }
+    case '5': {
+      const items = rows.map((r:any)=>({ label: `${pad2(Number(r.hour)||0)}:00`, value: Number(r.transactions||0) }));
+      return renderHBarChart({ title: 'Transações por Hora', items });
+    }
+    case '6': {
+      const items = rows.map((r:any)=>({ label: String(r.customerName||'Cliente'), value: Number(r.totalSpent||0) })).slice(0,10);
+      return renderHBarChart({ title: 'Ranking de Clientes (Valor Gasto)', items });
+    }
+    case '7': {
+      const days = rows.map((r:any)=>{ try{ const d=new Date(r.lastPurchase); if(!isNaN(d.getTime())){ const now=new Date(); return Math.max(0, Math.round((now.getTime()-d.getTime())/(1000*60*60*24))); } }catch{} return 0; });
+      const items = [
+        { label: '0-30', value: days.filter(d=> d<=30).length, color: '#16a34a' },
+        { label: '30-60', value: days.filter(d=> d>30 && d<=60).length, color: '#f59e0b' },
+        { label: '60-90', value: days.filter(d=> d>60 && d<=90).length, color: '#6b7280' },
+      ];
+      return renderHBarChart({ title: 'Inativos por Faixa (dias)', items, legend: 'Faixas: 0-30, 30-60, 60-90 dias' });
+    }
+    case '8': {
+      const items = rows.map((r:any)=>({ label: String(r.productName||'Produto'), value: Number(r.profitMarginPercentage||0) }))
+        .sort((a,b)=> b.value-a.value).slice(0,10);
+      return renderHBarChart({ title: 'Margem de Lucro por Produto (%)', items });
+    }
+    default:
+      return '';
   }
-
-  return path;
 }
+
+function pad2(n:number){ return String(n).padStart(2,'0'); }
+function formatDate(v:any){ try{ const d=new Date(v); if(!isNaN(d.getTime())){ const dd=pad2(d.getDate()); const mm=pad2(d.getMonth()+1); const yyyy=d.getFullYear(); return `${dd}/${mm}/${yyyy}`;} }catch{} return String(v); }

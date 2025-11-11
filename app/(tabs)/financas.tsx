@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -9,7 +9,9 @@ import {
   FlatList,
   Modal,
   Alert,
-  Platform
+  Platform,
+  Pressable,
+  ActivityIndicator
 } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import {
@@ -21,7 +23,9 @@ import {
   CheckCircle,
   XCircle,
   RotateCcw,
-  Filter
+  Filter,
+  List,
+  Crown
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
@@ -29,6 +33,8 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
 import db from '@/lib/db';
+import { isPremium } from '@/lib/premium';
+import { formatBrDate, normalizeToBrDate, parseBrDate } from '@/lib/utils';
 
 interface Expense {
   id: string;
@@ -47,6 +53,12 @@ interface Expense {
 export default function Financas() {
   const { colors } = useTheme();
   const [activeTab, setActiveTab] = useState<'new' | 'report'>('new');
+  const [userIsPremium, setUserIsPremium] = useState(false);
+  const [saleDetailsVisible, setSaleDetailsVisible] = useState(false);
+  const [saleDetailLoading, setSaleDetailLoading] = useState(false);
+  const [saleDetailItems, setSaleDetailItems] = useState<any[]>([]);
+  const [saleDetailSale, setSaleDetailSale] = useState<any | null>(null);
+  const saleDetailsFetchRef = useRef(false);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [sales, setSales] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
@@ -71,53 +83,67 @@ export default function Financas() {
     return `${yy}-${mm}`;
   };
   const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthLocal());
+
+  // Render month label without Date parsing to avoid UTC/local shifts (e.g., 'YYYY-MM-01' parsing).
+  const getMonthLabel = (ym: string) => {
+    const [year, month] = ym.split('-');
+    const names = [
+      'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+      'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+    ];
+    const idx = Number.isFinite(Number(month)) ? Math.max(0, Math.min(11, parseInt(month, 10) - 1)) : 0;
+    return `${names[idx]} de ${year}`;
+  };
   const [expenseStatusFilter, setExpenseStatusFilter] = useState<'all' | 'pending' | 'paid' | 'overdue'>('all');
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
 
-  // Funções de filtro
+  // Funções de filtro: gerar chave AAAA-MM sem instanciar Date (evita bugs de fuso/ISO)
   const toMonthKey = (dateString?: string | null): string | null => {
     if (!dateString) return null;
     // DD/MM/YYYY
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
-      const [dd, mm, yyyy] = dateString.split('/').map(Number);
-      const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
-      if (!isNaN(d.getTime())) {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      }
-      return null;
+      const [dd, mm, yyyy] = dateString.split('/');
+      return `${yyyy}-${mm}`;
     }
     // DD-MM-YYYY
     if (/^\d{2}-\d{2}-\d{4}$/.test(dateString)) {
-      const [dd, mm, yyyy] = dateString.split('-').map(Number);
-      const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
-      if (!isNaN(d.getTime())) {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      }
-      return null;
+      const [dd, mm, yyyy] = dateString.split('-');
+      return `${yyyy}-${mm}`;
     }
-    const d = new Date(dateString);
-    if (!isNaN(d.getTime())) {
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    // YYYY-MM-DD ou ISO
+    if (/^\d{4}-\d{2}-\d{2}/.test(dateString)) {
+      return dateString.slice(0, 7);
     }
     return null;
+  };
+
+  // Validação forte de data BR (DD/MM/YYYY)
+  const validateDueDate = (value: string): { ok: boolean; message?: string; normalized?: string } => {
+    if (!value) return { ok: true, normalized: '' };
+    const cleaned = value.trim();
+    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(cleaned)) return { ok: false, message: 'Formato inválido. Use DD/MM/AAAA.' };
+    const [ddStr, mmStr, yyyyStr] = cleaned.split('/');
+    const dd = Number(ddStr); const mm = Number(mmStr); const yyyy = Number(yyyyStr);
+    if (mm < 1 || mm > 12) return { ok: false, message: 'Mês inválido.' };
+    if (dd < 1 || dd > 31) return { ok: false, message: 'Dia inválido.' };
+    const thirty = new Set([4,6,9,11]);
+    if (thirty.has(mm) && dd > 30) return { ok: false, message: 'Dia inválido para o mês.' };
+    const isLeap = (yyyy % 4 === 0 && yyyy % 100 !== 0) || (yyyy % 400 === 0);
+    if (mm === 2 && dd > (isLeap ? 29 : 28)) return { ok: false, message: 'Dia inválido para fevereiro.' };
+    const currentYear = new Date().getFullYear();
+    const MIN_YEAR = currentYear - 1; // permite até 1 ano no passado
+    const MAX_YEAR = currentYear + 2; // até 2 anos no futuro
+    if (yyyy < MIN_YEAR) return { ok: false, message: `Ano muito antigo (mínimo ${MIN_YEAR}).` };
+    if (yyyy > MAX_YEAR) return { ok: false, message: `Ano muito futuro (máximo ${MAX_YEAR}).` };
+    return { ok: true, normalized: cleaned };
   };
 
   // Helper: check if an expense is overdue (based on full date parsing)
   const isOverdue = (expense: Expense) => {
     if (expense.paid || !expense.due_date) return false;
-    const parseDate = (value: string): Date | null => {
-      if (/^\d{2}[\/-]\d{2}[\/-]\d{4}$/.test(value)) {
-        const sep = value.includes('/') ? '/' : '-';
-        const [dd, mm, yyyy] = value.split(sep).map(Number);
-        const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
-        return isNaN(d.getTime()) ? null : d;
-      }
-      const d = new Date(value);
-      return isNaN(d.getTime()) ? null : d;
-    };
-    const dueDate = parseDate(expense.due_date as any);
+    const dueDate = parseBrDate(expense.due_date as any);
     if (!dueDate) return false;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -126,13 +152,28 @@ export default function Financas() {
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(expense => {
-      // Filtro por mês usando due_date quando existir; senão created_at
-      const monthKey = toMonthKey(expense.due_date) || expense.created_month || toMonthKey(expense.created_at);
+      // Regra de vigência: usa due_date se presente; caso contrário, usa created_at
+      const keyDue = toMonthKey(expense.due_date);
+      const keyCreated = toMonthKey(expense.created_at);
+      const monthKey = keyDue || keyCreated;
+
+      // DEBUG: Log para verificar filtro mensal
+      console.log('🔍 Filtrando despesa:', {
+        name: expense.name,
+        due_date: expense.due_date || '(vazio)',
+        created_at: expense.created_at,
+        monthKey_due: keyDue,
+        monthKey_created: keyCreated,
+        monthKey,
+        selectedMonth,
+        match: monthKey === selectedMonth
+      });
+
       if (monthKey !== selectedMonth) return false;
-      
+
       // Filtro por status
       const overdue = isOverdue(expense);
-      
+
       switch (expenseStatusFilter) {
         case 'pending':
           return !expense.paid && !overdue;
@@ -173,6 +214,15 @@ export default function Financas() {
     loadExpenses();
     loadSales();
     loadCustomers();
+    (async () => {
+      try {
+        const premium = await isPremium();
+        console.log('✨ Premium status inicial:', premium);
+        setUserIsPremium(premium);
+      } catch (e) {
+        console.warn('Erro ao verificar premium:', e);
+      }
+    })();
   }, []);
 
   // Recarrega dados ao focar a aba, garantindo estado atualizado (ex.: marcar paga no detalhe do cliente)
@@ -181,6 +231,16 @@ export default function Financas() {
       loadExpenses();
       loadSales();
       loadCustomers();
+      // Recarrega status premium ao voltar para a tela
+      (async () => {
+        try {
+          const premium = await isPremium();
+          console.log('🔄 Premium status recarregado:', premium);
+          setUserIsPremium(premium);
+        } catch (e) {
+          console.warn('Erro ao verificar premium:', e);
+        }
+      })();
     }, [])
   );
 
@@ -273,8 +333,7 @@ export default function Financas() {
 
     try {
       const now = new Date();
-      const timestamp = now.toISOString();
-      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const todayBr = formatBrDate(now);
 
       const amountValue = parseFloat(formData.amount.replace(',', '.'));
       if (Number.isNaN(amountValue)) {
@@ -282,25 +341,45 @@ export default function Financas() {
         return;
       }
 
+      // Regra: se usuário deixar em branco, due_date fica string vazia (vigência = created_at)
+      // Se preencher, validar e usar data digitada.
+      const rawInput = formData.due_date?.trim();
+      let dueDateValue = '';
+      if (rawInput) {
+        const valid = validateDueDate(rawInput);
+        if (!valid.ok) {
+          Alert.alert('Data inválida', valid.message || 'Verifique a data.');
+          return;
+        }
+        dueDateValue = valid.normalized || '';
+      }
+
+      console.log('📅 Salvando despesa:', {
+        input: formData.due_date,
+        due_date_final: dueDateValue,
+        created_at: todayBr,
+        monthKey_due: dueDateValue ? toMonthKey(dueDateValue) : null,
+        monthKey_created: toMonthKey(todayBr),
+        selectedMonth
+      });
+
       const expensePayload = {
         name: formData.name.trim(),
         amount: amountValue,
-        due_date: formData.due_date || null,
+  due_date: dueDateValue, // pode ser '' se não informado
         paid: formData.paid,
         recurring: formData.recurring,
         customer_id: formData.customer_id || null,
-        updated_at: timestamp,
-        paid_at: formData.paid ? timestamp : null,
-      };
-
-      if (editingExpense) {
+        updated_at: todayBr,
+        paid_at: formData.paid ? todayBr : null,
+      };      if (editingExpense) {
         await db.update('expenses', expensePayload, 'id = ?', [editingExpense.id]);
       } else {
         const id = Date.now().toString();
         await db.insert('expenses', {
           id,
           ...expensePayload,
-          created_at: timestamp,
+          created_at: todayBr, // sempre hoje (DD/MM/YYYY)
         });
       }
 
@@ -343,7 +422,7 @@ export default function Financas() {
 
   const togglePaidStatus = async (expense: Expense) => {
     try {
-      const updatedAt = new Date().toISOString();
+  const updatedAt = formatBrDate(new Date());
       await db.update(
         'expenses',
         { paid: !expense.paid, updated_at: updatedAt, paid_at: !expense.paid ? updatedAt : null },
@@ -361,7 +440,7 @@ export default function Financas() {
 
   // Robust date formatting: supports ISO and DD/MM/YYYY
   const formatDate = (dateString: string) => {
-    if (!dateString) return 'Sem vencimento';
+    if (!dateString) return '';
     // Try DD/MM/YYYY
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
       const [dd, mm, yyyy] = dateString.split('/').map(Number);
@@ -375,23 +454,70 @@ export default function Financas() {
   };
 
   const formatDateForDisplay = (dateString: string | null) => {
-    if (!dateString) return 'Sem vencimento';
+    if (!dateString) return '';
     return formatDate(dateString);
   };
 
+  const formatCurrency = (n: number) => {
+    try { return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); } catch { return String(n); }
+  };
+
+  // --- Premium Sale Details ---
+  const openSaleDetails = async (sale: any) => {
+    console.log('🔍 openSaleDetails chamado:', { userIsPremium, fetchInProgress: saleDetailsFetchRef.current, saleId: sale.id });
+    if (!userIsPremium || saleDetailsFetchRef.current) {
+      console.log('❌ Retornando: premium =', userIsPremium, 'fetchInProgress =', saleDetailsFetchRef.current);
+      return;
+    }
+    console.log('✅ Abrindo modal de detalhes');
+    saleDetailsFetchRef.current = true;
+    setSaleDetailSale(sale);
+    setSaleDetailItems([]);
+    setSaleDetailLoading(true);
+    setSaleDetailsVisible(true);
+    try {
+      // Recupera itens da venda com nome do produto
+      const rows: any = await db.query(`
+        SELECT 
+          si.id, 
+          si.product_id, 
+          si.quantity, 
+          si.unit_price, 
+          (si.quantity * si.unit_price) AS total_item,
+          p.name AS product_name
+        FROM sale_items si
+        LEFT JOIN products p ON p.id = si.product_id
+        WHERE si.sale_id = ?;
+      `, [sale.id]);
+      const arr: any[] = rows || [];
+      console.log('📦 Itens carregados:', arr.length, 'itens:', arr);
+      setSaleDetailItems(arr);
+    } catch (e) {
+      console.warn('Falha ao carregar itens da venda', e);
+    } finally {
+      saleDetailsFetchRef.current = false;
+      setSaleDetailLoading(false);
+    }
+  };
+  const closeSaleDetails = () => {
+    console.log('🔒 Fechando modal de detalhes');
+    setSaleDetailsVisible(false);
+    setSaleDetailSale(null);
+    setSaleDetailItems([]);
+  };
   
 
   // Report functions
   const monthSales = useMemo(() => {
     return sales.filter(sale => {
-      const saleMonth = (sale.created_at || '').slice(0, 7);
+      const saleMonth = toMonthKey(sale.created_at) || '';
       return saleMonth === selectedMonth;
     });
   }, [sales, selectedMonth]);
 
   const monthExpenses = useMemo(() => {
     return expenses.filter(expense => {
-      const monthKey = toMonthKey(expense.due_date) || expense.created_month || toMonthKey(expense.created_at) || '';
+      const monthKey = toMonthKey(expense.due_date) || '';
       return monthKey === selectedMonth;
     });
   }, [expenses, selectedMonth]);
@@ -415,7 +541,7 @@ export default function Financas() {
         type: 'expense' as const,
         description: expense.name,
         amount: -expense.amount,
-        date: expense.created_at,
+        date: expense.due_date || expense.created_at, // usar due_date para exibição
         customer: expense.customer_id ? customers.find(c => c.id === expense.customer_id)?.name : null,
         status: expense.paid ? 'Pago' : 'Pendente',
         category: 'Despesa'
@@ -922,7 +1048,7 @@ export default function Financas() {
       fontSize: 16,
       fontFamily: 'Inter-Bold',
     },
-    filterContainer: {
+    reportFilterContainer: {
       flexDirection: 'row',
       gap: 8,
       marginBottom: 20,
@@ -990,6 +1116,21 @@ export default function Financas() {
     transactionAmount: {
       alignItems: 'flex-end',
     },
+    detailsButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: '#4A9EFF',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 6,
+      marginTop: 4,
+    },
+    detailsButtonText: {
+      color: colors.white,
+      fontSize: 12,
+      fontFamily: 'Inter-Medium'
+    },
     amountText: {
       fontSize: 16,
       fontFamily: 'Inter-Bold',
@@ -999,6 +1140,75 @@ export default function Financas() {
       fontSize: 10,
       fontFamily: 'Inter-Medium',
       color: colors.textSecondary,
+    },
+    // Modal Detalhes Venda
+    detailModalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      justifyContent: 'center',
+      paddingHorizontal: 20,
+    },
+    detailModalBox: {
+      backgroundColor: colors.surface,
+      borderRadius: 14,
+      padding: 16,
+      maxHeight: '70%',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    detailModalTitle: {
+      fontSize: 16,
+      fontFamily: 'Inter-Bold',
+      color: colors.text,
+      marginBottom: 10,
+    },
+    detailRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingVertical: 6,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    detailName: {
+      fontSize: 13,
+      fontFamily: 'Inter-Medium',
+      color: colors.text,
+    },
+    detailSub: {
+      fontSize: 11,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    detailTotal: {
+      fontSize: 13,
+      fontFamily: 'Inter-Bold',
+      color: colors.text,
+      minWidth: 80,
+      textAlign: 'right',
+    },
+    detailEmpty: {
+      fontSize: 13,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+      fontStyle: 'italic',
+      marginVertical: 12,
+    },
+    detailActions: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      marginTop: 12,
+    },
+    detailCloseBtn: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      borderRadius: 8,
+    },
+    detailCloseText: {
+      color: colors.white,
+      fontSize: 14,
+      fontFamily: 'Inter-Medium',
     },
     emptyText: {
       textAlign: 'center',
@@ -1079,21 +1289,26 @@ export default function Financas() {
           <TouchableOpacity 
             style={styles.monthButton}
             onPress={() => {
-              setSelectedMonth(addMonths(selectedMonth, -1));
+              {
+                const next = addMonths(selectedMonth, -1);
+                console.log('🗓 Navegação mês:', { from: selectedMonth, to: next, direction: 'prev' });
+                setSelectedMonth(next);
+              }
             }}
           >
             <Text style={styles.monthButtonText}>‹</Text>
           </TouchableOpacity>
           <Text style={styles.monthText}>
-            {new Date(selectedMonth + '-01').toLocaleDateString('pt-BR', { 
-              month: 'long', 
-              year: 'numeric' 
-            })}
+            {getMonthLabel(selectedMonth)}
           </Text>
           <TouchableOpacity 
             style={styles.monthButton}
             onPress={() => {
-              setSelectedMonth(addMonths(selectedMonth, 1));
+              {
+                const next = addMonths(selectedMonth, 1);
+                console.log('🗓 Navegação mês:', { from: selectedMonth, to: next, direction: 'next' });
+                setSelectedMonth(next);
+              }
             }}
           >
             <Text style={styles.monthButtonText}>›</Text>
@@ -1157,8 +1372,10 @@ export default function Financas() {
             expenseStatusFilter === 'overdue' && styles.statusFilterTextActive
           ]}>
             Vencidas ({filteredExpenses.filter(e => {
-              const today = new Date().toISOString().split('T')[0];
-              return e.due_date && e.due_date < today && !e.paid;
+              const due = parseBrDate(e.due_date || '');
+              if (!due || e.paid) return false;
+              const today = new Date(); today.setHours(0,0,0,0);
+              return due < today;
             }).length})
           </Text>
         </TouchableOpacity>
@@ -1186,8 +1403,10 @@ export default function Financas() {
         <StatCard
           icon={<Calendar size={20} color={colors.error} />}
           value={filteredExpenses.filter(e => {
-            const today = new Date().toISOString().split('T')[0];
-            return e.due_date && e.due_date < today && !e.paid;
+            const due = parseBrDate(e.due_date || '');
+            if (!due || e.paid) return false;
+            const today = new Date(); today.setHours(0,0,0,0);
+            return due < today;
           }).length}
           label="Vencidas"
           color={colors.error}
@@ -1225,9 +1444,11 @@ export default function Financas() {
                 <Text style={styles.expenseAmount}>
                   R$ {expense.amount.toFixed(2)}
                 </Text>
-                <Text style={styles.expenseDate}>
-                  Venc: {formatDateForDisplay(expense.due_date || null)}
-                </Text>
+                {!!expense.due_date && (
+                  <Text style={styles.expenseDate}>
+                    Venc: {formatDateForDisplay(expense.due_date)}
+                  </Text>
+                )}
               </View>
               <View style={styles.expenseTags}>
                 <View style={styles.tagsContainer}>
@@ -1265,187 +1486,6 @@ export default function Financas() {
       ))}
     </ScrollView>
   );
-
-  const ReportTab = () => {
-    // Simplified version for testing
-    const currentMonth = selectedMonth;
-    const monthlyExpenses = useMemo(() => expenses.filter(expense => {
-      const expenseMonth = expense.created_month || expense.created_at.slice(0, 7);
-      return expenseMonth === currentMonth;
-    }), [expenses, currentMonth]);
-    const monthlySales = useMemo(() => sales.filter(sale => {
-      const saleMonth = sale.created_at.slice(0, 7);
-      return saleMonth === currentMonth;
-    }), [sales, currentMonth]);
-
-    const totalIncome = useMemo(() => monthlySales.reduce((sum, sale) => sum + sale.total, 0), [monthlySales]);
-    const totalExpenses = useMemo(() => monthlyExpenses.reduce((sum, expense) => sum + expense.amount, 0), [monthlyExpenses]);
-    const balance = totalIncome - totalExpenses;
-
-    return (
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Header */}
-        <View style={styles.reportHeader}>
-          <Text style={styles.reportTitle}>Relatórios Financeiros</Text>
-          <TouchableOpacity
-            style={styles.premiumButton}
-            onPress={() => router.push('/relatorios')}
-          >
-            <Text style={styles.premiumButtonText}>Relatórios Premium</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Month Selector */}
-        <View style={styles.monthSelector}>
-          <Text style={styles.selectorLabel}>Mês:</Text>
-          <View style={styles.monthFilterContainer}>
-            <TouchableOpacity 
-              style={styles.monthButton}
-              onPress={() => {
-                setSelectedMonth(addMonths(selectedMonth, -1));
-              }}
-            >
-              <Text style={styles.monthButtonText}>‹</Text>
-            </TouchableOpacity>
-            <Text style={styles.monthText}>
-              {new Date(selectedMonth + '-01').toLocaleDateString('pt-BR', { 
-                month: 'long', 
-                year: 'numeric' 
-              })}
-            </Text>
-            <TouchableOpacity 
-              style={styles.monthButton}
-              onPress={() => {
-                setSelectedMonth(addMonths(selectedMonth, 1));
-              }}
-            >
-              <Text style={styles.monthButtonText}>›</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Summary Cards */}
-        <View style={styles.summaryContainer}>
-          <Card style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Entradas</Text>
-            <Text style={[styles.summaryValue, { color: colors.success }]}>
-              R$ {totalIncome.toFixed(2)}
-            </Text>
-          </Card>
-          <Card style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Saídas</Text>
-            <Text style={[styles.summaryValue, { color: colors.error }]}>
-              R$ {totalExpenses.toFixed(2)}
-            </Text>
-          </Card>
-          <Card style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Saldo</Text>
-            <Text style={[
-              styles.summaryValue,
-              { color: balance >= 0 ? colors.success : colors.error }
-            ]}>
-              R$ {balance.toFixed(2)}
-            </Text>
-          </Card>
-        </View>
-
-        {/* Filter Buttons */}
-        <View style={styles.filterContainer}>
-          <TouchableOpacity
-            style={[styles.filterButton, reportFilter === 'all' && styles.filterButtonActive]}
-            onPress={() => setReportFilter('all')}
-          >
-            <Text style={[styles.filterButtonText, reportFilter === 'all' && styles.filterButtonTextActive]}>
-              Todos ({monthlyExpenses.length + monthlySales.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, reportFilter === 'income' && styles.filterButtonActive]}
-            onPress={() => setReportFilter('income')}
-          >
-            <Text style={[styles.filterButtonText, reportFilter === 'income' && styles.filterButtonTextActive]}>
-              Entradas ({monthlySales.length})
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterButton, reportFilter === 'expense' && styles.filterButtonActive]}
-            onPress={() => setReportFilter('expense')}
-          >
-            <Text style={[styles.filterButtonText, reportFilter === 'expense' && styles.filterButtonTextActive]}>
-              Saídas ({monthlyExpenses.length})
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Financial Data List */}
-        <View style={styles.dataContainer}>
-          <Text style={styles.dataTitle}>
-            Transações do Mês
-          </Text>
-
-          {/* Sales (Income) */}
-          {reportFilter === 'all' || reportFilter === 'income' ? (
-            monthlySales.map((sale) => (
-              <Card key={`sale-${sale.id}`} style={styles.transactionCard}>
-                <View style={styles.transactionHeader}>
-                  <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">Venda - {sale.customer_name}</Text>
-                    <Text style={styles.transactionDate}>
-                      {formatDate(sale.created_at)} • Venda
-                    </Text>
-                      <Text style={styles.transactionCustomer} numberOfLines={1} ellipsizeMode="tail">Cliente: {sale.customer_name}</Text>
-                  </View>
-                  <View style={styles.transactionAmount}>
-                    <Text style={[styles.amountText, { color: colors.success }]}>
-                      +R$ {sale.total.toFixed(2)}
-                    </Text>
-                    <Text style={styles.statusText}>Pago</Text>
-                  </View>
-                </View>
-              </Card>
-            ))
-          ) : null}
-
-          {/* Expenses */}
-          {reportFilter === 'all' || reportFilter === 'expense' ? (
-            monthlyExpenses.map((expense) => (
-              <Card key={`expense-${expense.id}`} style={styles.transactionCard}>
-                <View style={styles.transactionHeader}>
-                  <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionDescription} numberOfLines={1} ellipsizeMode="tail">{expense.name}</Text>
-                    <Text style={styles.transactionDate}>
-                      {formatDate(expense.created_at)} • Despesa
-                    </Text>
-                    {expense.customer_id && (
-                        <Text style={styles.transactionCustomer} numberOfLines={1} ellipsizeMode="tail">
-                          Cliente: {customers.find(c => c.id === expense.customer_id)?.name || 'Cliente não encontrado'}
-                        </Text>
-                    )}
-                  </View>
-                  <View style={styles.transactionAmount}>
-                    <Text style={[styles.amountText, { color: colors.error }]}>
-                      -R$ {expense.amount.toFixed(2)}
-                    </Text>
-                    <Text style={styles.statusText}>{expense.paid ? 'Pago' : 'Pendente'}</Text>
-                  </View>
-                </View>
-              </Card>
-            ))
-          ) : null}
-
-          {monthlyExpenses.length === 0 && monthlySales.length === 0 && (
-            <Card>
-              <Text style={styles.emptyText}>Nenhuma transação encontrada para este mês</Text>
-            </Card>
-          )}
-        </View>
-      </ScrollView>
-    );
-  };
 
   const ExpenseModal = () => (
     <>
@@ -1660,21 +1700,26 @@ export default function Financas() {
               <TouchableOpacity 
                 style={styles.monthButton}
                 onPress={() => {
-                  setSelectedMonth(addMonths(selectedMonth, -1));
+                  {
+                    const next = addMonths(selectedMonth, -1);
+                    console.log('🗓 Navegação mês:', { from: selectedMonth, to: next, direction: 'prev' });
+                    setSelectedMonth(next);
+                  }
                 }}
               >
                 <Text style={styles.monthButtonText}>‹</Text>
               </TouchableOpacity>
               <Text style={styles.monthText}>
-                {new Date(selectedMonth + '-01').toLocaleDateString('pt-BR', { 
-                  month: 'long', 
-                  year: 'numeric' 
-                })}
+                {getMonthLabel(selectedMonth)}
               </Text>
               <TouchableOpacity 
                 style={styles.monthButton}
                 onPress={() => {
-                  setSelectedMonth(addMonths(selectedMonth, 1));
+                  {
+                    const next = addMonths(selectedMonth, 1);
+                    console.log('🗓 Navegação mês:', { from: selectedMonth, to: next, direction: 'next' });
+                    setSelectedMonth(next);
+                  }
                 }}
               >
                 <Text style={styles.monthButtonText}>›</Text>
@@ -1807,9 +1852,11 @@ export default function Financas() {
                     <Text style={styles.expenseAmount}>
                       R$ {expense.amount.toFixed(2)}
                     </Text>
-                    <Text style={styles.expenseDate} numberOfLines={1} ellipsizeMode="tail">
-                      Venc: {formatDateForDisplay(expense.due_date || null)}
-                    </Text>
+                    {!!expense.due_date && (
+                      <Text style={styles.expenseDate} numberOfLines={1} ellipsizeMode="tail">
+                        Venc: {formatDateForDisplay(expense.due_date)}
+                      </Text>
+                    )}
                   </View>
                   <View style={styles.expenseTags}>
                     <View style={styles.tagsContainer}>
@@ -1864,21 +1911,26 @@ export default function Financas() {
               <TouchableOpacity 
                 style={styles.monthButton}
                 onPress={() => {
-                  setSelectedMonth(addMonths(selectedMonth, -1));
+                  {
+                    const next = addMonths(selectedMonth, -1);
+                    console.log('🗓 Navegação mês:', { from: selectedMonth, to: next, direction: 'prev' });
+                    setSelectedMonth(next);
+                  }
                 }}
               >
                 <Text style={styles.monthButtonText}>‹</Text>
               </TouchableOpacity>
               <Text style={styles.monthText}>
-                {new Date(selectedMonth + '-01').toLocaleDateString('pt-BR', { 
-                  month: 'long', 
-                  year: 'numeric' 
-                })}
+                {getMonthLabel(selectedMonth)}
               </Text>
               <TouchableOpacity 
                 style={styles.monthButton}
                 onPress={() => {
-                  setSelectedMonth(addMonths(selectedMonth, 1));
+                  {
+                    const next = addMonths(selectedMonth, 1);
+                    console.log('🗓 Navegação mês:', { from: selectedMonth, to: next, direction: 'next' });
+                    setSelectedMonth(next);
+                  }
                 }}
               >
                 <Text style={styles.monthButtonText}>›</Text>
@@ -1912,7 +1964,7 @@ export default function Financas() {
           </View>
 
           {/* Filter Buttons */}
-          <View style={styles.filterContainer}>
+          <View style={styles.reportFilterContainer}>
             <TouchableOpacity
               style={[styles.filterButton, reportFilter === 'all' && styles.filterButtonActive]}
               onPress={() => setReportFilter('all')}
@@ -1962,6 +2014,17 @@ export default function Financas() {
                         +R$ {sale.total.toFixed(2)}
                       </Text>
                       <Text style={styles.statusText}>Pago</Text>
+                      {userIsPremium ? (
+                        <Pressable style={styles.detailsButton} onPress={() => openSaleDetails(sale)}>
+                          <List size={14} color={colors.white} />
+                          <Text style={styles.detailsButtonText}>Detalhes</Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable style={styles.detailsButton} onPress={() => router.push('/planos')}>
+                          <Crown size={14} color={colors.white} />
+                          <Text style={styles.detailsButtonText}>Detalhes</Text>
+                        </Pressable>
+                      )}
                     </View>
                   </View>
                 </Card>
@@ -2182,6 +2245,42 @@ export default function Financas() {
           </View>
         </Modal>
       )}
+
+      {/* Modal Detalhes Venda (Premium) */}
+      <Modal visible={saleDetailsVisible} transparent animationType="fade" onRequestClose={closeSaleDetails}>
+        <View style={styles.detailModalOverlay}>
+          <View style={styles.detailModalBox}>
+            <Text style={styles.detailModalTitle}>Itens da Venda #{saleDetailSale?.id}</Text>
+            {saleDetailLoading && (
+              <View style={{ alignItems: 'center', marginVertical: 12 }}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={{ color: colors.textSecondary, marginTop: 6, fontSize: 13 }}>Carregando itens...</Text>
+              </View>
+            )}
+            {!saleDetailLoading && saleDetailItems.length === 0 && (
+              <Text style={styles.detailEmpty}>Nenhum item encontrado.</Text>
+            )}
+            {!saleDetailLoading && saleDetailItems.length > 0 && (
+              <ScrollView style={{ marginTop: 8, marginBottom: 12 }} showsVerticalScrollIndicator={true}>
+                {saleDetailItems.map(it => (
+                  <View key={it.id} style={styles.detailRow}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={styles.detailName}>{it.product_name || `Produto #${it.product_id}`}</Text>
+                      <Text style={styles.detailSub}>Qtde: {it.quantity} x R$ {formatCurrency(it.unit_price)}</Text>
+                    </View>
+                    <Text style={styles.detailTotal}>R$ {formatCurrency(it.total_item)}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+            <View style={styles.detailActions}>
+              <TouchableOpacity style={styles.detailCloseBtn} onPress={closeSaleDetails}>
+                <Text style={styles.detailCloseText}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

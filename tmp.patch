@@ -1,0 +1,64 @@
+﻿*** Begin Patch
+*** Update File: app/settings.tsx
+@@
+-import { useSafeAreaInsets } from 'react-native-safe-area-context';
++import { useSafeAreaInsets } from 'react-native-safe-area-context';
++import db from '@/lib/db';
+@@
+-  const saveStoreSettings = async () => {
+-    try {
+-      Alert.alert('Sucesso', 'Configurações salvas com sucesso!');
+-      setIsEditing(false);
+-    } catch (error) {
+-      Alert.alert('Erro', 'Não foi possível salvar as configurações.');
+-    }
+-  };
++  const saveStoreSettings = async () => {
++    try {
++      const now = new Date().toISOString();
++
++      // Normalize and serialize PIX keys (store as JSON array)
++      const pixKeys = (storeSettings.pixKeys || [])
++        .map((k) => (typeof k === 'string' ? k.trim() : ''))
++        .filter((k) => k.length > 0);
++      const pix_key = JSON.stringify(pixKeys);
++
++      // Find existing row, if any
++      const rows = await db.all('store_settings');
++      const existing = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
++      const id = existing?.id || 'main';
++
++      const payload: any = {
++        store_name: storeSettings.storeName?.trim() || '',
++        owner_name: storeSettings.ownerName?.trim() || '',
++        pix_key,
++        primary_color: customColors.primary,
++        secondary_color: customColors.secondary,
++        updated_at: now,
++      };
++
++      if (existing) {
++        await db.update('store_settings', payload, 'id = ?', [id]);
++      } else {
++        await db.insert('store_settings', {
++          id,
++          ...payload,
++          created_at: now,
++        });
++      }
++
++      // Apply theme colors immediately
++      setPrimaryColor(customColors.primary);
++      setSecondaryColor(customColors.secondary);
++
++      Alert.alert('Sucesso', 'Configurações salvas com sucesso!');
++      setIsEditing(false);
++
++      // Reload from DB to ensure UI reflects persisted state
++      await loadStoreSettings();
++    } catch (error) {
++      console.error('Erro ao salvar configurações da loja:', error);
++      Alert.alert('Erro', 'Não foi possível salvar as configurações.');
++    }
++  };
+*** End Patch

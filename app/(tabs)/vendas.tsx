@@ -261,7 +261,7 @@ export default function Vendas() {
           onPress: async () => {
             try {
               const now = new Date();
-              const timestamp = now.toISOString();
+              const brDate = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
               const trimmedCustomer = selectedCustomer.trim();
 
               let customerId = selectedCustomerId;
@@ -282,8 +282,8 @@ export default function Vendas() {
                     phone: null,
                     email: null,
                     whatsapp: false,
-                    created_at: timestamp,
-                    updated_at: timestamp,
+                    created_at: brDate,
+                    updated_at: brDate,
                   });
                   customerId = newCustomerId;
                 }
@@ -296,7 +296,7 @@ export default function Vendas() {
                 total: totalSale,
                 payment_method: paymentMethod.toUpperCase(),
                 observation: observation.trim() ? observation.trim() : null,
-                created_at: timestamp,
+                created_at: brDate,
               });
 
               await Promise.all(
@@ -317,7 +317,7 @@ export default function Vendas() {
                     const newStock = Math.max(0, currentStock - item.quantity);
                     await db.update(
                       'products',
-                      { stock: newStock, updated_at: timestamp },
+                      { stock: newStock, updated_at: brDate },
                       'id = ?',
                       [item.product.id]
                     );
@@ -677,7 +677,7 @@ export default function Vendas() {
             </Text>
             <TextInput
               style={[styles.input, { marginBottom: 8 }]}
-              placeholder="Digite nome, código ou código de barras"
+              placeholder="Digite o nome do produto"
               placeholderTextColor={colors.textSecondary}
               value={productSearch}
               onChangeText={(t) => { setProductSearch(t); setSuggestionsVisible(true); }}

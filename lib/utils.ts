@@ -40,23 +40,25 @@ export function filterProducts(products: any[], searchQuery: string) {
  */
 export function getTodaySales(sales: any[]) {
   const today = new Date();
-  const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD
-  
+  const todayBr = formatBrDate(today); // DD/MM/YYYY
   return sales.filter(sale => {
-    try {
-      if (!sale.timestamp && !sale.created_at) return false;
-      
-      const timestamp = sale.timestamp || sale.created_at;
-      const saleDate = new Date(timestamp);
-      
-      if (isNaN(saleDate.getTime())) return false;
-      
-      const saleDateString = saleDate.toISOString().split('T')[0];
-      return saleDateString === todayString;
-    } catch (error) {
-      console.error('Error processing sale date:', error);
-      return false;
+    const raw = sale.timestamp || sale.created_at;
+    if (!raw) return false;
+    // Accept already BR format or ISO
+    let br: string;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+      br = raw;
+    } else if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+      const [y,m,d] = raw.slice(0,10).split('-');
+      br = `${d}/${m}/${y}`;
+    } else {
+      try {
+        const d = new Date(raw);
+        if (isNaN(d.getTime())) return false;
+        br = formatBrDate(d);
+      } catch { return false; }
     }
+    return br === todayBr;
   });
 }
 
@@ -117,4 +119,39 @@ export function toTitleCase(input: string): string {
     return w.split('-').map(part => part ? part[0].toUpperCase() + part.slice(1) : part).join('-');
   });
   return result.join(' ');
+}
+
+// === Datas (PT-BR) ===
+export function formatBrDate(d: Date): string {
+  const day = String(d.getDate()).padStart(2,'0');
+  const month = String(d.getMonth()+1).padStart(2,'0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+export function parseBrDate(str: string): Date | null {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return null;
+  const [dd, mm, yyyy] = str.split('/').map(Number);
+  const d = new Date(yyyy, (mm||1)-1, dd||1);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Normaliza entrada que pode vir em DD-MM-YYYY, YYYY-MM-DD ou ISO para DD/MM/YYYY
+export function normalizeToBrDate(raw: string): string {
+  if (!raw) return formatBrDate(new Date());
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
+  if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) {
+    const [dd,mm,yyyy] = raw.split('-');
+    return `${dd}/${mm}/${yyyy}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    const [y,m,d] = raw.slice(0,10).split('-');
+    return `${d}/${m}/${y}`;
+  }
+  // Fallback: Date parse
+  try {
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) return formatBrDate(d);
+  } catch {}
+  return formatBrDate(new Date());
 }

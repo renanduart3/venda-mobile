@@ -12,6 +12,7 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
+import { useEffect as useEffect2 } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { useRouter, useSegments } from 'expo-router';
 import { NotificationProvider } from '@/contexts/NotificationContext';
@@ -81,6 +82,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
+        <ThemeBootstrapper />
         <AuthProvider>
           <OfflineProvider>
             <NotificationProvider>
@@ -112,4 +114,24 @@ function ThemedStatusBar() {
   return (
     <StatusBar backgroundColor={colors.topbar} style="light" />
   );
+}
+
+
+function ThemeBootstrapper() {
+  const { setPrimaryColor, setSecondaryColor } = useTheme();
+  useEffect2(() => {
+    (async () => {
+      try {
+        const { loadStoreSettings } = await import('@/lib/data-loader');
+        const data = await loadStoreSettings();
+        if (data && typeof data === 'object') {
+          if ((data).primaryColor) setPrimaryColor((data).primaryColor);
+          if ((data).secondaryColor) setSecondaryColor((data).secondaryColor);
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
+  }, []);
+  return null;
 }

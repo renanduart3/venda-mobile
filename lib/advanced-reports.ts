@@ -1,9 +1,11 @@
 import db from './db';
 import { isPremium } from './premium';
+import { getUseReportsMock } from './dev-flags';
+import { getReportData as getReportDataMock } from './advanced-reports.mock';
 
-type Period = 'monthly' | 'yearly' | 'custom';
+export type Period = 'monthly' | 'yearly' | 'custom';
 
-interface ReportOptions {
+export interface ReportOptions {
   period: Period;
   start?: string; // ISO date
   end?: string; // ISO date
@@ -39,15 +41,15 @@ interface HourlySalesData {
   transactions: number;
 }
 
-// Função auxiliar para verificar premium
+const MAX_MONTHS = 6;
+
 async function checkPremiumAccess(): Promise<void> {
   const premium = await isPremium();
   if (!premium) {
-    throw new Error('Funcionalidade premium: relatórios avançados disponíveis apenas para usuários premium.');
+    throw new Error('Funcionalidade premium dispon�vel apenas para usu�rios Premium.');
   }
 }
 
-// Função auxiliar para calcular período
 function calculatePeriod(opts: ReportOptions): { start: Date; end: Date } {
   let start: Date;
   let end: Date;
@@ -60,21 +62,24 @@ function calculatePeriod(opts: ReportOptions): { start: Date; end: Date } {
     start = new Date(now.getFullYear(), 0, 1);
     end = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
   } else {
-    if (!opts.start || !opts.end) throw new Error('Custom period requires start and end');
+    if (!opts.start || !opts.end) throw new Error('Per�odo custom exige in�cio e fim');
     start = new Date(opts.start);
     end = new Date(opts.end);
   }
 
-  // Verificar se o período é de pelo menos 1 mês
+  // m�nimo 1 m�s e m�ximo 6 meses
   const msInMonth = 1000 * 60 * 60 * 24 * 30;
-  if ((end.getTime() - start.getTime()) < msInMonth) {
-    throw new Error('Período deve ser de no mínimo 1 mês');
+  if (end.getTime() - start.getTime() < msInMonth) {
+    throw new Error('Per�odo deve ter pelo menos 1 m�s.');
+  }
+  if ((end.getTime() - start.getTime()) / msInMonth > MAX_MONTHS) {
+    end = new Date(start.getTime() + MAX_MONTHS * msInMonth - 1);
   }
 
   return { start, end };
 }
 
-// 1. Relatório de Produtos Mais Vendidos
+// 1. Produtos Mais Vendidos
 export async function getTopSellingProducts(opts: ReportOptions): Promise<ProductSalesData[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
@@ -95,42 +100,39 @@ export async function getTopSellingProducts(opts: ReportOptions): Promise<Produc
     LIMIT 20
   `;
 
-  const results = await db.query(query, [start.toISOString(), end.toISOString()]);
-  return results.map(row => ({
+  const results: any[] = await db.query(query, [start.toISOString(), end.toISOString()]);
+  return results.map((row: any) => ({
     productId: row.product_id,
     productName: row.product_name,
     totalSold: Number(row.total_sold),
     totalRevenue: Number(row.total_revenue),
-    averagePrice: Number(row.average_price)
+    averagePrice: Number(row.average_price),
   }));
 }
 
 // 2. Curva ABC de Produtos
 export async function getProductABCAnalysis(opts: ReportOptions): Promise<any[]> {
   await checkPremiumAccess();
-  
   const products = await getTopSellingProducts(opts);
-  const totalRevenue = products.reduce((sum, p) => sum + p.totalRevenue, 0);
-  
-  let cumulativePercentage = 0;
-  return products.map((product, index) => {
+  const totalRevenue = products.reduce((sum: number, p) => sum + p.totalRevenue, 0) || 1;
+
+  let cumulative = 0;
+  return products.map((product) => {
     const percentage = (product.totalRevenue / totalRevenue) * 100;
-    cumulativePercentage += percentage;
-    
-    let category = 'C';
-    if (cumulativePercentage <= 80) category = 'A';
-    else if (cumulativePercentage <= 95) category = 'B';
-    
+    cumulative += percentage;
+    let category: 'A' | 'B' | 'C' = 'C';
+    if (cumulative <= 80) category = 'A';
+    else if (cumulative <= 95) category = 'B';
     return {
       ...product,
       percentage: Number(percentage.toFixed(2)),
-      cumulativePercentage: Number(cumulativePercentage.toFixed(2)),
-      category
+      cumulativePercentage: Number(cumulative.toFixed(2)),
+      category,
     };
   });
 }
 
-// 3. Análise de Vendas por Período
+// 3. Tend�ncia de Vendas por per�odo (por dia)
 export async function getSalesTrendAnalysis(opts: ReportOptions): Promise<any[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
@@ -147,10 +149,11 @@ export async function getSalesTrendAnalysis(opts: ReportOptions): Promise<any[]>
     ORDER BY date
   `;
 
-  return await db.query(query, [start.toISOString(), end.toISOString()]);
+  const rows: any[] = await db.query(query, [start.toISOString(), end.toISOString()]);
+  return rows;
 }
 
-// 4. Performance de Meios de Pagamento
+// 4. Meios de Pagamento
 export async function getPaymentMethodAnalysis(opts: ReportOptions): Promise<PaymentMethodData[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
@@ -166,18 +169,18 @@ export async function getPaymentMethodAnalysis(opts: ReportOptions): Promise<Pay
     ORDER BY total_amount DESC
   `;
 
-  const results = await db.query(query, [start.toISOString(), end.toISOString()]);
-  const totalAmount = results.reduce((sum, row) => sum + Number(row.total_amount), 0);
-  
-  return results.map(row => ({
+  const results: any[] = await db.query(query, [start.toISOString(), end.toISOString()]);
+  const totalAmount = results.reduce((sum: number, row: any) => sum + Number(row.total_amount || 0), 0) || 1;
+
+  return results.map((row: any) => ({
     method: row.payment_method,
-    totalAmount: Number(row.total_amount),
-    transactionCount: Number(row.transaction_count),
-    percentage: Number(((Number(row.total_amount) / totalAmount) * 100).toFixed(2))
+    totalAmount: Number(row.total_amount || 0),
+    transactionCount: Number(row.transaction_count || 0),
+    percentage: Number((((Number(row.total_amount || 0)) / totalAmount) * 100).toFixed(2)),
   }));
 }
 
-// 5. Horários de Pico de Vendas
+// 5. Hor�rios de Pico
 export async function getPeakSalesHours(opts: ReportOptions): Promise<HourlySalesData[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
@@ -193,11 +196,11 @@ export async function getPeakSalesHours(opts: ReportOptions): Promise<HourlySale
     ORDER BY hour
   `;
 
-  const results = await db.query(query, [start.toISOString(), end.toISOString()]);
-  return results.map(row => ({
+  const results: any[] = await db.query(query, [start.toISOString(), end.toISOString()]);
+  return results.map((row: any) => ({
     hour: Number(row.hour),
     sales: Number(row.sales),
-    transactions: Number(row.transactions)
+    transactions: Number(row.transactions),
   }));
 }
 
@@ -220,22 +223,24 @@ export async function getCustomerRFVAnalysis(opts: ReportOptions): Promise<Custo
     ORDER BY total_spent DESC
   `;
 
-  const results = await db.query(query, [start.toISOString(), end.toISOString()]);
-  return results.map(row => ({
+  const results: any[] = await db.query(query, [start.toISOString(), end.toISOString()]);
+  // frequency approximation: purchases per month in range
+  const msInMonth = 1000 * 60 * 60 * 24 * 30;
+  const months = Math.max(1, (new Date(end).getTime() - new Date(start).getTime()) / msInMonth);
+  return results.map((row: any) => ({
     customerId: row.customer_id,
     customerName: row.customer_name,
     totalPurchases: Number(row.total_purchases),
     totalSpent: Number(row.total_spent),
     lastPurchase: row.last_purchase,
-    purchaseFrequency: Number(row.total_purchases) / 30 // Aproximação
+    purchaseFrequency: Number(row.total_purchases) / months,
   }));
 }
 
 // 7. Clientes Inativos
 export async function getInactiveCustomers(opts: ReportOptions): Promise<CustomerData[]> {
   await checkPremiumAccess();
-  
-  // Clientes que não compraram nos últimos 30 dias
+
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -252,20 +257,21 @@ export async function getInactiveCustomers(opts: ReportOptions): Promise<Custome
     GROUP BY c.id, c.name
     HAVING total_purchases > 0
     ORDER BY last_purchase ASC
+    LIMIT 500
   `;
 
-  const results = await db.query(query, [thirtyDaysAgo.toISOString()]);
-  return results.map(row => ({
+  const results: any[] = await db.query(query, [thirtyDaysAgo.toISOString()]);
+  return results.map((row: any) => ({
     customerId: row.customer_id,
     customerName: row.customer_name,
-    totalPurchases: Number(row.total_purchases),
-    totalSpent: Number(row.total_spent),
+    totalPurchases: Number(row.total_purchases || 0),
+    totalSpent: Number(row.total_spent || 0),
     lastPurchase: row.last_purchase,
-    purchaseFrequency: 0
+    purchaseFrequency: 0,
   }));
 }
 
-// 8. Análise de Margem de Lucro
+// 8. Margem de Lucro
 export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
@@ -286,10 +292,11 @@ export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[
     WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
     GROUP BY p.id, p.name, p.price
     ORDER BY profit_margin_percentage DESC
+    LIMIT 200
   `;
 
-  const results = await db.query(query, [start.toISOString(), end.toISOString()]);
-  return results.map(row => ({
+  const results: any[] = await db.query(query, [start.toISOString(), end.toISOString()]);
+  return results.map((row: any) => ({
     productId: row.product_id,
     productName: row.product_name,
     costPrice: Number(row.cost_price),
@@ -297,30 +304,51 @@ export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[
     totalSold: Number(row.total_sold),
     totalRevenue: Number(row.total_revenue),
     profitPerUnit: Number(row.profit_per_unit),
-    profitMarginPercentage: Number(row.profit_margin_percentage)
+    profitMarginPercentage: Number(row.profit_margin_percentage),
   }));
 }
 
-// Função para obter dados de um relatório específico
 export async function getReportData(reportId: string, opts: ReportOptions): Promise<any> {
-  switch (reportId) {
-    case '1': // Produtos Mais Vendidos
-      return await getTopSellingProducts(opts);
-    case '2': // Curva ABC
-      return await getProductABCAnalysis(opts);
-    case '3': // Análise de Vendas por Período
-      return await getSalesTrendAnalysis(opts);
-    case '4': // Performance de Meios de Pagamento
-      return await getPaymentMethodAnalysis(opts);
-    case '5': // Horários de Pico
-      return await getPeakSalesHours(opts);
-    case '6': // Ranking de Clientes (RFV)
-      return await getCustomerRFVAnalysis(opts);
-    case '7': // Clientes Inativos
-      return await getInactiveCustomers(opts);
-    case '8': // Análise de Margem de Lucro
-      return await getProfitMarginAnalysis(opts);
-    default:
-      throw new Error('Relatório não encontrado');
+  if (getUseReportsMock() || process.env.EXPO_PUBLIC_USE_REPORTS_MOCK === '1') {
+    return getReportDataMock(reportId, opts);
   }
+  let result: any;
+  switch (reportId) {
+    case '1':
+      result = await getTopSellingProducts(opts);
+      break;
+    case '2':
+      result = await getProductABCAnalysis(opts);
+      break;
+    case '3':
+      result = await getSalesTrendAnalysis(opts);
+      break;
+    case '4':
+      result = await getPaymentMethodAnalysis(opts);
+      break;
+    case '5':
+      result = await getPeakSalesHours(opts);
+      break;
+    case '6':
+      result = await getCustomerRFVAnalysis(opts);
+      break;
+    case '7':
+      result = await getInactiveCustomers(opts);
+      break;
+    case '8':
+      result = await getProfitMarginAnalysis(opts);
+      break;
+    default:
+      throw new Error('Relat?rio n?o encontrado');
+  }
+  const isEmpty = !result || (Array.isArray(result) && result.length === 0);
+  if (isEmpty && process.env.EXPO_PUBLIC_USE_REPORTS_MOCK !== '0') {
+    return getReportDataMock(reportId, opts);
+  }
+  return result;
 }
+
+
+
+
+

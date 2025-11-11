@@ -1,4 +1,4 @@
-import * as SQLite from 'expo-sqlite';
+﻿import * as SQLite from 'expo-sqlite';
 
 // We support both the new expo-sqlite v15+ API (openDatabaseSync + runAsync/getAllAsync)
 // and the legacy WebSQL-style API (openDatabase + transaction/executeSql).
@@ -188,6 +188,67 @@ export async function initDB() {
       }
     }
 
+    // --- Data normalization/migration for date formats (DD/MM/YYYY standard) ---
+    try {
+      const res: any = await execSql(`SELECT id, due_date, created_at, updated_at, paid_at FROM expenses;`);
+      const rows: any[] = res.rows._array || [];
+      const updates: Promise<any>[] = [];
+      const isLeap = (y: number) => (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+
+      const normalizeBr = (raw: string | null): string | null => {
+        if (!raw) return null;
+        const trimmed = raw.trim();
+        // Already DD/MM/YYYY
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) return trimmed;
+        // DD-MM-YYYY -> convert
+        if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
+          const [dd,mm,yyyy] = trimmed.split('-');
+          return `${dd}/${mm}/${yyyy}`;
+        }
+        // ISO or YYYY-MM-DD
+        if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+          const [yyyy,mm,dd] = trimmed.slice(0,10).split('-');
+          return `${dd}/${mm}/${yyyy}`;
+        }
+        return trimmed; // leave as is; parser later can decide
+      };
+
+      const fixInvalidDay = (br: string | null): string | null => {
+        if (!br) return null;
+        if (!/^\d{2}\/\d{2}\/\d{4}$/.test(br)) return br; // ignore non-br format
+        let [ddStr, mmStr, yyyyStr] = br.split('/');
+        let dd = parseInt(ddStr, 10);
+        const mm = parseInt(mmStr, 10);
+        const yyyy = parseInt(yyyyStr, 10);
+        const thirty = new Set([4,6,9,11]);
+        if (mm === 2) {
+          const max = isLeap(yyyy) ? 29 : 28;
+          if (dd > max) dd = max; // clamp invalid Feb date
+        } else if (thirty.has(mm) && dd > 30) {
+          dd = 30;
+        } else if (dd > 31) {
+          dd = 31;
+        }
+        return `${String(dd).padStart(2,'0')}/${mmStr}/${yyyyStr}`;
+      };
+
+      for (const r of rows) {
+        const newDue = fixInvalidDay(normalizeBr(r.due_date));
+        const newCreated = normalizeBr(r.created_at);
+        const newUpdated = normalizeBr(r.updated_at);
+        const newPaidAt = normalizeBr(r.paid_at);
+        if (newDue !== r.due_date || newCreated !== r.created_at || newUpdated !== r.updated_at || newPaidAt !== r.paid_at) {
+          updates.push(execSql(`UPDATE expenses SET due_date = ?, created_at = ?, updated_at = ?, paid_at = ? WHERE id = ?;`, [newDue, newCreated, newUpdated, newPaidAt, r.id]));
+        }
+      }
+      if (updates.length) {
+        await Promise.all(updates);
+        console.log(`[DB] Normalized ${updates.length} expense date rows to DD/MM/YYYY format.`);
+      }
+    } catch (normErr) {
+      console.warn('Expense date normalization skipped:', normErr);
+    }
+
     await execSql(`
       CREATE TABLE IF NOT EXISTS store_settings (
         id TEXT PRIMARY KEY,
@@ -273,3 +334,5 @@ export default {
   all,
   query,
 };
+
+

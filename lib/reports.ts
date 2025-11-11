@@ -1,4 +1,5 @@
 import db from './db';
+import { parseBrDate } from './utils';
 import { isPremium } from './premium';
 
 type Period = 'monthly' | 'yearly' | 'custom';
@@ -63,17 +64,16 @@ export async function generateSalesReport(opts: ReportOptions) {
 
   if (!ensureMinOneMonth(start, end)) throw new Error('Período deve ser de no mínimo 1 mês');
 
-  // Aggregate sales total and count, grouped by month
-  const rows = await db.query(
-    `SELECT created_at, total FROM sales WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?)`,
-    [start.toISOString(), end.toISOString()]
-  );
+  // Buscar todas as vendas e filtrar em código usando datas BR (DD/MM/YYYY)
+  const rows = await db.query(`SELECT created_at, total FROM sales`, []);
 
   // Prepare aggregation per month
   const map: Record<string, { total: number; count: number }> = {};
   for (const r of rows) {
-    const date = new Date(r.created_at);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const d = parseBrDate(r.created_at);
+    if (!d) continue;
+    if (d < start || d > end) continue;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     if (!map[key]) map[key] = { total: 0, count: 0 };
     map[key].total += Number(r.total || 0);
     map[key].count += 1;
@@ -102,15 +102,15 @@ export async function generateExpenseReport(opts: ReportOptions) {
 
   if (!ensureMinOneMonth(start, end)) throw new Error('Período deve ser de no mínimo 1 mês');
 
-  const rows = await db.query(
-    `SELECT created_at, amount FROM expenses WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?)`,
-    [start.toISOString(), end.toISOString()]
-  );
+  // Filtrar despesas pela data de vencimento (due_date) usando data BR
+  const rows = await db.query(`SELECT due_date, amount FROM expenses`, []);
 
   const map: Record<string, { total: number; count: number }> = {};
   for (const r of rows) {
-    const date = new Date(r.created_at);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const d = parseBrDate(r.due_date);
+    if (!d) continue;
+    if (d < start || d > end) continue;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     if (!map[key]) map[key] = { total: 0, count: 0 };
     map[key].total += Number(r.amount || 0);
     map[key].count += 1;

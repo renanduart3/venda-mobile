@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   Alert,
   Switch,
   Clipboard,
-  Modal
+  Modal,
+  Platform,
 } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { TextInput } from '@/components/ui/TextInput';
@@ -37,8 +37,9 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router, useFocusEffect } from 'expo-router';
 import { isPremium } from '@/lib/premium';
-import { useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { createSettingsStyles } from './settings.styles';
+import { getAgentMode, setAgentMode } from '@/lib/dev-flags';
 
 export default function Settings() {
   const { colors, theme, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
@@ -65,10 +66,12 @@ export default function Settings() {
   const [isResetting, setIsResetting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [agentEnabled, setAgentEnabled] = useState(false);
 
   useEffect(() => {
     loadStoreSettings();
     loadPremium();
+    try { setAgentEnabled(getAgentMode()); } catch {}
   }, []);
 
   // Recarregar status premium quando a tela ganhar foco
@@ -145,6 +148,52 @@ export default function Settings() {
     setStoreSettings({ ...storeSettings, pixKeys: newPixKeys });
   };
 
+  // Detecta o tipo de chave PIX baseado no formato
+  const detectPixKeyType = (key: string): string => {
+    if (!key || key.trim() === '') return 'Tipo da chave';
+
+    const original = key.trim();
+    const digits = original.replace(/\D/g, '');
+
+    // Email antes de números longos que possam coincidir com telefones
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(original)) {
+      return 'Email';
+    }
+
+    // CNPJ: 14 dígitos puros
+    if (/^\d{14}$/.test(digits)) {
+      return 'CNPJ';
+    }
+
+    // CPF ou Telefone (11 dígitos) – ambíguo sem validação completa
+    if (/^\d{11}$/.test(digits)) {
+      return 'CPF ou Telefone';
+    }
+
+    // Telefone brasileiro: 10 a 13 dígitos (incluindo DDI 55), ou formatos com +55, parênteses, hífens
+    const phoneDigits = digits;
+    if (/^\d{10,13}$/.test(phoneDigits)) {
+      // Se começa com 55 e tem 12-13 dígitos, tratar como telefone
+      if (phoneDigits.startsWith('55') && phoneDigits.length >= 12) {
+        return 'Telefone';
+      }
+      if (phoneDigits.length === 10) {
+        return 'Telefone';
+      }
+    }
+
+    // Chave aleatória: UUID hifenizado ou 32 hex/alfanum
+    if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(original)) {
+      return 'Chave Aleatória';
+    }
+    const stripped = original.replace(/[^a-zA-Z0-9]/g, '');
+    if (stripped.length === 32) {
+      return 'Chave Aleatória';
+    }
+
+    return 'Chave Aleatória';
+  };
+
   const applyCustomColors = () => {
     setPrimaryColor(customColors.primary);
     setSecondaryColor(customColors.secondary);
@@ -202,37 +251,39 @@ export default function Settings() {
 
     setIsExporting(true);
     try {
-      // Obter o arquivo do banco SQLite
-  const dbPath = (FileSystem as any).documentDirectory + 'SQLite/venda.db';
-      
-      // Verificar se o arquivo existe
-      const fileInfo = await FileSystem.getInfoAsync(dbPath);
-      if (!fileInfo.exists) {
-        Alert.alert('❌ Erro', 'Banco de dados não encontrado.');
-        setIsExporting(false);
+      // Caminho original do banco dentro do sandbox
+      const dbPath = (FileSystem as any).documentDirectory + 'SQLite/venda.db';
+
+      const info = await FileSystem.getInfoAsync(dbPath);
+      if (!info.exists) {
+        Alert.alert('❌ Erro', 'Banco de dados não encontrado. Abra o app e gere algum dado primeiro.');
         return;
       }
 
-      // Criar nome do arquivo de backup com timestamp
-      const timestamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
-      const fileName = `loja_backup_${timestamp}.db`;
-  const backupPath = (FileSystem as any).documentDirectory + fileName;
-      
-      // Copiar arquivo do banco para backup
-      await FileSystem.copyAsync({
-        from: dbPath,
-        to: backupPath
-      });
-      
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(backupPath);
-        Alert.alert('✅ Exportação Concluída', 'Banco de dados exportado com sucesso!');
-      } else {
-        Alert.alert('❌ Erro', 'Não foi possível compartilhar o arquivo.');
+      // Criar cópia temporária com extensão amigável
+      const timestamp = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+      const fileName = `loja_backup_${timestamp}.sqlite3`;
+      const tempDir = (FileSystem as any).cacheDirectory + 'db-export/';
+      try { await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true }); } catch {}
+      const tempPath = tempDir + fileName;
+      try { await FileSystem.deleteAsync(tempPath, { idempotent: true }); } catch {}
+      await FileSystem.copyAsync({ from: dbPath, to: tempPath });
+
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert('Compartilhar indisponível', 'O recurso de compartilhamento não está disponível neste dispositivo.');
+        return;
       }
+
+      await Sharing.shareAsync(tempPath, {
+        dialogTitle: 'Compartilhar backup do banco',
+        mimeType: 'application/x-sqlite3',
+        UTI: 'public.item',
+      });
+
+      // (Opcional) Não mostramos Alert de sucesso extra para não duplicar UI após Share Sheet
     } catch (error) {
       console.error('Erro na exportação:', error);
-      Alert.alert('❌ Erro', 'Não foi possível exportar o banco de dados.');
+      Alert.alert('❌ Erro', `Não foi possível exportar o banco de dados.\n\nDetalhes: ${String(error)}`);
     } finally {
       setIsExporting(false);
     }
@@ -284,6 +335,11 @@ export default function Settings() {
                 // Fazer backup do banco atual antes de substituir
                 const currentDbPath = (FileSystem as any).documentDirectory + 'SQLite/venda.db';
                 const backupPath = (FileSystem as any).documentDirectory + `backup_before_import_${Date.now()}.db`;
+                const sqliteDir = (FileSystem as any).documentDirectory + 'SQLite';
+                // Garante que a pasta SQLite exista (caso o app ainda não tenha inicializado o DB)
+                try {
+                  await FileSystem.makeDirectoryAsync(sqliteDir, { intermediates: true });
+                } catch {}
                 
                 // Verificar se o banco atual existe e fazer backup
                 const currentDbInfo = await FileSystem.getInfoAsync(currentDbPath);
@@ -307,7 +363,7 @@ export default function Settings() {
                 );
               } catch (importError) {
                 console.error('Erro na importação:', importError);
-                Alert.alert('❌ Erro', 'Não foi possível importar o banco de dados.');
+                Alert.alert('❌ Erro', `Não foi possível importar o banco de dados.\n\nDetalhes: ${String(importError)}`);
               }
             }
           }
@@ -315,7 +371,7 @@ export default function Settings() {
       );
     } catch (error) {
       console.error('Erro na importação:', error);
-      Alert.alert('❌ Erro', 'Não foi possível importar o banco de dados.');
+      Alert.alert('❌ Erro', `Não foi possível importar o banco de dados.\n\nDetalhes: ${String(error)}`);
     } finally {
       setIsImporting(false);
     }
@@ -323,264 +379,9 @@ export default function Settings() {
 
   // Helper Functions - Removidas pois agora trabalhamos diretamente com arquivos .db
 
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    header: {
-      // Use dedicated topbar color for consistent dark bar styling
-      backgroundColor: colors.topbar,
-      paddingHorizontal: 20,
-      paddingTop: 50,
-      paddingBottom: 16,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 16,
-      shadowColor: '#000',
-      shadowOpacity: 0.05,
-      shadowOffset: { width: 0, height: 2 },
-      shadowRadius: 6,
-      elevation: 3,
-    },
-    backButton: {
-      padding: 8,
-      borderRadius: 8,
-      backgroundColor: colors.topbar,
-    },
-    title: {
-      fontSize: 24,
-      fontFamily: 'Inter-Bold',
-      color: colors.white,
-    },
-    content: {
-      flex: 1,
-      padding: 20,
-    },
-    section: {
-      marginBottom: 24,
-    },
-    sectionTitle: {
-      fontSize: 18,
-      fontFamily: 'Inter-SemiBold',
-      color: colors.text,
-      marginBottom: 12,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    formGroup: {
-      marginBottom: 16,
-    },
-    label: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-      marginBottom: 6,
-    },
-    input: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 16,
-      fontFamily: 'Inter-Regular',
-      color: colors.text,
-      backgroundColor: colors.surface,
-    },
-    themeOptions: {
-      gap: 12,
-    },
-    themeOption: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    themeOptionActive: {
-      backgroundColor: colors.primary + '20',
-      borderColor: colors.primary,
-    },
-    themeOptionLeft: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-    },
-    themeOptionText: {
-      fontSize: 16,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-    },
-    colorRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
-    },
-    colorPreview: {
-      width: 40,
-      height: 40,
-      borderRadius: 8,
-      borderWidth: 2,
-      borderColor: colors.border,
-    },
-    colorButtons: {
-      flexDirection: 'row',
-      gap: 8,
-      marginTop: 16,
-    },
-    infoRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    infoLabel: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-    },
-    infoValue: {
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-    },
-    dangerSection: {
-      marginBottom: 24,
-    },
-    dangerCard: {
-      backgroundColor: colors.surface,
-      borderColor: colors.border,
-      borderWidth: 1,
-    },
-    dangerText: {
-      color: colors.textSecondary,
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      marginBottom: 12,
-      lineHeight: 20,
-    },
-    confirmationInput: {
-      borderColor: colors.border,
-      borderWidth: 1,
-      backgroundColor: colors.background,
-    },
-    premiumCard: {
-      opacity: 0.6,
-    },
-    premiumBadge: {
-      position: 'absolute',
-      top: 12,
-      right: 12,
-      backgroundColor: colors.primary,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 12,
-      zIndex: 10,
-    },
-    premiumBadgeText: {
-      color: colors.white,
-      fontSize: 10,
-      fontFamily: 'Inter-SemiBold',
-    },
-    actionButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      marginBottom: 8,
-    },
-    actionButtonDisabled: {
-      opacity: 0.5,
-    },
-    actionButtonText: {
-      fontSize: 16,
-      fontFamily: 'Inter-Medium',
-    },
-    sectionHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 16,
-    },
-    editButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: 6,
-      borderWidth: 1,
-      borderColor: colors.primary,
-    },
-    editButtonText: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-    },
-    readOnlyText: {
-      fontSize: 16,
-      fontFamily: 'Inter-Regular',
-      color: colors.text,
-      paddingVertical: 12,
-      paddingHorizontal: 12,
-      backgroundColor: colors.surface,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    pixKeyRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 8,
-    },
-    pixKeyInput: {
-      flex: 1,
-    },
-    pixKeyText: {
-      flex: 1,
-    },
-    copyButton: {
-      padding: 8,
-      borderRadius: 6,
-      backgroundColor: colors.primary + '20',
-      borderWidth: 1,
-      borderColor: colors.primary,
-    },
-    removeButton: {
-      padding: 8,
-      borderRadius: 6,
-      backgroundColor: colors.error + '20',
-      borderWidth: 1,
-      borderColor: colors.error,
-    },
-    addPixButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.primary,
-      borderStyle: 'dashed',
-      marginTop: 8,
-    },
-    addPixButtonText: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-    },
-  });
+  // Usar estilos do arquivo externo
+  const styles = useMemo(() => createSettingsStyles(colors), [colors]);
+
   // Increase spacer: minimum 24, cap 36, add +12 to inset for comfort
   const bottomSpacer = Math.max(24, Math.min((insets.bottom || 0) + 12, 36));
 
@@ -599,39 +400,26 @@ export default function Settings() {
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={{ paddingBottom: 0 }}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         {/* Premium */}
         <View style={styles.section}>
           <Card>
-            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
+            <Text style={styles.sectionTitleWithMargin}>
               <Crown size={20} color={colors.primary} />
               Plano Atual
             </Text>
 
-            <View style={{ marginBottom: 16 }}>
-              <Text style={[styles.label, { marginBottom: 8 }]}>Status</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.infoValue, {
-                  color: premium ? colors.primary : colors.textSecondary,
-                  fontFamily: 'Inter-SemiBold',
-                  fontSize: 16
-                }]}>
+            <View style={styles.premiumContainer}>
+              <Text style={styles.labelWithMargin}>Status</Text>
+              <View style={styles.statusRow}>
+                <Text style={premium ? styles.premiumStatusText : styles.freeStatusText}>
                   {premium ? 'Premium' : 'Gratuito'}
                 </Text>
                 {premium && (
-                  <View style={{
-                    backgroundColor: colors.success,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderRadius: 12
-                  }}>
-                    <Text style={{
-                      color: colors.white,
-                      fontSize: 10,
-                      fontFamily: 'Inter-SemiBold'
-                    }}>
+                  <View style={styles.premiumBadgeContainer}>
+                    <Text style={styles.premiumBadgeText}>
                       ✅ ATIVO
                     </Text>
                   </View>
@@ -650,7 +438,7 @@ export default function Settings() {
         <View style={styles.section}>
           <Card>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+              <Text style={styles.sectionTitleNoMargin}>
                 <Store size={20} color={colors.primary} />
                 Dados da Loja
               </Text>
@@ -659,7 +447,7 @@ export default function Settings() {
                 onPress={() => setIsEditing(!isEditing)}
               >
                 <Edit3 size={16} color={colors.primary} />
-                <Text style={[styles.editButtonText, { color: colors.primary }]}>
+                <Text style={styles.editButtonText}>
                   {isEditing ? 'Cancelar' : 'Editar'}
                 </Text>
               </TouchableOpacity>
@@ -701,13 +489,18 @@ export default function Settings() {
                 <View key={index} style={styles.pixKeyRow}>
                   {isEditing ? (
                     <>
-                      <TextInput
-                        style={[styles.input, styles.pixKeyInput]}
-                        value={pixKey}
-                        onChangeText={(text) => updatePixKey(index, text)}
-                        placeholder="Digite sua chave (texto livre)"
-                        placeholderTextColor={colors.textSecondary}
-                      />
+                      <View style={styles.pixKeyInputContainer}>
+                        <Text style={styles.pixKeyTypeLabel}>
+                          {detectPixKeyType(pixKey)}
+                        </Text>
+                        <TextInput
+                          style={[styles.input, styles.pixKeyInput]}
+                          value={pixKey}
+                          onChangeText={(text) => updatePixKey(index, text)}
+                          placeholder="Digite sua chave (texto livre)"
+                          placeholderTextColor={colors.textSecondary}
+                        />
+                      </View>
                       {storeSettings.pixKeys.length > 1 && (
                         <TouchableOpacity
                           style={styles.removeButton}
@@ -719,7 +512,14 @@ export default function Settings() {
                     </>
                   ) : (
                     <>
-                      <Text style={[styles.readOnlyText, styles.pixKeyText]}>{pixKey}</Text>
+                      <View style={styles.pixKeyReadOnlyContainer}>
+                        {pixKey.trim() !== '' && (
+                          <Text style={styles.pixKeyTypeLabel}>
+                            {detectPixKeyType(pixKey)}
+                          </Text>
+                        )}
+                        <Text style={[styles.readOnlyText, styles.pixKeyText]}>{pixKey}</Text>
+                      </View>
                       <TouchableOpacity
                         style={styles.copyButton}
                         onPress={() => copyToClipboard(pixKey)}
@@ -737,7 +537,7 @@ export default function Settings() {
                   onPress={addPixKey}
                 >
                   <Plus size={16} color={colors.primary} />
-                  <Text style={[styles.addPixButtonText, { color: colors.primary }]}>
+                  <Text style={styles.addPixButtonText}>
                     Adicionar Chave PIX
                   </Text>
                 </TouchableOpacity>
@@ -756,7 +556,7 @@ export default function Settings() {
         {/* Theme */}
         <View style={styles.section}>
           <Card>
-            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
+            <Text style={styles.sectionTitleWithMargin}>
               <Palette size={20} color={colors.primary} />
               Tema
             </Text>
@@ -792,11 +592,11 @@ export default function Settings() {
                 style={styles.premiumBadge}
                 onPress={() => router.push('/planos')}
               >
-                <Text style={styles.premiumBadgeText}>PREMIUM</Text>
+                <Text style={styles.premiumBadgeOverlayText}>PREMIUM</Text>
               </TouchableOpacity>
             )}
 
-            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
+            <Text style={styles.sectionTitleWithMargin}>
               <Database size={20} color={colors.primary} />
               Gerenciamento de Dados
             </Text>
@@ -808,11 +608,9 @@ export default function Settings() {
                 disabled={!premium || isExporting}
               >
                 <Download size={20} color={premium ? colors.primary : colors.textSecondary} />
-                       <Text style={[styles.actionButtonText, { 
-                         color: premium ? colors.primary : colors.textSecondary 
-                       }]}>
-                         {isExporting ? 'Exportando...' : 'Backup do Banco'}
-                       </Text>
+                <Text style={premium ? styles.actionButtonTextPrimary : styles.actionButtonTextSecondary}>
+                  {isExporting ? 'Exportando...' : 'Backup do Banco'}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -823,22 +621,20 @@ export default function Settings() {
                 disabled={!premium || isImporting}
               >
                 <Upload size={20} color={premium ? colors.primary : colors.textSecondary} />
-                       <Text style={[styles.actionButtonText, { 
-                         color: premium ? colors.primary : colors.textSecondary 
-                       }]}>
-                         {isImporting ? 'Importando...' : 'Restaurar Banco'}
-                       </Text>
+                <Text style={premium ? styles.actionButtonTextPrimary : styles.actionButtonTextSecondary}>
+                  {isImporting ? 'Importando...' : 'Restaurar Banco'}
+                </Text>
               </TouchableOpacity>
             </View>
 
             {!premium && (
-              <Text style={[styles.dangerText, { color: colors.textSecondary, fontSize: 12, marginTop: 8 }]}>
+              <Text style={styles.dangerTextSmall}>
                 Para acessar essas funcionalidades, assine o Premium
               </Text>
             )}
 
             {premium && (
-              <Text style={[styles.dangerText, { color: colors.success, fontSize: 12, marginTop: 8 }]}>
+              <Text style={styles.dangerTextSuccess}>
                 ✅ Funcionalidades premium ativas - Backup e restauração do banco de dados liberadas
               </Text>
             )}
@@ -849,12 +645,12 @@ export default function Settings() {
         <View style={styles.dangerSection}>
           <Card style={styles.dangerCard}>
             <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.error, paddingVertical: 16 }]}
+              style={styles.resetButton}
               onPress={resetDatabase}
               disabled={isResetting}
             >
               <Trash2 size={24} color={colors.white} />
-              <Text style={[styles.actionButtonText, { color: colors.white, fontSize: 18, fontFamily: 'Inter-Bold' }]}>
+              <Text style={styles.resetButtonText}>
                 {isResetting ? 'Resetando...' : 'RESETAR BANCO DE DADOS'}
               </Text>
             </TouchableOpacity>
@@ -862,9 +658,9 @@ export default function Settings() {
         </View>
 
         {/* System Info */}
-        <View style={[styles.section]}>
+        <View style={styles.section}>
           <Card>
-            <Text style={[styles.sectionTitle, { marginBottom: 16 }]}>
+            <Text style={styles.sectionTitleWithMargin}>
               Informações do Sistema
             </Text>
 
@@ -881,21 +677,34 @@ export default function Settings() {
                 {isOnline ? 'Conectado' : 'Desconectado'}
               </Text>
             </View>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Modo Agente</Text>
+              <Text style={styles.infoValue}>{agentEnabled ? 'Ativado' : 'Desativado'}</Text>
+            </View>
+
+            <View style={styles.actionButton}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => { const next = !agentEnabled; setAgentEnabled(next); try { setAgentMode(next); } catch {}; }}
+              >
+                <Text style={styles.actionButtonText}>{agentEnabled ? 'Desativar Modo Agente' : 'Ativar Modo Agente'}</Text>
+              </TouchableOpacity>
+            </View>
           </Card>
         </View>
   </ScrollView>
-  {/* Discreet dark bottom area only for settings screen */}
-  <View style={{ backgroundColor: colors.bottombar, height: bottomSpacer }} />
+    <View style={[styles.bottomSpacer, { height: bottomSpacer }]} />
 
       {/* Modal de Reset */}
       <Modal visible={showResetModal} transparent animationType="fade">
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: colors.card, borderRadius: 12, padding: 20, width: '100%', maxWidth: 420 }}>
-            <Text style={{ fontSize: 18, fontFamily: 'Inter-Bold', color: colors.text, marginBottom: 12 }}>⚠️ ZONA DE PERIGO</Text>
-            <Text style={{ color: colors.textSecondary, marginBottom: 12 }}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <Text style={styles.modalTitle}>⚠️ ZONA DE PERIGO</Text>
+              <Text style={styles.modalText}>
               Esta ação irá APAGAR TODOS os dados do aplicativo permanentemente. Digite exatamente:
             </Text>
-            <Text style={{ fontFamily: 'Inter-Bold', color: colors.error, marginBottom: 12 }}>
+              <Text style={styles.modalTextBold}>
               deletar o banco
             </Text>
             <TextInput
@@ -905,16 +714,16 @@ export default function Settings() {
               placeholder="Digite aqui para confirmar"
               placeholderTextColor={colors.textSecondary}
             />
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
-              <Button title="Cancelar" variant="outline" onPress={() => { setShowResetModal(false); setResetConfirmText(''); }} style={{ flex: 1 }} />
+              <View style={styles.modalButtonRow}>
+                <Button title="Cancelar" variant="outline" onPress={() => { setShowResetModal(false); setResetConfirmText(''); }} style={styles.modalButtonFlex} />
               <Button
                 title={isResetting ? 'Resetando...' : 'Apagar Tudo'}
                 onPress={performDatabaseReset}
                 disabled={isResetting || resetConfirmText.trim().toLowerCase() !== 'deletar o banco'}
-                style={{ flex: 1 }}
+                  style={styles.modalButtonFlex}
               />
             </View>
-            <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 8 }}>
+              <Text style={styles.modalNote}>
               Observação: credenciais de login (OAuth) não serão apagadas.
             </Text>
           </View>
