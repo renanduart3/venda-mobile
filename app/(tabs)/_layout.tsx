@@ -1,6 +1,5 @@
 import { Tabs } from 'expo-router';
 import { 
-  BarChart3, 
   ShoppingCart, 
   Package, 
   Users, 

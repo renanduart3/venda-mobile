@@ -1,19 +1,24 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useTheme } from '@/contexts/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
-  FlatList,
   Modal,
   Alert,
-  Platform,
-  Pressable,
-  ActivityIndicator
-} from 'react-native';
+  Pressable} from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Header } from '@/components/ui/Header';
+import { router } from 'expo-router';
+import SaleDetailsModal from '@/components/SaleDetailsModal';
+import { formatBrDate } from '@/lib/utils';
+import { isPremium } from '@/lib/premium';
+import db from '@/lib/db';
+import { createFinancasStyles } from './Financas.styles';
 import {
   Plus,
   Calendar,
@@ -23,181 +28,141 @@ import {
   CheckCircle,
   XCircle,
   RotateCcw,
-  Filter,
   List,
-  Crown
+  Crown,
 } from 'lucide-react-native';
-import { useTheme } from '@/contexts/ThemeContext';
-import { Header } from '@/components/ui/Header';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { router } from 'expo-router';
-import db from '@/lib/db';
-import { isPremium } from '@/lib/premium';
-import { formatBrDate, normalizeToBrDate, parseBrDate } from '@/lib/utils';
-
-interface Expense {
-  id: string;
-  name: string;
-  amount: number;
-  due_date?: string | null;
-  paid: boolean;
-  recurring: boolean;
-  customer_id?: string | null;
-  created_month?: string; // Mês de cadastro (YYYY-MM)
-  created_at: string;
-  updated_at: string;
-  paid_at?: string | null;
-}
 
 export default function Financas() {
-  const { colors } = useTheme();
-  const [activeTab, setActiveTab] = useState<'new' | 'report'>('new');
-  const [userIsPremium, setUserIsPremium] = useState(false);
-  const [saleDetailsVisible, setSaleDetailsVisible] = useState(false);
-  const [saleDetailLoading, setSaleDetailLoading] = useState(false);
-  const [saleDetailItems, setSaleDetailItems] = useState<any[]>([]);
-  const [saleDetailSale, setSaleDetailSale] = useState<any | null>(null);
-  const saleDetailsFetchRef = useRef(false);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [sales, setSales] = useState<any[]>([]);
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
-  
-  // Filtros
-  // Util para lidar com meses sem problemas de fuso/UTC
-  const getCurrentMonthLocal = () => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    return `${y}-${m}`;
-  };
-  const addMonths = (monthStr: string, delta: number) => {
-    const [yStr, mStr] = monthStr.split('-');
-    const y = parseInt(yStr, 10);
-    const m0 = parseInt(mStr, 10) - 1;
-    const d = new Date(y, m0, 1);
-    d.setMonth(d.getMonth() + delta);
-    const yy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return `${yy}-${mm}`;
-  };
-  const [selectedMonth, setSelectedMonth] = useState<string>(getCurrentMonthLocal());
-
-  // Render month label without Date parsing to avoid UTC/local shifts (e.g., 'YYYY-MM-01' parsing).
-  const getMonthLabel = (ym: string) => {
-    const [year, month] = ym.split('-');
-    const names = [
-      'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-      'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
-    ];
-    const idx = Number.isFinite(Number(month)) ? Math.max(0, Math.min(11, parseInt(month, 10) - 1)) : 0;
-    return `${names[idx]} de ${year}`;
-  };
-  const [expenseStatusFilter, setExpenseStatusFilter] = useState<'all' | 'pending' | 'paid' | 'overdue'>('all');
-  const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const [selectedPeriod, setSelectedPeriod] = useState('month');
-
-  // Funções de filtro: gerar chave AAAA-MM sem instanciar Date (evita bugs de fuso/ISO)
-  const toMonthKey = (dateString?: string | null): string | null => {
-    if (!dateString) return null;
-    // DD/MM/YYYY
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateString)) {
-      const [dd, mm, yyyy] = dateString.split('/');
-      return `${yyyy}-${mm}`;
-    }
-    // DD-MM-YYYY
-    if (/^\d{2}-\d{2}-\d{4}$/.test(dateString)) {
-      const [dd, mm, yyyy] = dateString.split('-');
-      return `${yyyy}-${mm}`;
-    }
-    // YYYY-MM-DD ou ISO
-    if (/^\d{4}-\d{2}-\d{2}/.test(dateString)) {
-      return dateString.slice(0, 7);
-    }
-    return null;
-  };
-
-  // Validação forte de data BR (DD/MM/YYYY)
-  const validateDueDate = (value: string): { ok: boolean; message?: string; normalized?: string } => {
-    if (!value) return { ok: true, normalized: '' };
-    const cleaned = value.trim();
-    if (!/^\d{2}\/\d{2}\/\d{4}$/.test(cleaned)) return { ok: false, message: 'Formato inválido. Use DD/MM/AAAA.' };
-    const [ddStr, mmStr, yyyyStr] = cleaned.split('/');
-    const dd = Number(ddStr); const mm = Number(mmStr); const yyyy = Number(yyyyStr);
-    if (mm < 1 || mm > 12) return { ok: false, message: 'Mês inválido.' };
-    if (dd < 1 || dd > 31) return { ok: false, message: 'Dia inválido.' };
-    const thirty = new Set([4,6,9,11]);
-    if (thirty.has(mm) && dd > 30) return { ok: false, message: 'Dia inválido para o mês.' };
-    const isLeap = (yyyy % 4 === 0 && yyyy % 100 !== 0) || (yyyy % 400 === 0);
-    if (mm === 2 && dd > (isLeap ? 29 : 28)) return { ok: false, message: 'Dia inválido para fevereiro.' };
-    const currentYear = new Date().getFullYear();
-    const MIN_YEAR = currentYear - 1; // permite até 1 ano no passado
-    const MAX_YEAR = currentYear + 2; // até 2 anos no futuro
-    if (yyyy < MIN_YEAR) return { ok: false, message: `Ano muito antigo (mínimo ${MIN_YEAR}).` };
-    if (yyyy > MAX_YEAR) return { ok: false, message: `Ano muito futuro (máximo ${MAX_YEAR}).` };
-    return { ok: true, normalized: cleaned };
-  };
-
-  // Helper: check if an expense is overdue (based on full date parsing)
-  const isOverdue = (expense: Expense) => {
-    if (expense.paid || !expense.due_date) return false;
-    const dueDate = parseBrDate(expense.due_date as any);
-    if (!dueDate) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return dueDate < today;
-  };
-
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter(expense => {
-      // Regra de vigência: usa due_date se presente; caso contrário, usa created_at
-      const keyDue = toMonthKey(expense.due_date);
-      const keyCreated = toMonthKey(expense.created_at);
-      const monthKey = keyDue || keyCreated;
-
-      // DEBUG: Log para verificar filtro mensal
-      console.log('🔍 Filtrando despesa:', {
-        name: expense.name,
-        due_date: expense.due_date || '(vazio)',
-        created_at: expense.created_at,
-        monthKey_due: keyDue,
-        monthKey_created: keyCreated,
-        monthKey,
-        selectedMonth,
-        match: monthKey === selectedMonth
-      });
-
-      if (monthKey !== selectedMonth) return false;
-
-      // Filtro por status
-      const overdue = isOverdue(expense);
-
-      switch (expenseStatusFilter) {
-        case 'pending':
-          return !expense.paid && !overdue;
-        case 'paid':
-          return expense.paid;
-        case 'overdue':
-          return overdue;
-        default:
-          return true;
-      }
-    });
-  }, [expenses, selectedMonth, expenseStatusFilter]);
-
-  const expenseStats = useMemo(() => {
-    const total = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const paid = filteredExpenses.filter(e => e.paid).reduce((sum, expense) => sum + expense.amount, 0);
-    const pending = filteredExpenses.filter(e => !e.paid).reduce((sum, expense) => sum + expense.amount, 0);
-    return { total, paid, pending, count: filteredExpenses.length };
-  }, [filteredExpenses]);
-
   // Report filters
   const [reportFilter, setReportFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+// Premium state
+const [userIsPremium, setUserIsPremium] = useState(false);
+// Customers, Expenses, Sales state
+const [customers, setCustomers] = useState<any[]>([]);
+const [expenses, setExpenses] = useState<any[]>([]);
+const [sales, setSales] = useState<any[]>([]);
+// Editing expense modal state
+const [editingExpense, setEditingExpense] = useState<any>(null);
+const [showExpenseModal, setShowExpenseModal] = useState(false);
+// Month selection
+const [selectedMonth, setSelectedMonth] = useState<string>('');
+// Theme colors
+const { colors } = useTheme();
+const styles = createFinancasStyles(colors);
+  
+// Sale details modal state
+const [saleDetailsVisible, setSaleDetailsVisible] = useState(false);
+const [saleDetailSale, setSaleDetailSale] = useState<any>(null);
+const [saleDetailItems, setSaleDetailItems] = useState<any[]>([]);
+const [saleDetailLoading, setSaleDetailLoading] = useState(false);
+const saleDetailsFetchRef = useRef(false);
+
+// Expense filter state
+const [expenseStatusFilter, setExpenseStatusFilter] = useState<'all' | 'paid' | 'unpaid' | 'overdue'>('all');
+
+// Customer search state
+const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+
+// Active tab state
+const [activeTab, setActiveTab] = useState<'new' | 'report'>('new');
+
+// Utility functions
+const toMonthKey = (dateStr: string | undefined): string => {
+  if (!dateStr) return '';
+  // Supports DD/MM/YYYY format
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    const [dd, mm, yyyy] = dateStr.split('/');
+    return `${yyyy}-${mm}`;
+  }
+  // Supports ISO format
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    return dateStr.slice(0, 7);
+  }
+  return '';
+};
+
+const parseBrDate = (str: string): Date | null => {
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return null;
+  const [dd, mm, yyyy] = str.split('/').map(Number);
+  const d = new Date(yyyy, (mm||1)-1, dd||1);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const isOverdue = (expense: any): boolean => {
+  if (expense.paid) return false;
+  if (!expense.due_date) return false;
+  const due = parseBrDate(expense.due_date);
+  if (!due) return false;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return due < now;
+};
+
+const validateDueDate = (input: string): { ok: boolean; message?: string; normalized?: string } => {
+  if (!input) return { ok: true, normalized: '' };
+  // Validate DD/MM/YYYY format
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(input)) {
+    const [dd, mm, yyyy] = input.split('/').map(Number);
+    if (mm < 1 || mm > 12) return { ok: false, message: 'Mês inválido' };
+    if (dd < 1 || dd > 31) return { ok: false, message: 'Dia inválido' };
+    if (yyyy < 1900 || yyyy > 2100) return { ok: false, message: 'Ano inválido' };
+    return { ok: true, normalized: input };
+  }
+  return { ok: false, message: 'Use o formato DD/MM/AAAA' };
+};
+
+const getMonthLabel = (monthKey: string): string => {
+  if (!monthKey) return 'Selecione um mês';
+  const [year, month] = monthKey.split('-');
+  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const monthIndex = parseInt(month, 10) - 1;
+  return `${months[monthIndex]} ${year}`;
+};
+
+const addMonths = (monthKey: string, delta: number): string => {
+  if (!monthKey) {
+    const now = new Date();
+    monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const [year, month] = monthKey.split('-').map(Number);
+  const date = new Date(year, month - 1 + delta, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// Computed expense stats
+const expenseStats = useMemo(() => {
+  const monthKey = selectedMonth;
+  const monthExpenses = expenses.filter(expense => {
+    const expMonthKey = toMonthKey(expense.due_date) || '';
+    return expMonthKey === monthKey;
+  });
+  const total = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+  const paid = monthExpenses.filter(exp => exp.paid).reduce((sum, exp) => sum + exp.amount, 0);
+  const pending = total - paid;
+  const count = monthExpenses.length;
+  const paidCount = monthExpenses.filter(exp => exp.paid).length;
+  const unpaidCount = count - paidCount;
+  return { total, paid, pending, count, paidCount, unpaidCount };
+}, [expenses, selectedMonth]);
+
+// Filtered expenses based on status filter
+const filteredExpenses = useMemo(() => {
+  const monthKey = selectedMonth;
+  const monthExpenses = expenses.filter(expense => {
+    const expMonthKey = toMonthKey(expense.due_date) || '';
+    return expMonthKey === monthKey;
+  });
+  if (expenseStatusFilter === 'all') return monthExpenses;
+  if (expenseStatusFilter === 'paid') return monthExpenses.filter(exp => exp.paid);
+  if (expenseStatusFilter === 'unpaid') return monthExpenses.filter(exp => !exp.paid);
+  if (expenseStatusFilter === 'overdue') {
+    return monthExpenses.filter(exp => !exp.paid && exp.due_date && new Date(exp.due_date) < new Date());
+  }
+  return monthExpenses;
+}, [expenses, selectedMonth, expenseStatusFilter]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -287,7 +252,7 @@ export default function Financas() {
     }
   };
 
-  const openExpenseModal = (expense?: Expense) => {
+  const openExpenseModal = (expense?: any) => {
     if (expense) {
       setEditingExpense(expense);
       setFormData({
@@ -403,7 +368,7 @@ export default function Financas() {
     }
   };
 
-  const deleteExpense = (expense: Expense) => {
+  const deleteExpense = (expense: any) => {
     Alert.alert(
       'Confirmar Exclusão',
       `Deseja realmente excluir a despesa "${expense.name}"?`,
@@ -420,7 +385,7 @@ export default function Financas() {
     );
   };
 
-  const togglePaidStatus = async (expense: Expense) => {
+  const togglePaidStatus = async (expense: any) => {
     try {
   const updatedAt = formatBrDate(new Date());
       await db.update(
@@ -589,665 +554,6 @@ export default function Financas() {
     return { totalIncome, totalExpenses, balance, transactionCount: financialData.length };
   }, [monthSales, monthExpenses, monthReceipts, financialData.length]);
 
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    tabSelector: {
-      flexDirection: 'row',
-      margin: 20,
-      backgroundColor: colors.surface,
-      borderRadius: 8,
-      padding: 4,
-    },
-    tabButton: {
-      flex: 1,
-      paddingVertical: 12,
-      alignItems: 'center',
-      borderRadius: 6,
-    },
-    tabButtonActive: {
-      backgroundColor: colors.primary,
-    },
-    tabButtonText: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-    tabButtonTextActive: {
-      color: colors.white,
-    },
-    content: {
-      flex: 1,
-      paddingHorizontal: 20,
-    },
-
-    // New Expense Tab
-    addButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.primary,
-      paddingVertical: 12,
-      borderRadius: 8,
-      marginBottom: 20,
-      gap: 8,
-    },
-    addButtonText: {
-      color: colors.white,
-      fontSize: 16,
-      fontFamily: 'Inter-SemiBold',
-    },
-
-    // Filtros
-    filterContainer: {
-      marginBottom: 16,
-    },
-    filterLabel: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-      marginBottom: 8,
-    },
-    monthFilterContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.surface,
-      borderRadius: 8,
-      padding: 4,
-    },
-    monthButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 6,
-    },
-    monthButtonText: {
-      fontSize: 18,
-      fontFamily: 'Inter-Bold',
-      color: colors.primary,
-    },
-    monthText: {
-      fontSize: 16,
-      fontFamily: 'Inter-SemiBold',
-      color: colors.text,
-      marginHorizontal: 20,
-      textTransform: 'capitalize',
-    },
-    statusFilterContainer: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      marginBottom: 16,
-      gap: 8,
-    },
-    statusFilterButton: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 6,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    statusFilterButtonActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    statusFilterText: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-    statusFilterTextActive: {
-      color: colors.white,
-    },
-
-    // Stats Cards
-    statsContainer: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      marginBottom: 20,
-      gap: 12,
-    },
-    statCard: {
-      flex: 1,
-      minWidth: '45%',
-    },
-    statHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 8,
-    },
-    statIcon: {
-      padding: 8,
-      borderRadius: 8,
-    },
-    statValue: {
-      fontSize: 18,
-      fontFamily: 'Inter-Bold',
-      marginBottom: 4,
-    },
-    statLabel: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-
-    // Expenses List
-    expenseCard: {
-      marginBottom: 12,
-    },
-    expenseItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-    },
-    expenseIcon: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    expenseInfo: {
-      flex: 1,
-    },
-    expenseName: {
-      fontSize: 16,
-      fontFamily: 'Inter-SemiBold',
-      color: colors.text,
-      marginBottom: 4,
-    },
-    expenseDetails: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 8,
-      overflow: 'hidden',
-    },
-    expenseAmount: {
-      fontSize: 14,
-      fontFamily: 'Inter-Bold',
-      color: colors.primary,
-    },
-    expenseDate: {
-      fontSize: 11,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      maxWidth: '55%',
-      textAlign: 'right',
-    },
-    expenseTags: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-    },
-    tagsContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      flex: 1,
-    },
-    tag: {
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 4,
-      backgroundColor: colors.surface,
-    },
-    tagText: {
-      fontSize: 10,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-    overdueTag: {
-      backgroundColor: colors.error + '20',
-    },
-    overdueTagText: {
-      color: colors.error,
-    },
-    recurringTag: {
-      backgroundColor: colors.primary + '20',
-    },
-    recurringTagText: {
-      color: colors.primary,
-    },
-    actions: {
-      flexDirection: 'row',
-      gap: 8,
-    },
-    actionButton: {
-      padding: 8,
-      borderRadius: 6,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    paidButton: {
-      backgroundColor: colors.success + '20',
-      borderColor: colors.success,
-    },
-
-    // Modal styles
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.5)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-    },
-    modalContent: {
-      backgroundColor: colors.card,
-      borderRadius: 12,
-      padding: 20,
-      width: '100%',
-      maxWidth: 400,
-    },
-    modalTitle: {
-      fontSize: 20,
-      fontFamily: 'Inter-Bold',
-      color: colors.text,
-      marginBottom: 20,
-      textAlign: 'center',
-    },
-    formGroup: {
-      marginBottom: 16,
-    },
-    label: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-      marginBottom: 6,
-    },
-    input: {
-      borderWidth: 1,
-      borderColor: colors.inputBorder,
-      borderRadius: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 16,
-      fontFamily: 'Inter-Regular',
-      color: colors.text,
-      backgroundColor: colors.surface,
-    },
-    checkboxContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginTop: 8,
-    },
-    checkbox: {
-      width: 20,
-      height: 20,
-      borderRadius: 4,
-      borderWidth: 2,
-      borderColor: colors.border,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    checkboxChecked: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    checkboxText: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-    },
-    modalButtons: {
-      flexDirection: 'row',
-      gap: 12,
-      marginTop: 20,
-    },
-    modalButton: {
-      flex: 1,
-    },
-    inputText: {
-      fontSize: 16,
-      fontFamily: 'Inter-Regular',
-    },
-    expenseCustomer: {
-      fontSize: 12,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    customerSelector: {
-      position: 'relative',
-    },
-    clearButton: {
-      position: 'absolute',
-      right: 12,
-      top: 12,
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      backgroundColor: colors.border,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    clearButtonText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      fontWeight: 'bold',
-    },
-    customerSuggestions: {
-      position: 'absolute',
-      top: 50,
-      left: 0,
-      right: 0,
-      backgroundColor: colors.surface,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: colors.border,
-      maxHeight: 200,
-      zIndex: 1000,
-      elevation: 5,
-    },
-    customerSuggestion: {
-      padding: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    customerSuggestionName: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-      marginBottom: 2,
-    },
-    customerSuggestionEmail: {
-      fontSize: 12,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-    },
-
-    // Date Input
-    dateInputContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    dateInput: {
-      flex: 1,
-    },
-    dateButton: {
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      backgroundColor: colors.primary,
-      borderRadius: 8,
-    },
-    dateButtonText: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: colors.white,
-    },
-
-    // Report styles
-    reportHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 20,
-    },
-    reportTitle: {
-      fontSize: 18,
-      fontFamily: 'Inter-SemiBold',
-      color: colors.text,
-    },
-    premiumButton: {
-      backgroundColor: colors.primary,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 6,
-    },
-    premiumButtonText: {
-      color: colors.white,
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-    },
-    monthSelector: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 20,
-      gap: 12,
-    },
-    selectorLabel: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-    },
-    monthInput: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 6,
-      paddingHorizontal: 8,
-      paddingVertical: 6,
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      color: colors.text,
-      backgroundColor: colors.surface,
-      minWidth: 100,
-    },
-    summaryContainer: {
-      flexDirection: 'row',
-      gap: 8,
-      marginBottom: 20,
-    },
-    summaryCard: {
-      flex: 1,
-      padding: 12,
-      alignItems: 'center',
-    },
-    summaryLabel: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-      marginBottom: 4,
-    },
-    summaryValue: {
-      fontSize: 16,
-      fontFamily: 'Inter-Bold',
-    },
-    reportFilterContainer: {
-      flexDirection: 'row',
-      gap: 8,
-      marginBottom: 20,
-    },
-    filterButton: {
-      flex: 1,
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      borderRadius: 6,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      alignItems: 'center',
-    },
-    filterButtonActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    filterButtonText: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-    filterButtonTextActive: {
-      color: colors.white,
-    },
-    dataContainer: {
-      marginBottom: 20,
-    },
-    dataTitle: {
-      fontSize: 16,
-      fontFamily: 'Inter-SemiBold',
-      color: colors.text,
-      marginBottom: 12,
-    },
-    transactionCard: {
-      marginBottom: 8,
-    },
-    transactionHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
-    },
-    transactionInfo: {
-      flex: 1,
-      marginRight: 12,
-    },
-    transactionDescription: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-      marginBottom: 4,
-    },
-    transactionDate: {
-      fontSize: 12,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      marginBottom: 2,
-    },
-    transactionCustomer: {
-      fontSize: 12,
-      fontFamily: 'Inter-Regular',
-      color: colors.primary,
-    },
-    transactionAmount: {
-      alignItems: 'flex-end',
-    },
-    detailsButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      backgroundColor: '#4A9EFF',
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 6,
-      marginTop: 4,
-    },
-    detailsButtonText: {
-      color: colors.white,
-      fontSize: 12,
-      fontFamily: 'Inter-Medium'
-    },
-    amountText: {
-      fontSize: 16,
-      fontFamily: 'Inter-Bold',
-      marginBottom: 2,
-    },
-    statusText: {
-      fontSize: 10,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-    // Modal Detalhes Venda
-    detailModalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.55)',
-      justifyContent: 'center',
-      paddingHorizontal: 20,
-    },
-    detailModalBox: {
-      backgroundColor: colors.surface,
-      borderRadius: 14,
-      padding: 16,
-      maxHeight: '70%',
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    detailModalTitle: {
-      fontSize: 16,
-      fontFamily: 'Inter-Bold',
-      color: colors.text,
-      marginBottom: 10,
-    },
-    detailRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      paddingVertical: 6,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    detailName: {
-      fontSize: 13,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-    },
-    detailSub: {
-      fontSize: 11,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    detailTotal: {
-      fontSize: 13,
-      fontFamily: 'Inter-Bold',
-      color: colors.text,
-      minWidth: 80,
-      textAlign: 'right',
-    },
-    detailEmpty: {
-      fontSize: 13,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      fontStyle: 'italic',
-      marginVertical: 12,
-    },
-    detailActions: {
-      flexDirection: 'row',
-      justifyContent: 'flex-end',
-      marginTop: 12,
-    },
-    detailCloseBtn: {
-      backgroundColor: colors.primary,
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      borderRadius: 8,
-    },
-    detailCloseText: {
-      color: colors.white,
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-    },
-    emptyText: {
-      textAlign: 'center',
-      color: colors.textSecondary,
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      paddingVertical: 20,
-    },
-    paginationContainer: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginTop: 20,
-      paddingVertical: 16,
-    },
-    paginationButton: {
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 6,
-      backgroundColor: colors.primary,
-    },
-    paginationButtonDisabled: {
-      backgroundColor: colors.border,
-    },
-    paginationText: {
-      color: colors.white,
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-    },
-    paginationTextDisabled: {
-      color: colors.textSecondary,
-    },
-    paginationInfo: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: colors.textSecondary,
-    },
-  });
-
   const StatCard = ({
     icon,
     value,
@@ -1349,13 +655,13 @@ export default function Financas() {
         <TouchableOpacity
           style={[
             styles.statusFilterButton,
-            expenseStatusFilter === 'pending' && styles.statusFilterButtonActive
+            expenseStatusFilter === 'unpaid' && styles.statusFilterButtonActive
           ]}
-          onPress={() => setExpenseStatusFilter('pending')}
+          onPress={() => setExpenseStatusFilter('unpaid')}
         >
           <Text style={[
             styles.statusFilterText,
-            expenseStatusFilter === 'pending' && styles.statusFilterTextActive
+            expenseStatusFilter === 'unpaid' && styles.statusFilterTextActive
           ]}>
             Pendente ({filteredExpenses.filter(e => !e.paid).length})
           </Text>
@@ -1760,13 +1066,13 @@ export default function Financas() {
             <TouchableOpacity
               style={[
                 styles.statusFilterButton,
-                expenseStatusFilter === 'pending' && styles.statusFilterButtonActive
+                expenseStatusFilter === 'unpaid' && styles.statusFilterButtonActive
               ]}
-              onPress={() => setExpenseStatusFilter('pending')}
+              onPress={() => setExpenseStatusFilter('unpaid')}
             >
               <Text style={[
                 styles.statusFilterText,
-                expenseStatusFilter === 'pending' && styles.statusFilterTextActive
+                expenseStatusFilter === 'unpaid' && styles.statusFilterTextActive
               ]}>
                 Pendente ({filteredExpenses.filter(e => !e.paid).length})
               </Text>
@@ -2083,204 +1389,32 @@ export default function Financas() {
         </ScrollView>
       )}
 
-      {showExpenseModal && (
-        <Modal visible transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>
-                {editingExpense ? 'Editar Despesa' : 'Nova Despesa'}
-              </Text>
-
-              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Nome da Despesa *</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.name}
-                    onChangeText={(text) => setFormData({ ...formData, name: text })}
-                    placeholder="Ex: Aluguel, Conta de Luz..."
-                    placeholderTextColor={colors.textSecondary}
-                  />
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Valor *</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.amount}
-                    onChangeText={(text) => setFormData({ ...formData, amount: text })}
-                    placeholder="0,00"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="numeric"
-                  />
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Data de Vencimento (opcional)</Text>
-                  <View style={styles.dateInputContainer}>
-                    <TextInput
-                      style={[styles.input, styles.dateInput]}
-                      value={formData.due_date}
-                      onChangeText={(text) => {
-                        let formatted = text.replace(/\D/g, '');
-                        if (formatted.length >= 2) {
-                          formatted = formatted.substring(0, 2) + '/' + formatted.substring(2);
-                        }
-                        if (formatted.length >= 5) {
-                          formatted = formatted.substring(0, 5) + '/' + formatted.substring(5, 9);
-                        }
-                        setFormData({ ...formData, due_date: formatted });
-                      }}
-                      placeholder="DD/MM/AAAA (ex: 25/12/2024)"
-                      placeholderTextColor={colors.textSecondary}
-                      keyboardType="numeric"
-                      maxLength={10}
-                    />
-                    <TouchableOpacity
-                      style={styles.dateButton}
-                      onPress={() => {
-                        const today = new Date();
-                        const day = String(today.getDate()).padStart(2, '0');
-                        const month = String(today.getMonth() + 1).padStart(2, '0');
-                        const year = today.getFullYear();
-                        setFormData({ ...formData, due_date: `${day}/${month}/${year}` });
-                      }}
-                    >
-                      <Text style={styles.dateButtonText}>Hoje</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Cliente (opcional)</Text>
-                  <View style={styles.customerSelector}>
-                    <TextInput
-                      style={styles.input}
-                      value={formData.customer_id ? (customers.find(c => c.id === formData.customer_id)?.name || '') : customerSearchQuery}
-                      onChangeText={(text) => {
-                        setCustomerSearchQuery(text);
-                        if (!text) {
-                          setFormData({ ...formData, customer_id: '' });
-                        }
-                      }}
-                      placeholder="Digite o nome do cliente..."
-                      placeholderTextColor={colors.textSecondary}
-                    />
-                    {formData.customer_id && (
-                      <TouchableOpacity
-                        style={styles.clearButton}
-                        onPress={() => {
-                          setFormData({ ...formData, customer_id: '' });
-                          setCustomerSearchQuery('');
-                        }}
-                      >
-                        <Text style={styles.clearButtonText}>✕</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {customerSearchQuery && customerSearchQuery.length > 0 && (
-                    <View style={styles.customerSuggestions}>
-                      {customers
-                        .filter(customer =>
-                          customer.name.toLowerCase().includes(customerSearchQuery.toLowerCase())
-                        )
-                        .slice(0, 5)
-                        .map((customer) => (
-                          <TouchableOpacity
-                            key={customer.id}
-                            style={styles.customerSuggestion}
-                            onPress={() => {
-                              setFormData({ ...formData, customer_id: customer.id });
-                              setCustomerSearchQuery('');
-                            }}
-                          >
-                            <Text style={styles.customerSuggestionName}>{customer.name}</Text>
-                            {customer.email && (
-                              <Text style={styles.customerSuggestionEmail}>{customer.email}</Text>
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.formGroup}>
-                  <TouchableOpacity
-                    style={styles.checkboxContainer}
-                    onPress={() => setFormData({ ...formData, paid: !formData.paid })}
-                  >
-                    <View style={[styles.checkbox, formData.paid && styles.checkboxChecked]}>
-                      {formData.paid && <CheckCircle size={12} color={colors.white} />}
-                    </View>
-                    <Text style={styles.checkboxText}>Pago</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.checkboxContainer}
-                    onPress={() => setFormData({ ...formData, recurring: !formData.recurring })}
-                  >
-                    <View style={[styles.checkbox, formData.recurring && styles.checkboxChecked]}>
-                      {formData.recurring && <RotateCcw size={12} color={colors.white} />}
-                    </View>
-                    <Text style={styles.checkboxText}>Recorrente</Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-
-              <View style={styles.modalButtons}>
-                <Button
-                  title="Cancelar"
-                  onPress={closeExpenseModal}
-                  variant="outline"
-                  style={styles.modalButton}
-                />
-                <Button
-                  title="Salvar"
-                  onPress={saveExpense}
-                  style={styles.modalButton}
-                />
-              </View>
-            </View>
-          </View>
-        </Modal>
-      )}
+      {/* Modal de Despesa */}
+      {React.createElement(ExpenseModal as any, {
+        visible: showExpenseModal,
+        onClose: closeExpenseModal,
+        onSave: saveExpense,
+        formData: formData,
+        setFormData: setFormData,
+        customers: customers,
+        customerSearchQuery: customerSearchQuery,
+        setCustomerSearchQuery: setCustomerSearchQuery,
+        editingExpense: editingExpense,
+        styles: styles,
+        colors: colors,
+      })}
 
       {/* Modal Detalhes Venda (Premium) */}
-      <Modal visible={saleDetailsVisible} transparent animationType="fade" onRequestClose={closeSaleDetails}>
-        <View style={styles.detailModalOverlay}>
-          <View style={styles.detailModalBox}>
-            <Text style={styles.detailModalTitle}>Itens da Venda #{saleDetailSale?.id}</Text>
-            {saleDetailLoading && (
-              <View style={{ alignItems: 'center', marginVertical: 12 }}>
-                <ActivityIndicator color={colors.primary} />
-                <Text style={{ color: colors.textSecondary, marginTop: 6, fontSize: 13 }}>Carregando itens...</Text>
-              </View>
-            )}
-            {!saleDetailLoading && saleDetailItems.length === 0 && (
-              <Text style={styles.detailEmpty}>Nenhum item encontrado.</Text>
-            )}
-            {!saleDetailLoading && saleDetailItems.length > 0 && (
-              <ScrollView style={{ marginTop: 8, marginBottom: 12 }} showsVerticalScrollIndicator={true}>
-                {saleDetailItems.map(it => (
-                  <View key={it.id} style={styles.detailRow}>
-                    <View style={{ flex: 1, paddingRight: 8 }}>
-                      <Text style={styles.detailName}>{it.product_name || `Produto #${it.product_id}`}</Text>
-                      <Text style={styles.detailSub}>Qtde: {it.quantity} x R$ {formatCurrency(it.unit_price)}</Text>
-                    </View>
-                    <Text style={styles.detailTotal}>R$ {formatCurrency(it.total_item)}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-            <View style={styles.detailActions}>
-              <TouchableOpacity style={styles.detailCloseBtn} onPress={closeSaleDetails}>
-                <Text style={styles.detailCloseText}>Fechar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <SaleDetailsModal
+        visible={saleDetailsVisible}
+        onClose={closeSaleDetails}
+        sale={saleDetailSale}
+        items={saleDetailItems}
+        loading={saleDetailLoading}
+        styles={styles}
+        colors={colors}
+        formatCurrency={formatCurrency}
+      />
     </View>
   );
 }

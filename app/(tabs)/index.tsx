@@ -5,24 +5,19 @@ import {
   Text, 
   StyleSheet, 
   ScrollView, 
-  TouchableOpacity,
   Dimensions 
 } from 'react-native';
 import { 
   TrendingUp, 
   DollarSign, 
   Package, 
-  Users,
-  Download
-} from 'lucide-react-native';
+  Users} from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Alert, Platform } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -65,7 +60,15 @@ export default function Dashboard() {
     try {
       const { loadDashboardStats } = await import('@/lib/data-loader');
       const data = await loadDashboardStats();
-      setStats(data);
+      setStats({
+        dailySales: data.dailySales ?? 0,
+        dailyRevenue: data.dailyRevenue ?? 0,
+        lowStockCount: data.lowStockCount ?? 0,
+        totalCustomers: data.totalCustomers ?? 0,
+        monthlyExpenses: data.monthlyExpenses ?? 0,
+        topProducts: (data.topProducts || []) as Array<{ name: string; sales: number }>,
+        peakHours: (data.peakHours || []) as Array<{ hour: string; sales: number }>,
+      });
     } catch (error) {
       console.error('Error loading dashboard data:', error);
       setStats({

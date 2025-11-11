@@ -5,18 +5,12 @@ import {
   StyleSheet, 
   ScrollView,
   TouchableOpacity,
-  FlatList,
-  Modal,
   Alert
 } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { 
   Plus, 
   Minus, 
-  ShoppingCart,
-  Filter,
-  Search,
-  X,
   Edit,
   Trash2
 } from 'lucide-react-native';
@@ -25,7 +19,6 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { isPremium } from '@/lib/premium';
 import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp, toTitleCase } from '@/lib/utils';
 import db from '@/lib/db';
 

@@ -123,10 +123,10 @@ function ThemeBootstrapper() {
     (async () => {
       try {
         const { loadStoreSettings } = await import('@/lib/data-loader');
-        const data = await loadStoreSettings();
+        const data = await loadStoreSettings() as any;
         if (data && typeof data === 'object') {
-          if ((data).primaryColor) setPrimaryColor((data).primaryColor);
-          if ((data).secondaryColor) setSecondaryColor((data).secondaryColor);
+          if (data.primaryColor) setPrimaryColor(data.primaryColor);
+          if (data.secondaryColor) setSecondaryColor(data.secondaryColor);
         }
       } catch (e) {
         // ignore
