@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { View, Text } from 'react-native';
 
 type Item = { label: string; value: number; color?: string };
