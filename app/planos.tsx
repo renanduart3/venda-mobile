@@ -472,7 +472,7 @@ export default function Planos() {
           disabled={isLoading}
         />
         <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginTop: 6 }}>
-          Reinstalou ou trocou de aparelho? Toque em "Restaurar Compras" para
+          Reinstalou ou trocou de aparelho? Toque em &quot;Restaurar Compras&quot; para
           recuperar sua assinatura ativa pela conta da loja.
         </Text>
 
