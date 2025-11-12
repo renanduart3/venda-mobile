@@ -523,7 +523,7 @@ const filteredExpenses = useMemo(() => {
       }))
     ];
     return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [expenses, sales, customers, selectedMonth]);
+  }, [expenses, sales, customers, selectedMonth, monthExpenses, monthSales]);
 
   const filteredData = useMemo(() => {
     switch (reportFilter) {
