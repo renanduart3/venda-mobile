@@ -127,6 +127,6 @@ Após a limpeza, o repositório deve ter:
 
 ---
 
-**Data do Report:** 5 de Fevereiro, 2026  
+**Data do Relatório:** 5 de Fevereiro, 2026  
 **Gerado por:** Copilot Coding Agent  
 **PR Relacionado:** #7

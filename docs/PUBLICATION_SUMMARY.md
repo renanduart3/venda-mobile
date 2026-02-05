@@ -27,7 +27,7 @@
 
 **PRINCIPAIS SEÇÕES**:
 - ✅ Itens já configurados
-- 🔴 Itens críticos pendentes (keystor, política, assets)
+- 🔴 Itens críticos pendentes (keystore, política, assets)
 - 🧪 Testes obrigatórios (funcionais, IAP, qualidade, segurança)
 - 📝 Conteúdo da loja
 - 🔧 Configurações técnicas finais
