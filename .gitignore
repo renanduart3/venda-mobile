@@ -31,6 +31,10 @@ yarn-error.*
 .env*.local
 .env
 
+# gradle signing configs with passwords
+android/gradle.properties
+gradle.properties
+
 # typescript
 *.tsbuildinfo
 

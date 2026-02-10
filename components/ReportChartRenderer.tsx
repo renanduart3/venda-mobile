@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { View, Text } from 'react-native';
 import BarChart from './charts/BarChart';
 
