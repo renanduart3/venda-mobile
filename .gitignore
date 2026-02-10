@@ -33,3 +33,19 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# android builds
+android/app/build/
+android/build/
+android/.gradle/
+*.apk
+*.aab
+
+# scripts auxiliares (manter no repo local apenas)
+# cleanup.bat
+# gerar-build.bat
+# criar-keystore.bat
+
+# scripts temporarios (nao commitar)
+temp-git-check.bat
+git-analysis.bat

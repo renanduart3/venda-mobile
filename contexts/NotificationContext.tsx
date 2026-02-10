@@ -54,15 +54,25 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const addNotification = React.useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'resolved'>) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-      resolved: false,
-    };
-
+    const now = Date.now();
     setNotifications(prev => {
-      const updated = [newNotification, ...prev];
+      // dedupe: don't add if same type+title+message unresolved in the last 12h
+      const twelveHours = 12 * 60 * 60 * 1000;
+      const exists = prev.some(n =>
+        !n.resolved &&
+        n.type === notification.type &&
+        n.title === notification.title &&
+        n.message === notification.message &&
+        (now - n.timestamp) < twelveHours
+      );
+      if (exists) return prev;
+      const newNotification: Notification = {
+        ...notification,
+        id: now.toString(),
+        timestamp: now,
+        resolved: false,
+      };
+      const updated = [newNotification, ...prev].slice(0, 100); // cap list to 100
       saveNotifications(updated);
       return updated;
     });
