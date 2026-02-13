@@ -39,7 +39,8 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
   if (hasNewApi) {
     try {
       if (isSelect) {
-        const rows: any[] = await (db as any).getAllAsync(sql, params);
+        // Use getAllAsync directly without prepared statements to avoid "shared object already released" error
+        const rows: any[] = await (db as any).getAllAsync(sql, ...params);
         return {
           rows: {
             length: rows.length,
@@ -48,12 +49,23 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
           },
         };
       } else {
-        // Mutating statement
-        await (db as any).runAsync(sql, params);
-        return { rows: { length: 0, item: () => null, _array: [] } };
+        // Mutating statement - use runAsync directly
+        const result = await (db as any).runAsync(sql, ...params);
+        return {
+          rows: { length: 0, item: () => null, _array: [] },
+          insertId: result?.lastInsertRowId,
+          rowsAffected: result?.changes || 0
+        };
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('SQL execution error (new API):', error, sql);
+      // Log more details about the error
+      if (error.message) {
+        console.error('Error message:', error.message);
+      }
+      if (error.stack) {
+        console.error('Error stack:', error.stack);
+      }
       throw error;
     }
   }
@@ -202,12 +214,12 @@ export async function initDB() {
         if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) return trimmed;
         // DD-MM-YYYY -> convert
         if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
-          const [dd,mm,yyyy] = trimmed.split('-');
+          const [dd, mm, yyyy] = trimmed.split('-');
           return `${dd}/${mm}/${yyyy}`;
         }
         // ISO or YYYY-MM-DD
         if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
-          const [yyyy,mm,dd] = trimmed.slice(0,10).split('-');
+          const [yyyy, mm, dd] = trimmed.slice(0, 10).split('-');
           return `${dd}/${mm}/${yyyy}`;
         }
         return trimmed; // leave as is; parser later can decide
@@ -220,7 +232,7 @@ export async function initDB() {
         let dd = parseInt(ddStr, 10);
         const mm = parseInt(mmStr, 10);
         const yyyy = parseInt(yyyyStr, 10);
-        const thirty = new Set([4,6,9,11]);
+        const thirty = new Set([4, 6, 9, 11]);
         if (mm === 2) {
           const max = isLeap(yyyy) ? 29 : 28;
           if (dd > max) dd = max; // clamp invalid Feb date
@@ -229,7 +241,7 @@ export async function initDB() {
         } else if (dd > 31) {
           dd = 31;
         }
-        return `${String(dd).padStart(2,'0')}/${mmStr}/${yyyyStr}`;
+        return `${String(dd).padStart(2, '0')}/${mmStr}/${yyyyStr}`;
       };
 
       for (const r of rows) {

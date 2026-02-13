@@ -52,8 +52,8 @@
 ## 🔧 Configurações Necessárias para Publicação
 
 ### Google Play Console
-- [ ] Criar conta de desenvolvedor
-- [ ] Configurar página da loja
+- [x] Criar conta de desenvolvedor
+- [x] Configurar página da loja
 - [ ] Upload de screenshots
 - [ ] Configurar descrição do app
 - [ ] Definir categoria
