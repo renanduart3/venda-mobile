@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.renanduart3.vendamobile"
     },
     "web": {
       "bundler": "metro",
@@ -28,14 +29,30 @@
             "kotlinVersion": "2.1.10"
           }
         }
+      ],
+      [
+        "react-native-bootsplash/expo",
+        {
+          "logo": "./assets/splash.png",
+          "backgroundColor": "#4A90E2"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
     },
     "android": {
-      "permissions": [],
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "BILLING"
+      ],
       "package": "com.renanduart3.vendamobile",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/playstore-icon.png",
+        "backgroundColor": "#4A90E2"
+      },
       "navigationBar": {
         "backgroundColor": "#3b3b4c",
         "barStyle": "light-content"

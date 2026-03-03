@@ -10,7 +10,7 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
-import * as SplashScreen from 'expo-splash-screen';
+import BootSplash from 'react-native-bootsplash';
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useEffect as useEffect2 } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -21,7 +21,8 @@ import db from '@/lib/db';
 import { initializeIAP, restorePurchases } from '@/lib/iap';
 import { checkSubscriptionFromDatabase, isPremium } from '@/lib/premium';
 
-SplashScreen.preventAutoHideAsync();
+// BootSplash handles preventing auto hide via native configuration
+// SplashScreen.preventAutoHideAsync();
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -70,9 +71,9 @@ export default function RootLayout() {
 
     initializeApp();
 
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
+      if (fontsLoaded || fontError) {
+        BootSplash.hide({ fade: true });
+      }
   }, [fontsLoaded, fontError]);
 
   if (!fontsLoaded && !fontError) {

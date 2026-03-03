@@ -23,8 +23,16 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
 import { subscriptionManager, SUBSCRIPTION_PLANS, SubscriptionPlan } from '@/lib/subscriptions';
-import { enablePremium, disablePremium, isPremium } from '@/lib/premium';
+import { enablePremium, disablePremium, isPremium, getPremiumStatus } from '@/lib/premium';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { 
+  checkEarlyAdopterAvailability, 
+  EarlyAdopterStatus, 
+  formatPrice, 
+  PRICING,
+  getPricingDisplayInfo,
+  PricingDisplayInfo
+} from '@/lib/early-adopters';
 
 export default function Planos() {
   const { colors } = useTheme();
@@ -32,6 +40,9 @@ export default function Planos() {
   const [selectedPlan, setSelectedPlan] = useState<string>('yearly');
   const [isLoading, setIsLoading] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
+  const [earlyAdopterStatus, setEarlyAdopterStatus] = useState<EarlyAdopterStatus | null>(null);
+  const [monthlyPricing, setMonthlyPricing] = useState<PricingDisplayInfo | null>(null);
+  const [yearlyPricing, setYearlyPricing] = useState<PricingDisplayInfo | null>(null);
   // Increase spacer: ensure minimum 24, cap at 36 for very tall gesture areas
   const bottomSpacer = Math.max(24, Math.min((insets.bottom || 0) + 12, 36));
 
@@ -40,12 +51,40 @@ export default function Planos() {
 
   useEffect(() => {
     loadActiveSubscription();
+    loadEarlyAdopterStatus();
   }, []);
+
+  const loadEarlyAdopterStatus = async () => {
+    try {
+      const status = await checkEarlyAdopterAvailability();
+      setEarlyAdopterStatus(status);
+
+      // Carregar pricing info para ambos os planos
+      const monthlyInfo = await getPricingDisplayInfo('premium_monthly_plan');
+      const yearlyInfo = await getPricingDisplayInfo('premium_yearly_plan');
+      
+      setMonthlyPricing(monthlyInfo);
+      setYearlyPricing(yearlyInfo);
+    } catch (error) {
+      console.error('Erro ao carregar status early adopter:', error);
+    }
+  };
 
   const loadActiveSubscription = async () => {
     try {
       const subscription = await subscriptionManager.getActiveSubscription();
-      setActiveSubscription(subscription);
+      const premiumStatus = await getPremiumStatus();
+      
+      // Se tiver acesso vitalício ou premium via iap_status, priorizar isso
+      if (premiumStatus.isPremium) {
+        setActiveSubscription({
+          isActive: true,
+          planId: premiumStatus.productId?.includes('monthly') ? 'monthly' : 'yearly',
+          hasLifetimeAccess: premiumStatus.hasLifetimeAccess
+        });
+      } else {
+        setActiveSubscription(subscription);
+      }
     } catch (error) {
       console.error('Erro ao carregar assinatura:', error);
     }
@@ -154,9 +193,47 @@ export default function Planos() {
       flex: 1,
       padding: 20,
     },
+
+    earlyAdopterBanner: {
+      backgroundColor: colors.primary + '15',
+      borderLeftWidth: 4,
+      borderLeftColor: colors.primary,
+      padding: 16,
+      borderRadius: 8,
+      marginBottom: 24,
+    },
+    earlyAdopterBannerUrgent: {
+      backgroundColor: colors.warning + '15',
+      borderLeftColor: colors.warning,
+    },
+    earlyAdopterTitle: {
+      fontSize: 18,
+      fontFamily: 'Inter-Bold',
+      color: colors.primary,
+      marginBottom: 8,
+    },
+    earlyAdopterTitleUrgent: {
+      color: colors.warning,
+    },
+    earlyAdopterDescription: {
+      fontSize: 14,
+      fontFamily: 'Inter-Regular',
+      color: colors.text,
+      lineHeight: 20,
+      marginBottom: 8,
+    },
+    earlyAdopterCounter: {
+      fontSize: 16,
+      fontFamily: 'Inter-SemiBold',
+      color: colors.primary,
+      marginTop: 4,
+    },
+    earlyAdopterCounterUrgent: {
+      color: colors.warning,
+    },
     heroSection: {
       alignItems: 'center',
-      marginBottom: 32,
+      marginBottom: 24,
     },
     heroTitle: {
       fontSize: 28,
@@ -234,6 +311,25 @@ export default function Planos() {
     },
     planPrice: {
       alignItems: 'flex-end',
+    },
+    originalPriceStriked: {
+      fontSize: 16,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+      textDecorationLine: 'line-through',
+      marginBottom: 4,
+    },
+    discountBadge: {
+      backgroundColor: colors.success,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 8,
+      marginBottom: 6,
+    },
+    discountBadgeText: {
+      fontSize: 11,
+      fontFamily: 'Inter-Bold',
+      color: colors.white,
     },
     priceValue: {
       fontSize: 24,
@@ -357,11 +453,57 @@ export default function Planos() {
           </Text>
         </View>
 
+        {/* Early Adopter Banner */}
+        {earlyAdopterStatus?.isAvailable && (
+          <View style={[
+            styles.earlyAdopterBanner,
+            earlyAdopterStatus.slotsRemaining <= 50 && styles.earlyAdopterBannerUrgent
+          ]}>
+            <Text style={[
+              styles.earlyAdopterTitle,
+              earlyAdopterStatus.slotsRemaining <= 50 && styles.earlyAdopterTitleUrgent
+            ]}>
+              {earlyAdopterStatus.slotsRemaining <= 10 
+                ? '⚡ ÚLTIMAS VAGAS - Preço de Lançamento' 
+                : earlyAdopterStatus.slotsRemaining <= 50
+                ? '🔥 VAGAS LIMITADAS - Preço Especial'
+                : '🎉 Preço de Lançamento - Vagas Limitadas!'}
+            </Text>
+            <Text style={styles.earlyAdopterDescription}>
+              Garanta o <Text style={{ fontFamily: 'Inter-Bold' }}>preço de lançamento</Text> sendo um dos primeiros <Text style={{ fontFamily: 'Inter-Bold' }}>300 usuários</Text>! Após isso, o preço aumenta 90% e você pagará R$ 19,99/mês ou R$ 199,99/ano.
+            </Text>
+            <Text style={styles.earlyAdopterDescription}>
+              🔒 <Text style={{ fontFamily: 'Inter-Bold' }}>Garantia vitalicia:</Text> Se você assinar agora, mantém o preço de lançamento para sempre!
+            </Text>
+            <Text style={[
+              styles.earlyAdopterCounter,
+              earlyAdopterStatus.slotsRemaining <= 50 && styles.earlyAdopterCounterUrgent
+            ]}>
+              {earlyAdopterStatus.slotsRemaining <= 10
+                ? `⏰ Apenas ${earlyAdopterStatus.slotsRemaining} vagas restantes!`
+                : `📈 ${earlyAdopterStatus.currentCount}/${earlyAdopterStatus.totalSlots} usuários - ${earlyAdopterStatus.slotsRemaining} vagas disponíveis`}
+            </Text>
+          </View>
+        )}
+
+        {!earlyAdopterStatus?.isAvailable && earlyAdopterStatus !== null && (
+          <View style={[styles.earlyAdopterBanner, { backgroundColor: colors.warning + '15', borderLeftColor: colors.warning }]}>
+            <Text style={[styles.earlyAdopterTitle, { color: colors.warning }]}>
+              ⚠️ Preço Aumentou em 90%
+            </Text>
+            <Text style={styles.earlyAdopterDescription}>
+              As 300 vagas com preço de lançamento foram preenchidas. O preço agora é <Text style={{ fontFamily: 'Inter-Bold' }}>R$ 19,99/mês</Text> ou <Text style={{ fontFamily: 'Inter-Bold' }}>R$ 199,99/ano</Text>.
+            </Text>
+          </View>
+        )}
+
         {/* Active Subscription */}
         {activeSubscription && (
-          <Card style={styles.activeSubscription}>
-            <Text style={styles.activeText}>
-              ✅ Você já possui uma assinatura ativa!
+          <Card style={[styles.activeSubscription, activeSubscription.hasLifetimeAccess && { borderColor: colors.primary, backgroundColor: colors.primary + '10' }]}>
+            <Text style={[styles.activeText, activeSubscription.hasLifetimeAccess && { color: colors.primary }]}>
+              {activeSubscription.hasLifetimeAccess 
+                ? '⭐ Você possui Acesso Vitalício!' 
+                : '✅ Você já possui uma assinatura ativa!'}
             </Text>
           </Card>
         )}
@@ -419,13 +561,51 @@ export default function Planos() {
                   <Text style={styles.planDescription} numberOfLines={2} ellipsizeMode="tail">{currentPlan.description}</Text>
                 </View>
                 <View style={styles.planPrice}>
-                  <Text style={styles.priceValue}>{currentPlan.price}</Text>
+                  {/* Early Adopter Pricing */}
+                  {(() => {
+                    const pricing = selectedPlan === 'monthly' ? monthlyPricing : yearlyPricing;
+                    if (pricing && pricing.isEarlyAdopterPrice) {
+                      return (
+                        <>
+                          <View style={styles.discountBadge}>
+                            <Text style={styles.discountBadgeText}>PREÇO DE LANÇAMENTO</Text>
+                          </View>
+                          <Text style={styles.priceValue}>{formatPrice(pricing.currentPrice)}</Text>
+                          <Text style={styles.originalPriceStriked}>
+                            Depois: {formatPrice(pricing.originalPrice)}
+                          </Text>
+                        </>
+                      );
+                    } else if (pricing && !pricing.isEarlyAdopterPrice) {
+                      return (
+                        <>
+                          <View style={[styles.discountBadge, { backgroundColor: colors.warning }]}>
+                            <Text style={styles.discountBadgeText}>PREÇO AUMENTADO</Text>
+                          </View>
+                          <Text style={styles.priceValue}>{formatPrice(pricing.currentPrice)}</Text>
+                        </>
+                      );
+                    } else {
+                      return (
+                        <Text style={styles.priceValue}>{currentPlan.price}</Text>
+                      );
+                    }
+                  })()}
                   <Text style={styles.pricePeriod}>
                     {currentPlan.period === 'monthly' ? '/mês' : '/ano'}
                   </Text>
-                  {currentPlan.savings && (
+                  {currentPlan.savings && !earlyAdopterStatus?.isAvailable && (
                     <View style={styles.savings}>
                       <Text style={styles.savingsText}>{currentPlan.savings}</Text>
+                    </View>
+                  )}
+                  {earlyAdopterStatus?.isAvailable && (
+                    <View style={styles.savings}>
+                      <Text style={styles.savingsText}>
+                        {selectedPlan === 'monthly' 
+                          ? `Economize ${formatPrice(PRICING.MONTHLY.regular - PRICING.MONTHLY.earlyAdopter)}/mês`
+                          : `Economize ${formatPrice(PRICING.YEARLY.regular - PRICING.YEARLY.earlyAdopter)}/ano`}
+                      </Text>
                     </View>
                   )}
                 </View>

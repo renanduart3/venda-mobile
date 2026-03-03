@@ -121,8 +121,43 @@ venda-mobile/
 - **TypeScript** - Superset JavaScript com tipagem estática
 - **Expo Router** - Navegação baseada em arquivos
 - **SQLite** - Banco de dados local
+- **Supabase** - Backend, autenticação e banco PostgreSQL
 - **React Native IAP** - Compras dentro do aplicativo
 - **Lucide Icons** - Biblioteca de ícones
+
+## 🗄️ Configuração do Banco de Dados (Supabase)
+
+O app usa Supabase para armazenar dados de assinaturas e controle de early adopters.
+
+### Setup Rápido:
+
+1. **Crie uma conta no Supabase:** https://supabase.com
+2. **Crie um novo projeto**
+3. **Execute o script de setup:**
+   - Acesse: Dashboard → SQL Editor → New Query
+   - Copie todo o conteúdo de `supabase/setup-database.sql`
+   - Cole no editor e clique em "Run"
+4. **Configure as variáveis de ambiente** (veja seção abaixo)
+
+O script `setup-database.sql` cria:
+- Tabelas: `iap_status`, `early_adopter_config`
+- Functions: `get_early_adopter_status()`, `claim_early_adopter_slot()`, `check_early_adopter_available()`
+- Policies de segurança (RLS)
+- Índices e triggers
+- Views para consultas
+
+### Testar o Setup:
+
+```sql
+-- Verificar status do programa early adopter
+SELECT * FROM get_early_adopter_status();
+
+-- Verificar se há vagas
+SELECT check_early_adopter_available();
+
+-- Ver configuração atual
+SELECT * FROM early_adopter_config;
+```
 
 ## 📝 Scripts Disponíveis
 
@@ -141,6 +176,12 @@ EXPO_PUBLIC_SUPABASE_URL=sua_url_aqui
 EXPO_PUBLIC_SUPABASE_ANON_KEY=sua_chave_aqui
 ```
 
+**Onde encontrar essas informações:**
+- Acesse seu projeto no Supabase Dashboard
+- Clique em ⚙️ Settings → API
+- Copie o **Project URL** → EXPO_PUBLIC_SUPABASE_URL
+- Copie o **anon/public key** → EXPO_PUBLIC_SUPABASE_ANON_KEY
+
 ## 📱 Funcionalidades
 
 - ✅ Gestão de vendas
@@ -153,7 +194,56 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=sua_chave_aqui
 - ✅ Backup e sincronização
 - ✅ Compras in-app (remoção de anúncios)
 
-## 🐛 Resolução de Problemas
+## � Publicação na Google Play Store
+
+### 📚 Documentação Completa
+
+Documentação completa para publicação está em: **[docs/publicacao/](docs/publicacao/)**
+
+**👉 Comece aqui:** [docs/publicacao/COMECE_AQUI.md](docs/publicacao/COMECE_AQUI.md)
+
+Outros guias:
+- ✅ [CHECKLIST.md](docs/publicacao/CHECKLIST.md) - Acompanhe seu progresso
+- 💎 [CONFIGURACAO_PRODUTOS_IAP.md](docs/publicacao/CONFIGURACAO_PRODUTOS_IAP.md) - Config Google Play
+- 📝 [TEXTOS_GOOGLE_PLAY.md](docs/publicacao/TEXTOS_GOOGLE_PLAY.md) - Textos prontos
+
+### 💳 In-App Purchases (IAP)
+
+O sistema de pagamentos está **100% implementado** e pronto para uso:
+
+- ✅ Código IAP completo ([lib/iap.ts](lib/iap.ts))
+- ✅ Gerenciamento de assinaturas ([lib/subscriptions.ts](lib/subscriptions.ts))
+- ✅ **Sistema Early Adopter** ([lib/early-adopters.ts](lib/early-adopters.ts))
+- ✅ UI de planos premium ([app/planos.tsx](app/planos.tsx))
+- ✅ Product IDs configurados:
+  - `premium_monthly_plan` - R$ 9,90/mês (primeiros 300) → R$ 19,99/mês (após)
+  - `premium_yearly_plan` - R$ 99,90/ano (primeiros 300) → R$ 199,99/ano (após)
+
+#### 🎯 Sistema Early Adopter
+
+O app implementa um sistema de preços escalonado:
+
+- **Primeiros 300 usuários:** Pagam preço de lançamento (R$ 9,90/mês ou R$ 99,90/ano)
+- **Após 300 usuários:** Preço aumenta 90% (R$ 19,99/mês ou R$ 199,99/ano)
+- **Garantia vitalícia:** Early adopters mantêm o preço de lançamento para sempre
+- **Contador:** Inicia em 20 (seed) e incrementa até 320 (300 vagas reais)
+- **Rastreamento:** Sistema Supabase com tabela `early_adopter_config` e funções SQL
+
+Implementação completa em:
+- `lib/early-adopters.ts` - Lógica de negócio e verificação de vagas
+- `supabase/setup-database.sql` - Script de setup completo do banco
+- `app/planos.tsx` - UI com contador e badges de preço
+
+**Atenção:** IAP só funciona em builds de produção via Internal Testing. Nunca funciona em desenvolvimento local!
+- Anual: R$ 99,90 → **R$ 9,99/ano**
+- Desconto mantido enquanto assinatura ativa
+- Sistema completo de rastreamento no Supabase
+
+📖 Documentação completa: [EARLY_ADOPTER_SYSTEM.md](docs/publicacao/EARLY_ADOPTER_SYSTEM.md)
+
+**Atenção:** IAP só funciona em builds de produção via Internal Testing. Nunca funciona em desenvolvimento local!
+
+## �🐛 Resolução de Problemas
 
 ### Erro ao instalar dependências
 
@@ -185,7 +275,7 @@ yarn android
 
 ```bash
 # Limpe o cache do Metro
-npx expo start --clear
+expo start --clear
 ```
 
 ## 📄 Licença

@@ -187,13 +187,20 @@ export default function PremiumPage() {
                   <View style={{ marginLeft: 12 }}>
                     <View style={styles.statusBadge}>
                       <Check size={14} color="#fff" />
-                      <Text style={styles.statusText}>Premium Ativo</Text>
+                      <Text style={styles.statusText}>
+                        {premiumStatus.hasLifetimeAccess ? 'Acesso Vitalício' : 'Premium Ativo'}
+                      </Text>
                     </View>
                   </View>
                 </View>
-                {premiumStatus.expiryDate && (
+                {premiumStatus.expiryDate && !premiumStatus.hasLifetimeAccess && (
                   <Text style={styles.expiryText}>
                     Válido até: {formatExpiryDate(premiumStatus.expiryDate)}
+                  </Text>
+                )}
+                {premiumStatus.hasLifetimeAccess && (
+                  <Text style={styles.expiryText}>
+                    Concedido pelo desenvolvedor
                   </Text>
                 )}
                 {premiumStatus.productId && (

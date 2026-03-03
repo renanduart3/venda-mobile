@@ -1,5 +1,5 @@
 package com.renanduart3.vendamobile
-import expo.modules.splashscreen.SplashScreenManager
+
 
 import android.os.Build
 import android.os.Bundle
@@ -17,9 +17,7 @@ class MainActivity : ReactActivity() {
     // coloring the background, status bar, and navigation bar.
     // This is required for expo-splash-screen.
     // setTheme(R.style.AppTheme);
-    // @generated begin expo-splashscreen - expo prebuild (DO NOT MODIFY) sync-f3ff59a738c56c9a6119210cb55f0b613eb8b6af
-    SplashScreenManager.registerOnActivity(this)
-    // @generated end expo-splashscreen
+
     super.onCreate(null)
   }
 

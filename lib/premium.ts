@@ -8,6 +8,7 @@ const PRODUCT_ID_KEY = 'premium_product_id';
 
 export interface PremiumStatus {
   isPremium: boolean;
+  hasLifetimeAccess?: boolean;
   expiryDate?: string;
   platform?: 'android' | 'ios';
   productId?: string;
@@ -42,11 +43,14 @@ export async function isPremium(): Promise<boolean> {
 export async function getPremiumStatus(): Promise<PremiumStatus> {
   try {
     const isPremiumFlag = await AsyncStorage.getItem(PREMIUM_KEY);
+    const hasLifetimeFlag = await AsyncStorage.getItem('has_lifetime_v1');
     const expiryDate = await AsyncStorage.getItem(EXPIRY_DATE_KEY);
     const platform = await AsyncStorage.getItem(PLATFORM_KEY);
     const productId = await AsyncStorage.getItem(PRODUCT_ID_KEY);
 
-    if (isPremiumFlag === '1' && expiryDate) {
+    const hasLifetimeAccess = hasLifetimeFlag === '1';
+
+    if (isPremiumFlag === '1' && expiryDate && !hasLifetimeAccess) {
       const expiry = new Date(expiryDate);
       const now = new Date();
       if (expiry <= now) {
@@ -57,6 +61,7 @@ export async function getPremiumStatus(): Promise<PremiumStatus> {
 
     return {
       isPremium: isPremiumFlag === '1',
+      hasLifetimeAccess,
       expiryDate: expiryDate || undefined,
       platform: (platform as 'android' | 'ios') || undefined,
       productId: productId || undefined,
@@ -70,10 +75,16 @@ export async function getPremiumStatus(): Promise<PremiumStatus> {
 export async function enablePremium(
   expiryDate?: string,
   platform?: 'android' | 'ios',
-  productId?: string
+  productId?: string,
+  hasLifetimeAccess?: boolean
 ) {
   try {
     await AsyncStorage.setItem(PREMIUM_KEY, '1');
+    if (hasLifetimeAccess) {
+      await AsyncStorage.setItem('has_lifetime_v1', '1');
+    } else {
+      await AsyncStorage.removeItem('has_lifetime_v1');
+    }
     if (expiryDate) {
       await AsyncStorage.setItem(EXPIRY_DATE_KEY, expiryDate);
     }
@@ -93,6 +104,7 @@ export async function enablePremium(
 export async function disablePremium() {
   try {
     await AsyncStorage.removeItem(PREMIUM_KEY);
+    await AsyncStorage.removeItem('has_lifetime_v1');
     await AsyncStorage.removeItem(EXPIRY_DATE_KEY);
     await AsyncStorage.removeItem(PLATFORM_KEY);
     await AsyncStorage.removeItem(PRODUCT_ID_KEY);
@@ -204,9 +216,12 @@ export async function checkSubscriptionFromDatabase(): Promise<{ success: boolea
       return { success: false };
     }
 
-    if (data && data.is_premium) {
+    if (data && (data.is_premium || data.has_lifetime_access)) {
       const expiryDate = data.expiry_date;
-      if (expiryDate) {
+      const hasLifetime = !!data.has_lifetime_access;
+
+      // Se tiver acesso vitalício, ignorar expiração
+      if (!hasLifetime && expiryDate) {
         const expiry = new Date(expiryDate);
         const now = new Date();
         if (expiry <= now) {
@@ -215,11 +230,12 @@ export async function checkSubscriptionFromDatabase(): Promise<{ success: boolea
         }
       }
 
-      await enablePremium(data.expiry_date, data.platform, data.product_id);
+      await enablePremium(data.expiry_date, data.platform, data.product_id, hasLifetime);
       return {
         success: true,
         status: {
           isPremium: true,
+          hasLifetimeAccess: hasLifetime,
           expiryDate: data.expiry_date,
           platform: data.platform,
           productId: data.product_id,
