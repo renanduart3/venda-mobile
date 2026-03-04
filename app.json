@@ -31,7 +31,7 @@
         }
       ],
       [
-        "react-native-bootsplash/expo",
+        "react-native-bootsplash",
         {
           "logo": "./assets/splash.png",
           "backgroundColor": "#4A90E2"

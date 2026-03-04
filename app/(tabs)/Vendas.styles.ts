@@ -213,3 +213,7 @@ export const createVendasStyles = (colors: any) => StyleSheet.create({
   },
     
 });
+
+
+// Workaround para o Expo Router não reclamar de ausência de default export:
+export default function StyleRoute() { return null; }

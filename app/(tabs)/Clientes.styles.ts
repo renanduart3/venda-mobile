@@ -189,3 +189,7 @@ export const createClientesStyles = (colors: any) => StyleSheet.create({
     flex: 1,
   },
 });
+
+
+// Workaround para o Expo Router não reclamar de ausência de default export:
+export default function StyleRoute() { return null; }

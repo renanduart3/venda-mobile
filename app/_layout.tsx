@@ -62,7 +62,7 @@ export default function RootLayout() {
         await checkSubscriptionFromDatabase();
         const premium = await isPremium();
         if (!premium) {
-          try { await restorePurchases(); } catch {}
+          try { await restorePurchases(); } catch { }
         }
       } catch (err) {
         console.error('Error initializing app:', err);
@@ -71,9 +71,11 @@ export default function RootLayout() {
 
     initializeApp();
 
-      if (fontsLoaded || fontError) {
-        BootSplash.hide({ fade: true });
-      }
+    if (fontsLoaded || fontError) {
+      try {
+        BootSplash.hide({ fade: true }).catch(() => { });
+      } catch (e) { }
+    }
   }, [fontsLoaded, fontError]);
 
   if (!fontsLoaded && !fontError) {

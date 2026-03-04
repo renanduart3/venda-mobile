@@ -656,3 +656,7 @@ export const createFinancasStyles = (colors: any) => StyleSheet.create({
         color: colors.textSecondary,
       }
 });
+
+
+// Workaround para o Expo Router não reclamar de ausência de default export:
+export default function StyleRoute() { return null; }
