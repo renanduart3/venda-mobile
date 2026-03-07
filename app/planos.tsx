@@ -23,12 +23,12 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router } from 'expo-router';
 import { subscriptionManager, SUBSCRIPTION_PLANS, SubscriptionPlan } from '@/lib/subscriptions';
-import { enablePremium, disablePremium, isPremium, getPremiumStatus } from '@/lib/premium';
+import { isPremium, getPremiumStatus } from '@/lib/premium';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { 
-  checkEarlyAdopterAvailability, 
-  EarlyAdopterStatus, 
-  formatPrice, 
+import {
+  checkEarlyAdopterAvailability,
+  EarlyAdopterStatus,
+  formatPrice,
   PRICING,
   getPricingDisplayInfo,
   PricingDisplayInfo
@@ -43,10 +43,9 @@ export default function Planos() {
   const [earlyAdopterStatus, setEarlyAdopterStatus] = useState<EarlyAdopterStatus | null>(null);
   const [monthlyPricing, setMonthlyPricing] = useState<PricingDisplayInfo | null>(null);
   const [yearlyPricing, setYearlyPricing] = useState<PricingDisplayInfo | null>(null);
-  // Increase spacer: ensure minimum 24, cap at 36 for very tall gesture areas
-  const bottomSpacer = Math.max(24, Math.min((insets.bottom || 0) + 12, 36));
 
-  // Obter o plano atual baseado na seleção
+  const bottomSpacer = Math.max(32, (insets.bottom || 0) + 24);
+
   const currentPlan = SUBSCRIPTION_PLANS.find(plan => plan.id === selectedPlan);
 
   useEffect(() => {
@@ -59,10 +58,9 @@ export default function Planos() {
       const status = await checkEarlyAdopterAvailability();
       setEarlyAdopterStatus(status);
 
-      // Carregar pricing info para ambos os planos
       const monthlyInfo = await getPricingDisplayInfo('premium_monthly_plan');
       const yearlyInfo = await getPricingDisplayInfo('premium_yearly_plan');
-      
+
       setMonthlyPricing(monthlyInfo);
       setYearlyPricing(yearlyInfo);
     } catch (error) {
@@ -74,8 +72,7 @@ export default function Planos() {
     try {
       const subscription = await subscriptionManager.getActiveSubscription();
       const premiumStatus = await getPremiumStatus();
-      
-      // Se tiver acesso vitalício ou premium via iap_status, priorizar isso
+
       if (premiumStatus.isPremium) {
         setActiveSubscription({
           isActive: true,
@@ -92,7 +89,7 @@ export default function Planos() {
 
   const handleSubscribe = async () => {
     if (!currentPlan) return;
-    
+
     if (Platform.OS !== 'android') {
       Alert.alert(
         'Disponível no Android',
@@ -105,10 +102,9 @@ export default function Planos() {
     setIsLoading(true);
     try {
       const result = await subscriptionManager.purchaseSubscription(currentPlan);
-      
+
       if (result.success) {
         Alert.alert('Sucesso!', 'Assinatura ativada com sucesso!');
-        // Atualizar estado local
         await loadActiveSubscription();
       } else {
         Alert.alert('Erro', result.error || 'Não foi possível processar a assinatura.');
@@ -130,34 +126,6 @@ export default function Planos() {
       }
     } catch (error) {
       Alert.alert('Erro', 'Não foi possível restaurar as compras.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDevEnablePremium = async () => {
-    setIsLoading(true);
-    try {
-      const now = new Date();
-      const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      await enablePremium(in30Days, 'android', currentPlan?.sku || 'dev_sku');
-      Alert.alert('Dev', 'Premium ativado localmente por 30 dias.');
-      await loadActiveSubscription();
-    } catch (e) {
-      Alert.alert('Erro', 'Não foi possível ativar premium em dev.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDevDisablePremium = async () => {
-    setIsLoading(true);
-    try {
-      await disablePremium();
-      Alert.alert('Dev', 'Premium desativado.');
-      await loadActiveSubscription();
-    } catch (e) {
-      Alert.alert('Erro', 'Não foi possível desativar premium em dev.');
     } finally {
       setIsLoading(false);
     }
@@ -193,7 +161,6 @@ export default function Planos() {
       flex: 1,
       padding: 20,
     },
-
     earlyAdopterBanner: {
       backgroundColor: colors.primary + '15',
       borderLeftWidth: 4,
@@ -313,11 +280,11 @@ export default function Planos() {
       alignItems: 'flex-end',
     },
     originalPriceStriked: {
-      fontSize: 16,
+      fontSize: 14,
       fontFamily: 'Inter-Regular',
       color: colors.textSecondary,
       textDecorationLine: 'line-through',
-      marginBottom: 4,
+      marginBottom: 2,
     },
     discountBadge: {
       backgroundColor: colors.success,
@@ -426,6 +393,20 @@ export default function Planos() {
     return <Icon size={16} color={colors.success} />;
   };
 
+  const isEarlyAdopter = earlyAdopterStatus?.isAvailable ?? true;
+  const pricing = selectedPlan === 'monthly' ? monthlyPricing : yearlyPricing;
+
+  // Preços reais baseados no status
+  const currentPrice = isEarlyAdopter
+    ? (selectedPlan === 'monthly' ? PRICING.MONTHLY.earlyAdopter : PRICING.YEARLY.earlyAdopter)
+    : (selectedPlan === 'monthly' ? PRICING.MONTHLY.regular : PRICING.YEARLY.regular);
+
+  const regularPrice = selectedPlan === 'monthly' ? PRICING.MONTHLY.regular : PRICING.YEARLY.regular;
+  const slotsUsed = earlyAdopterStatus?.currentCount ?? 20;
+  const totalSlots = earlyAdopterStatus?.totalSlots ?? 300;
+  const slotsRemaining = earlyAdopterStatus?.slotsRemaining ?? (totalSlots - slotsUsed);
+  const isUrgent = slotsRemaining <= 50;
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -438,61 +419,63 @@ export default function Planos() {
         </TouchableOpacity>
         <Text style={styles.title}>Planos Premium</Text>
       </View>
-      {__DEV__ && (
-        <View style={{ alignSelf: 'center', marginTop: 8, backgroundColor: colors.warning + '20', borderColor: colors.warning, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-          <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.warning }}>Desenvolvimento</Text>
-        </View>
-      )}
 
-  <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: bottomSpacer }}
+      >
         {/* Hero Section */}
         <View style={styles.heroSection}>
           <Text style={styles.heroTitle}>Proteja Seus Dados</Text>
           <Text style={styles.heroSubtitle}>
-            Com o Premium, seus dados ficam seguros com backup automático e você tem acesso a relatórios detalhados
+            Com o Premium, você extrai o máximo da sua operação: exporte sua base de dados manualmente com segurança e destrave os relatórios inteligentes de performance.
           </Text>
         </View>
 
-        {/* Early Adopter Banner */}
-        {earlyAdopterStatus?.isAvailable && (
-          <View style={[
-            styles.earlyAdopterBanner,
-            earlyAdopterStatus.slotsRemaining <= 50 && styles.earlyAdopterBannerUrgent
-          ]}>
-            <Text style={[
-              styles.earlyAdopterTitle,
-              earlyAdopterStatus.slotsRemaining <= 50 && styles.earlyAdopterTitleUrgent
-            ]}>
-              {earlyAdopterStatus.slotsRemaining <= 10 
-                ? '⚡ ÚLTIMAS VAGAS - Preço de Lançamento' 
-                : earlyAdopterStatus.slotsRemaining <= 50
-                ? '🔥 VAGAS LIMITADAS - Preço Especial'
-                : '🎉 Preço de Lançamento - Vagas Limitadas!'}
+        {/* Early Adopter Banner — vagas disponíveis */}
+        {isEarlyAdopter && earlyAdopterStatus !== null && (
+          <View style={[styles.earlyAdopterBanner, isUrgent && styles.earlyAdopterBannerUrgent]}>
+            <Text style={[styles.earlyAdopterTitle, isUrgent && styles.earlyAdopterTitleUrgent]}>
+              {slotsRemaining <= 10 ? '⚡ Últimas vagas!' : '🎉 Preço de lançamento'}
             </Text>
             <Text style={styles.earlyAdopterDescription}>
-              Garanta o <Text style={{ fontFamily: 'Inter-Bold' }}>preço de lançamento</Text> sendo um dos primeiros <Text style={{ fontFamily: 'Inter-Bold' }}>300 usuários</Text>! Após isso, o preço aumenta 90% e você pagará R$ 19,99/mês ou R$ 199,99/ano.
+              90% de desconto vitalício para os primeiros 300 clientes da plataforma.
             </Text>
             <Text style={styles.earlyAdopterDescription}>
-              🔒 <Text style={{ fontFamily: 'Inter-Bold' }}>Garantia vitalicia:</Text> Se você assinar agora, mantém o preço de lançamento para sempre!
+              <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
+                R$ {PRICING.MONTHLY.earlyAdopter.toFixed(2).replace('.', ',')} mensal
+              </Text>
+              {'  ou  '}
+              <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
+                R$ {PRICING.YEARLY.earlyAdopter.toFixed(2).replace('.', ',')} anual
+              </Text>
+              {' — para sempre.'}
             </Text>
-            <Text style={[
-              styles.earlyAdopterCounter,
-              earlyAdopterStatus.slotsRemaining <= 50 && styles.earlyAdopterCounterUrgent
-            ]}>
-              {earlyAdopterStatus.slotsRemaining <= 10
-                ? `⏰ Apenas ${earlyAdopterStatus.slotsRemaining} vagas restantes!`
-                : `📈 ${earlyAdopterStatus.currentCount}/${earlyAdopterStatus.totalSlots} usuários - ${earlyAdopterStatus.slotsRemaining} vagas disponíveis`}
+            <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 10 }}>
+              Após os 300: R$ {PRICING.MONTHLY.regular.toFixed(2).replace('.', ',')}/mês ou R$ {PRICING.YEARLY.regular.toFixed(2).replace('.', ',')}/ano (preço normal)
+            </Text>
+            <Text style={[styles.earlyAdopterCounter, isUrgent && styles.earlyAdopterCounterUrgent]}>
+              {`${slotsUsed}/${totalSlots} clientes — restam ${slotsRemaining} vagas`}
             </Text>
           </View>
         )}
 
-        {!earlyAdopterStatus?.isAvailable && earlyAdopterStatus !== null && (
-          <View style={[styles.earlyAdopterBanner, { backgroundColor: colors.warning + '15', borderLeftColor: colors.warning }]}>
-            <Text style={[styles.earlyAdopterTitle, { color: colors.warning }]}>
-              ⚠️ Preço Aumentou em 90%
+        {/* Banner — vagas esgotadas */}
+        {!isEarlyAdopter && earlyAdopterStatus !== null && (
+          <View style={[styles.earlyAdopterBanner, { backgroundColor: colors.surface, borderLeftColor: colors.textSecondary }]}>
+            <Text style={[styles.earlyAdopterTitle, { color: colors.text }]}>
+              Plano Premium
             </Text>
             <Text style={styles.earlyAdopterDescription}>
-              As 300 vagas com preço de lançamento foram preenchidas. O preço agora é <Text style={{ fontFamily: 'Inter-Bold' }}>R$ 19,99/mês</Text> ou <Text style={{ fontFamily: 'Inter-Bold' }}>R$ 199,99/ano</Text>.
+              Assinatura mensal por{' '}
+              <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
+                R$ {PRICING.MONTHLY.regular.toFixed(2).replace('.', ',')}/mês
+              </Text>{' '}
+              ou anual por{' '}
+              <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
+                R$ {PRICING.YEARLY.regular.toFixed(2).replace('.', ',')}/ano
+              </Text>.
             </Text>
           </View>
         )}
@@ -501,54 +484,37 @@ export default function Planos() {
         {activeSubscription && (
           <Card style={[styles.activeSubscription, activeSubscription.hasLifetimeAccess && { borderColor: colors.primary, backgroundColor: colors.primary + '10' }]}>
             <Text style={[styles.activeText, activeSubscription.hasLifetimeAccess && { color: colors.primary }]}>
-              {activeSubscription.hasLifetimeAccess 
-                ? '⭐ Você possui Acesso Vitalício!' 
+              {activeSubscription.hasLifetimeAccess
+                ? '⭐ Você possui Acesso Vitalício!'
                 : '✅ Você já possui uma assinatura ativa!'}
             </Text>
           </Card>
         )}
 
-        {/* Toggle de Período */}
+        {/* Toggle Mensal / Anual */}
         <View style={styles.toggleContainer}>
           <TouchableOpacity
-            style={[
-              styles.toggleOption,
-              selectedPlan === 'monthly' ? styles.toggleOptionActive : styles.toggleOptionInactive
-            ]}
+            style={[styles.toggleOption, selectedPlan === 'monthly' ? styles.toggleOptionActive : styles.toggleOptionInactive]}
             onPress={() => setSelectedPlan('monthly')}
           >
-            <Text style={[
-              styles.toggleText,
-              selectedPlan === 'monthly' ? styles.toggleTextActive : styles.toggleTextInactive
-            ]}>
+            <Text style={[styles.toggleText, selectedPlan === 'monthly' ? styles.toggleTextActive : styles.toggleTextInactive]}>
               Mensal
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[
-              styles.toggleOption,
-              selectedPlan === 'yearly' ? styles.toggleOptionActive : styles.toggleOptionInactive
-            ]}
+            style={[styles.toggleOption, selectedPlan === 'yearly' ? styles.toggleOptionActive : styles.toggleOptionInactive]}
             onPress={() => setSelectedPlan('yearly')}
           >
-            <Text style={[
-              styles.toggleText,
-              selectedPlan === 'yearly' ? styles.toggleTextActive : styles.toggleTextInactive
-            ]}>
+            <Text style={[styles.toggleText, selectedPlan === 'yearly' ? styles.toggleTextActive : styles.toggleTextInactive]}>
               Anual
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Plano Selecionado */}
+        {/* Card do Plano */}
         {currentPlan && (
           <View style={styles.plansContainer}>
-            <Card
-              style={[
-                styles.planCard,
-                selectedPlan === 'yearly' && styles.planCardRecommended
-              ]}
-            >
+            <Card style={[styles.planCard, selectedPlan === 'yearly' && styles.planCardRecommended]}>
               {selectedPlan === 'yearly' && (
                 <View style={styles.recommendedBadge}>
                   <Text style={styles.recommendedText}>RECOMENDADO</Text>
@@ -560,49 +526,30 @@ export default function Planos() {
                   <Text style={styles.planName} numberOfLines={1} ellipsizeMode="tail">{currentPlan.name}</Text>
                   <Text style={styles.planDescription} numberOfLines={2} ellipsizeMode="tail">{currentPlan.description}</Text>
                 </View>
+
                 <View style={styles.planPrice}>
-                  {/* Early Adopter Pricing */}
-                  {(() => {
-                    const pricing = selectedPlan === 'monthly' ? monthlyPricing : yearlyPricing;
-                    if (pricing && pricing.isEarlyAdopterPrice) {
-                      return (
-                        <>
-                          <View style={styles.discountBadge}>
-                            <Text style={styles.discountBadgeText}>PREÇO DE LANÇAMENTO</Text>
-                          </View>
-                          <Text style={styles.priceValue}>{formatPrice(pricing.currentPrice)}</Text>
-                          <Text style={styles.originalPriceStriked}>
-                            Depois: {formatPrice(pricing.originalPrice)}
-                          </Text>
-                        </>
-                      );
-                    } else if (pricing && !pricing.isEarlyAdopterPrice) {
-                      return (
-                        <>
-                          <View style={[styles.discountBadge, { backgroundColor: colors.warning }]}>
-                            <Text style={styles.discountBadgeText}>PREÇO AUMENTADO</Text>
-                          </View>
-                          <Text style={styles.priceValue}>{formatPrice(pricing.currentPrice)}</Text>
-                        </>
-                      );
-                    } else {
-                      return (
-                        <Text style={styles.priceValue}>{currentPlan.price}</Text>
-                      );
-                    }
-                  })()}
+                  {isEarlyAdopter ? (
+                    <>
+                      <View style={styles.discountBadge}>
+                        <Text style={styles.discountBadgeText}>PREÇO DE LANÇAMENTO</Text>
+                      </View>
+                      <Text style={styles.priceValue}>{formatPrice(currentPrice)}</Text>
+                      <Text style={styles.originalPriceStriked}>
+                        Depois: {formatPrice(regularPrice)}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.priceValue}>{formatPrice(currentPrice)}</Text>
+                    </>
+                  )}
                   <Text style={styles.pricePeriod}>
                     {currentPlan.period === 'monthly' ? '/mês' : '/ano'}
                   </Text>
-                  {currentPlan.savings && !earlyAdopterStatus?.isAvailable && (
-                    <View style={styles.savings}>
-                      <Text style={styles.savingsText}>{currentPlan.savings}</Text>
-                    </View>
-                  )}
-                  {earlyAdopterStatus?.isAvailable && (
+                  {isEarlyAdopter && (
                     <View style={styles.savings}>
                       <Text style={styles.savingsText}>
-                        {selectedPlan === 'monthly' 
+                        {selectedPlan === 'monthly'
                           ? `Economize ${formatPrice(PRICING.MONTHLY.regular - PRICING.MONTHLY.earlyAdopter)}/mês`
                           : `Economize ${formatPrice(PRICING.YEARLY.regular - PRICING.YEARLY.earlyAdopter)}/ano`}
                       </Text>
@@ -622,74 +569,53 @@ export default function Planos() {
                 ))}
               </View>
 
-              {__DEV__ || Platform.OS !== 'android' ? (
-                <Button
-                  title={activeSubscription ? 'Assinatura Ativa' : 'Assinar (disponível no build)'}
-                  onPress={() => {}}
-                  disabled
-                  style={styles.subscribeButton}
-                  variant="outline"
-                />
-              ) : (
-                <Button
-                  title={activeSubscription ? 'Assinatura Ativa' : 'Assinar Agora'}
-                  onPress={handleSubscribe}
-                  disabled={!!activeSubscription || isLoading}
-                  style={styles.subscribeButton}
-                  variant="primary"
-                />
-              )}
+              {/* Botão de Assinar */}
+              <Button
+                title={(() => {
+                  if (isLoading) return 'Processando...';
+                  if (activeSubscription?.hasLifetimeAccess) return 'Acesso Vitalício Desbloqueado';
+
+                  if (activeSubscription) {
+                    if (activeSubscription.planId === selectedPlan) {
+                      return 'Seu Plano Atual';
+                    } else if (activeSubscription.planId === 'monthly' && selectedPlan === 'yearly') {
+                      return 'Fazer Upgrade para Anual';
+                    } else {
+                      return 'Assinatura Ativa';
+                    }
+                  }
+
+                  return 'Assinar Agora';
+                })()}
+                onPress={handleSubscribe}
+                disabled={
+                  isLoading ||
+                  !!activeSubscription?.hasLifetimeAccess ||
+                  (activeSubscription && !(activeSubscription.planId === 'monthly' && selectedPlan === 'yearly'))
+                }
+                style={styles.subscribeButton}
+                variant={(activeSubscription && !(activeSubscription.planId === 'monthly' && selectedPlan === 'yearly')) ? 'outline' : 'primary'}
+              />
             </Card>
           </View>
         )}
 
-        {/* Restore Purchases */}
-        <Button
-          title="Restaurar Compras"
-          onPress={handleRestorePurchases}
-          variant="outline"
-          style={styles.restoreButton}
-          disabled={isLoading}
-        />
-        <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginTop: 6 }}>
-          Reinstalou ou trocou de aparelho? Toque em &quot;Restaurar Compras&quot; para
-          recuperar sua assinatura ativa pela conta da loja.
-        </Text>
-
-        {__DEV__ && (
-          <View style={{ marginTop: 12, gap: 8 }}>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center' }}>
-              Ferramentas de desenvolvimento (somente em dev)
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center' }}>
-              <Button
-                title="Ativar Premium (Dev)"
-                onPress={handleDevEnablePremium}
-                variant="secondary"
-                size="sm"
-              />
-              <Button
-                title="Desativar Premium (Dev)"
-                onPress={handleDevDisablePremium}
-                variant="outline"
-                size="sm"
-              />
-            </View>
-          </View>
-        )}
+        {/* O botão 'Restaurar Compras' foi removido aqui.
+            A arquitetura atual do app recupera, protege e reativa 
+            orgânica e silenciosamente os dados offline das licenças de forma automática 
+            no login e via cache TTL na camada do lib/premium.ts 
+        */}
 
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            <Text style={{fontWeight: 'bold'}}>Plano Gratuito:</Text> Gestão comercial básica, mas sem proteção de dados{'\n'}
-            <Text style={{fontWeight: 'bold'}}>Plano Premium:</Text> Backup automático, relatórios detalhados e exportação{'\n\n'}
+            <Text style={{ fontWeight: 'bold' }}>Plano Gratuito:</Text> Gestão comercial básica com operações fundamentais{'\n'}
+            <Text style={{ fontWeight: 'bold' }}>Plano Premium:</Text> Cópia de segurança manual, inteligência de negócio e relatórios detalhados{'\n\n'}
             As assinaturas são gerenciadas pelo Google Play Store.{'\n'}
             Você pode cancelar a qualquer momento nas configurações da sua conta.
           </Text>
         </View>
       </ScrollView>
-      {/* Discreet dark bottom area to align with system nav region on this screen only */}
-      <View style={{ backgroundColor: colors.bottombar, height: bottomSpacer }} />
     </View>
   );
 }

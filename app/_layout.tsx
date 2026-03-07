@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { View, ActivityIndicator } from 'react-native';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { useFonts } from 'expo-font';
 import {
@@ -10,7 +11,12 @@ import {
   Inter_600SemiBold,
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
-import BootSplash from 'react-native-bootsplash';
+import { SplashScreen } from 'expo-router';
+import * as Linking from 'expo-linking';
+
+// Prevent the splash screen from auto-hiding before asset loading is complete.
+SplashScreen.preventAutoHideAsync();
+
 import { ThemeProvider, useTheme } from '@/contexts/ThemeContext';
 import { useEffect as useEffect2 } from 'react';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -20,27 +26,52 @@ import { OfflineProvider } from '@/contexts/OfflineContext';
 import db from '@/lib/db';
 import { initializeIAP, restorePurchases } from '@/lib/iap';
 import { checkSubscriptionFromDatabase, isPremium } from '@/lib/premium';
+import { supabase } from '@/lib/supabase';
 
-// BootSplash handles preventing auto hide via native configuration
-// SplashScreen.preventAutoHideAsync();
-
+// SplashScreen handles preventing auto hide
+// SplashScreen.preventAutoHideAsync(); is called above
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (loading) return;
-    const inLogin = segments.join('/') === 'login';
+
+    const inLogin = segments[0] === 'login';
+
     if (!isAuthenticated && !inLogin) {
       router.replace('/login');
-    }
-    if (isAuthenticated && inLogin) {
+      // Espera um pouco para garantir que a rota de navegação mudou e não piscar a interface
+      setTimeout(() => setIsReady(true), 150);
+    } else if (isAuthenticated && inLogin) {
       router.replace('/');
+      setTimeout(() => setIsReady(true), 150);
+    } else {
+      setIsReady(true);
     }
   }, [isAuthenticated, loading, segments]);
 
-  if (loading) return null;
+  // Se estiver carregando auth ou ainda roteando, exibe uma tela de transição suave
+  if (loading || !isReady) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#4f46e5" />
+      </View>
+    );
+  }
+
+  // Double check de segurança
+  const inLogin = segments[0] === 'login';
+  if (!isAuthenticated && !inLogin) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#4f46e5" />
+      </View>
+    );
+  }
+
   return <>{children}</>;
 }
 
@@ -72,11 +103,43 @@ export default function RootLayout() {
     initializeApp();
 
     if (fontsLoaded || fontError) {
-      try {
-        BootSplash.hide({ fade: true }).catch(() => { });
-      } catch (e) { }
+      SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  // ─── Deep Link Listener — captura o callback do Google OAuth ─────────────
+  useEffect(() => {
+    const handleDeepLink = async (url: string) => {
+      if (!url) return;
+      // Supabase envia o code PKCE ou access_token no deep link lojaapp://
+      if (typeof url === 'string' && (url.includes('code=') || url.includes('access_token'))) {
+        try {
+          const codeMatch = url.match(/code=([^&#]+)/);
+          if (codeMatch && codeMatch[1]) {
+            await supabase.auth.exchangeCodeForSession(codeMatch[1]);
+          } else if (url.includes('access_token=')) {
+            // Implicit flow web compat, usually not used in iOS/Android PKCE
+            console.warn('[Auth] Implicit flow access_token recebido');
+          }
+          // onAuthStateChange vai detectar SIGNED_IN → AuthGate navega para '/'
+        } catch (e) {
+          console.warn('[Auth] Falha ao processar deep link:', e);
+        }
+      }
+    };
+
+    // 1. App em background — recebe o deep link via evento
+    const subscription = Linking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
+    });
+
+    // 2. App estava fechado — foi aberto diretamente pelo deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink(url);
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   if (!fontsLoaded && !fontError) {
     return null;

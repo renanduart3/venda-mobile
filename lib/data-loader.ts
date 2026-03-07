@@ -12,11 +12,11 @@ async function loadData<T>(mockData: T, realDataLoader?: () => Promise<T>): Prom
   if (USE_MOCKS) {
     return mockData;
   }
-  
+
   if (realDataLoader) {
     return await realDataLoader();
   }
-  
+
   // Return empty array or default value for the type
   return (Array.isArray(mockData) ? [] : {}) as T;
 }
@@ -124,23 +124,9 @@ export async function loadDashboardStats() {
     ]);
 
     const now = new Date();
-    const currentMonth = now.toISOString().slice(0, 7);
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const monthlySales = sales.filter((sale: any) =>
-      typeof sale.created_at === 'string' && sale.created_at.startsWith(currentMonth)
-    );
-    const monthlyRevenue = monthlySales.reduce(
-      (sum: number, sale: any) => sum + Number(sale.total ?? 0),
-      0
-    );
-
-    const lowStockCount = products.filter(
-      (product: any) =>
-        typeof product.stock === 'number' &&
-        typeof product.min_stock === 'number' &&
-        product.stock <= product.min_stock
-    ).length;
-
+    // Converte qualquer formato de data para "yyyy-MM" (suporta ISO e dd/mm/yyyy legado)
     const toMonthKey = (dateString: any): string | null => {
       if (!dateString) return null;
       if (typeof dateString === 'string' && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(dateString)) {
@@ -161,6 +147,24 @@ export async function loadDashboardStats() {
       return null;
     };
 
+    // Filtra vendas do mês — suporta ISO e dd/mm/yyyy legado
+    const monthlySales = sales.filter((sale: any) =>
+      toMonthKey(sale.created_at) === currentMonth
+    );
+    const monthlyRevenue = monthlySales.reduce(
+      (sum: number, sale: any) => sum + Number(sale.total ?? 0),
+      0
+    );
+
+    const lowStockCount = products.filter(
+      (product: any) =>
+        typeof product.stock === 'number' &&
+        typeof product.min_stock === 'number' &&
+        product.stock <= product.min_stock
+    ).length;
+
+
+
     const monthlyExpensesTotal = expenses
       .filter((expense: any) => {
         const monthKey = toMonthKey(expense.due_date) || expense.created_month || toMonthKey(expense.created_at);
@@ -178,7 +182,7 @@ export async function loadDashboardStats() {
       return acc;
     }, {} as Record<string, { name: string; sales: number }>);
 
-    const topProducts = Object.values(productSalesMap)
+    const topProducts = (Object.values(productSalesMap) as Array<{ name: string; sales: number }>)
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 5);
 
@@ -195,7 +199,7 @@ export async function loadDashboardStats() {
       return acc;
     }, {} as Record<string, number>);
 
-    const peakHours = Object.entries(peakHourMap)
+    const peakHours = (Object.entries(peakHourMap) as Array<[string, number]>)
       .map(([hour, salesCount]) => ({ hour, sales: salesCount }))
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 6);

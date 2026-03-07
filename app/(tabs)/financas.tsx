@@ -51,7 +51,10 @@ export default function Financas() {
   const [editingExpense, setEditingExpense] = useState<any>(null);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   // Month selection
-  const [selectedMonth, setSelectedMonth] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
   // Theme colors
   const { colors } = useTheme();
   const styles = createFinancasStyles(colors);

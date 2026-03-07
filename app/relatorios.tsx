@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Act
 import { Trophy, ChartPie, ChartLine, CreditCard, Clock, Users, UserX, DollarSign } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import ReportChartRenderer from '@/components/ReportChartRenderer';
-import { getUseReportsMock, setUseReportsMock } from '@/lib/dev-flags';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
 import { router } from 'expo-router';
@@ -26,7 +25,14 @@ const premiumReports = [
 const MAX_REPORT_MONTHS = 6;
 
 export default function Relatorios() {
-  const { colors } = useTheme();
+  const { colors, theme } = useTheme();
+
+  // Cores invertidas para a Modal dar grande contraste
+  const isDark = theme === 'dark';
+  const modalBg = isDark ? '#ffffff' : '#1e293b';
+  const modalText = isDark ? '#0f172a' : '#f1f5f9';
+  const modalTextSec = isDark ? '#475569' : '#94a3b8';
+  const modalBorder = isDark ? '#cbd5e1' : '#334155';
   const insets = useSafeAreaInsets();
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [selectedPeriod] = useState<'month' | 'year'>('month');
@@ -38,13 +44,10 @@ export default function Relatorios() {
   const [reportData, setReportData] = useState<any[]>([]);
   const [isFetchingReport, setIsFetchingReport] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
-  const [devUseMock, setDevUseMock] = useState<boolean>(false);
-
-  useEffect(() => { try { setDevUseMock(getUseReportsMock()); } catch {} }, []);
 
   useEffect(() => {
     (async () => {
-      try { setUserIsPremium(await isPremium()); } catch {}
+      try { setUserIsPremium(await isPremium()); } catch { }
     })();
   }, []);
 
@@ -81,7 +84,7 @@ export default function Relatorios() {
       }
     })();
     return () => { isMounted = false; };
-  }, [showPeriodModal, selectedReport, buildSelectedPeriodRange, devUseMock]);
+  }, [showPeriodModal, selectedReport, buildSelectedPeriodRange]);
 
   const handleCloseModal = () => {
     setShowPeriodModal(false);
@@ -150,24 +153,20 @@ export default function Relatorios() {
     card: { marginBottom: 12 },
     title: { fontSize: 16, color: colors.text },
     desc: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-    modal: { flex: 1, backgroundColor: '#00000066', justifyContent: 'center', alignItems: 'center' },
-    modalBox: { backgroundColor: colors.surface, borderRadius: 12, padding: 16, width: '90%', maxWidth: 420 },
-    modalTitle: { fontSize: 18, color: colors.text, marginBottom: 12 },
-    row: { flexDirection: 'row', gap: 8, marginTop: 12 },
-    btn: { padding: 12, borderRadius: 8, backgroundColor: colors.primary },
-    btnText: { color: colors.white, textAlign: 'center' },
-    btnOutline: { padding: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border },
-    btnOutlineText: { color: colors.text, textAlign: 'center' }
+    modal: { flex: 1, backgroundColor: '#00000088', justifyContent: 'center', alignItems: 'center' },
+    modalBox: { backgroundColor: modalBg, borderRadius: 12, padding: 16, width: '90%', maxWidth: 420 },
+    modalTitle: { fontSize: 18, color: modalText, marginBottom: 12, fontWeight: 'bold' },
+    row: { flexDirection: 'row', justifyContent: 'space-between', gap: 16, marginTop: 16 },
+    btn: { flex: 1, padding: 14, borderRadius: 8, backgroundColor: colors.primary },
+    btnText: { color: '#ffffff', textAlign: 'center', fontWeight: 'bold', fontSize: 15 },
+    btnOutline: { flex: 1, padding: 14, borderRadius: 8, borderWidth: 1, borderColor: modalBorder },
+    btnOutlineText: { color: modalText, textAlign: 'center', fontWeight: 'bold', fontSize: 15 }
   });
 
   return (
     <View style={styles.container}>
-  <Header title="Relatórios" showBack />
+      <Header title="Relatórios" showBack />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: Math.max(16, insets.bottom) }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <Text style={{ fontSize: 12, color: colors.textSecondary }}>Dev: Usar Mock de Relatórios</Text>
-          <Switch value={devUseMock} onValueChange={(v)=>{ setDevUseMock(v); try { setUseReportsMock(v); } catch {}; }} />
-        </View>
 
         {premiumReports.map((r) => (
           <TouchableOpacity key={r.id} onPress={() => handleReportPress(r)}>
@@ -194,7 +193,7 @@ export default function Relatorios() {
             {isFetchingReport && (
               <View style={{ alignItems: 'center', marginTop: 8 }}>
                 <ActivityIndicator color={colors.primary} />
-                <Text style={{ color: colors.textSecondary, marginTop: 6 }}>Carregando dados...</Text>
+                <Text style={{ color: modalTextSec, marginTop: 6 }}>Carregando dados...</Text>
               </View>
             )}
             {!!reportError && (

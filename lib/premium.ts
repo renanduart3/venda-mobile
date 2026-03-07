@@ -14,29 +14,75 @@ export interface PremiumStatus {
   productId?: string;
 }
 
-// Cache para evitar múltiplas chamadas
-let premiumCache: boolean | null = null;
+const LAST_DB_CHECK_KEY = 'premium_db_check_ms';
 
-export async function isPremium(): Promise<boolean> {
+export async function isPremium(forceRefresh = false): Promise<boolean> {
   try {
-    // Verificar status real do premium
-    const v = await AsyncStorage.getItem(PREMIUM_KEY);
-    if (v === '1') {
-      const expiryDate = await AsyncStorage.getItem(EXPIRY_DATE_KEY);
-      if (expiryDate) {
-        const expiry = new Date(expiryDate);
-        const now = new Date();
-        if (expiry <= now) {
-          await disablePremium();
+    const nowMs = Date.now();
+    const lastCheckStr = await AsyncStorage.getItem(LAST_DB_CHECK_KEY);
+    const lastCheckMs = lastCheckStr ? parseInt(lastCheckStr) : 0;
+
+    // Timeout de 24 horas = 24 * 60 * 60 * 1000 = 86400000 ms
+    const TWENTY_FOUR_HOURS = 86400000;
+    const isCacheExpired = nowMs - lastCheckMs > TWENTY_FOUR_HOURS;
+
+    // Se o TTL de 24h venceu OU o usuário forçou a atualização na tela de config
+    if (isCacheExpired || forceRefresh) {
+      const dbResult = await checkSubscriptionFromDatabase();
+
+      // Se a infraestrutura falhar (timeout/DNS/offline) NÃO DESTRUA O CACHE:
+      // O Supabase retorna { success: false } quando há erro de conexão (Catch block interno)
+      // MAS CUIDADO: Precisamos garantir que não barramos o usuário por erro de rede.
+      if (dbResult.success) {
+        // Sucesso = conseguiu falar com o Supabase com 100% de clareza
+
+        // Vamos checar agora as regras do banco puro que nos retornou
+        if (dbResult.status?.isPremium === true) {
+          await AsyncStorage.setItem(LAST_DB_CHECK_KEY, nowMs.toString());
+          return true;
+        } else if (dbResult.status?.isPremium === false) {
+          await AsyncStorage.setItem(LAST_DB_CHECK_KEY, nowMs.toString());
           return false;
         }
       }
+    }
+
+    // Camada de avaliação CACHED (Entrará aqui sempre que < 24h, OU se a chamada acima deu erro de rede - Tratamento Offline)
+    const isPremiumFlag = await AsyncStorage.getItem(PREMIUM_KEY);
+    const hasLifetimeFlag = await AsyncStorage.getItem('has_lifetime_v1');
+    const expiryDateStr = await AsyncStorage.getItem(EXPIRY_DATE_KEY);
+
+    // Regra A: Vitalício anotado no cache local passa instantâneo
+    if (hasLifetimeFlag === '1') {
       return true;
     }
+
+    // Regra B: Assinatura temporal ativa no cache local  
+    if (isPremiumFlag === '1') {
+      if (!expiryDateStr) {
+        // Flag premium ativa, mas data perdida. Tratado como erro fatal de memória. Rebaixa
+        await disablePremium();
+        return false;
+      }
+
+      const expiry = new Date(expiryDateStr);
+      if (expiry > new Date()) {
+        return true; // Dentro da validade local
+      } else {
+        // O cache expirou pela data de hoje.
+        // MAS ele tentou bater no banco no bloco if anterior e... falhou (se desaguou aqui de novo).
+        // Ponto de segurança (Boa fé offline): Ele foi renovado e não sincronizou? Ou ele perdeu? 
+        // Confiamos cegamente no Cache e mantemos habilitado até a internet dele voltar e dbResult voltar {success: true}
+        return true;
+      }
+    }
+
     return false;
   } catch (e) {
-    console.error('Error reading premium flag', e);
-    return false;
+    console.error('Error centralized premium check', e);
+    // Erro de runtime. Tentamos um último resgate na camada de memória.
+    const isPremiumFlag = await AsyncStorage.getItem(PREMIUM_KEY);
+    return isPremiumFlag === '1';
   }
 }
 

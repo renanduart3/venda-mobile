@@ -1,8 +1,8 @@
 import { Tabs } from 'expo-router';
-import { 
-  ShoppingCart, 
-  Package, 
-  Users, 
+import {
+  ShoppingCart,
+  Package,
+  Users,
   Wallet,
   Home
 } from 'lucide-react-native';
@@ -12,7 +12,7 @@ import { useSafeArea } from '@/hooks/useSafeArea';
 export default function TabLayout() {
   const { colors } = useTheme();
   const { bottom, hasBottomBar } = useSafeArea();
-  
+
   console.log('TabLayout colors:', colors);
   console.log('Safe area bottom:', bottom, 'hasBottomBar:', hasBottomBar);
 
@@ -20,8 +20,8 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-  tabBarActiveTintColor: colors.onBottombar,
-  tabBarInactiveTintColor: 'rgba(255,255,255,0.7)',
+        tabBarActiveTintColor: colors.onBottombar,
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.7)',
         tabBarStyle: {
           backgroundColor: colors.bottombar,
           borderTopColor: colors.border,
@@ -34,7 +34,7 @@ export default function TabLayout() {
           shadowColor: '#000',
           shadowOpacity: 0.05,
           shadowOffset: { width: 0, height: -2 },
-            shadowRadius: 6,
+          shadowRadius: 6,
           elevation: 8,
         },
         tabBarItemStyle: {
@@ -93,6 +93,10 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen name="Clientes.styles" options={{ href: null }} />
+      <Tabs.Screen name="Financas.styles" options={{ href: null }} />
+      <Tabs.Screen name="Produtos.styles" options={{ href: null }} />
+      <Tabs.Screen name="Vendas.styles" options={{ href: null }} />
     </Tabs>
   );
 }

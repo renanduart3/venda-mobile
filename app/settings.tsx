@@ -9,41 +9,31 @@ import {
   Clipboard,
   Modal,
   Platform,
+  ActivityIndicator, // Added ActivityIndicator
+  StyleSheet, // Added StyleSheet
 } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { TextInput } from '@/components/ui/TextInput';
-import {
-  ArrowLeft,
-  Store,
-  Palette,
-  Sun,
-  Moon,
-  Smartphone,
-  Crown,
-  Database,
-  Download,
-  Upload,
-  Trash2,
-  AlertTriangle,
-  Edit3,
-  Copy,
-  Plus,
-  X
-} from 'lucide-react-native';
+import { LogOut, Save, Download, Upload, User as UserIcon, Crown, Settings as SettingsIcon, Bell, Shield, Database, Trash2, ArrowLeft, Store, Edit3, Smartphone, Wifi, RefreshCw, X, Copy, Plus, Palette, Moon, Sun, AlertTriangle } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router, useFocusEffect } from 'expo-router';
-import { isPremium } from '@/lib/premium';
+import { isPremium, getPremiumStatus, PremiumStatus } from '@/lib/premium';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createSettingsStyles } from './settings.styles';
 import { getAgentMode, setAgentMode } from '@/lib/dev-flags';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Settings() {
   const { colors, theme, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // Cor de contraste para textos informativos no card de plano
+  const featureTextColor = theme === 'dark' ? '#cccccc' : '#2a2a2a';
+  const { user, signOut } = useAuth();
   const isOnline = true;
   const lastSync = null;
   const syncData = async () => { };
@@ -63,15 +53,17 @@ export default function Settings() {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [premium, setPremium] = useState(false);
+  const [premiumDetails, setPremiumDetails] = useState<PremiumStatus | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [agentEnabled, setAgentEnabled] = useState(false);
+  const [isCheckingPremium, setIsCheckingPremium] = useState(false);
 
   useEffect(() => {
     loadStoreSettings();
     loadPremium();
-    try { setAgentEnabled(getAgentMode()); } catch {}
+    try { setAgentEnabled(getAgentMode()); } catch { }
   }, []);
 
   // Recarregar status premium quando a tela ganhar foco
@@ -83,11 +75,28 @@ export default function Settings() {
 
   const loadPremium = async () => {
     try {
-      const premiumStatus = await isPremium();
-      setPremium(premiumStatus);
+      const isUserPremium = await isPremium();
+      const details = await getPremiumStatus();
+      setPremium(isUserPremium);
+      setPremiumDetails(details);
     } catch (e) {
       console.error('Erro carregando premium', e);
       setPremium(false);
+      setPremiumDetails(null);
+    }
+  };
+
+  const checkPremiumStatus = async () => {
+    setIsCheckingPremium(true);
+    try {
+      const isUserPremium = await isPremium(true); // Force refresh
+      setPremium(isUserPremium);
+      Alert.alert('Status Premium Atualizado', isUserPremium ? 'Você é um usuário Premium!' : 'Você não é um usuário Premium.');
+    } catch (error) {
+      console.error('Erro ao verificar plano:', error);
+      Alert.alert('Erro', 'Não foi possível verificar o status Premium.');
+    } finally {
+      setIsCheckingPremium(false);
     }
   };
 
@@ -219,7 +228,7 @@ export default function Settings() {
     setIsResetting(true);
     try {
       const { default: FileSystem } = await import('expo-file-system');
-  const dbPath = (FileSystem as any).documentDirectory + 'SQLite/venda.db';
+      const dbPath = (FileSystem as any).documentDirectory + 'SQLite/venda.db';
       const info = await FileSystem.getInfoAsync(dbPath);
       if (info.exists) {
         await FileSystem.deleteAsync(dbPath, { idempotent: true });
@@ -261,12 +270,12 @@ export default function Settings() {
       }
 
       // Criar cópia temporária com extensão amigável
-      const timestamp = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+      const timestamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
       const fileName = `loja_backup_${timestamp}.sqlite3`;
       const tempDir = (FileSystem as any).cacheDirectory + 'db-export/';
-      try { await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true }); } catch {}
+      try { await FileSystem.makeDirectoryAsync(tempDir, { intermediates: true }); } catch { }
       const tempPath = tempDir + fileName;
-      try { await FileSystem.deleteAsync(tempPath, { idempotent: true }); } catch {}
+      try { await FileSystem.deleteAsync(tempPath, { idempotent: true }); } catch { }
       await FileSystem.copyAsync({ from: dbPath, to: tempPath });
 
       if (!(await Sharing.isAvailableAsync())) {
@@ -275,9 +284,9 @@ export default function Settings() {
       }
 
       await Sharing.shareAsync(tempPath, {
-        dialogTitle: 'Compartilhar backup do banco',
-        mimeType: 'application/x-sqlite3',
-        UTI: 'public.item',
+        dialogTitle: 'Salvar backup do Banco de Dados',
+        mimeType: 'application/octet-stream', // Tipo genérico para arquivos binários
+        UTI: 'public.database', // Ajuda o iOS a entender o tipo de arquivo
       });
 
       // (Opcional) Não mostramos Alert de sucesso extra para não duplicar UI após Share Sheet
@@ -300,7 +309,7 @@ export default function Settings() {
     setIsImporting(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/x-sqlite3',
+        type: '*/*', // Permitindo qualquer tipo para não travar no Android 
         copyToCacheDirectory: true
       });
 
@@ -312,7 +321,7 @@ export default function Settings() {
       // Verificar se o arquivo é um banco SQLite válido
       const fileUri = result.assets[0].uri;
       const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      
+
       if (!fileInfo.exists) {
         Alert.alert('❌ Arquivo Inválido', 'Arquivo não encontrado.');
         setIsImporting(false);
@@ -339,8 +348,8 @@ export default function Settings() {
                 // Garante que a pasta SQLite exista (caso o app ainda não tenha inicializado o DB)
                 try {
                   await FileSystem.makeDirectoryAsync(sqliteDir, { intermediates: true });
-                } catch {}
-                
+                } catch { }
+
                 // Verificar se o banco atual existe e fazer backup
                 const currentDbInfo = await FileSystem.getInfoAsync(currentDbPath);
                 if (currentDbInfo.exists) {
@@ -357,7 +366,7 @@ export default function Settings() {
                 });
 
                 Alert.alert(
-                  '✅ Importação Concluída', 
+                  '✅ Importação Concluída',
                   'Banco de dados importado com sucesso!\n\n' +
                   'O banco anterior foi salvo como backup caso precise restaurar.'
                 );
@@ -382,8 +391,8 @@ export default function Settings() {
   // Usar estilos do arquivo externo
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
 
-  // Increase spacer: minimum 24, cap 36, add +12 to inset for comfort
-  const bottomSpacer = Math.max(24, Math.min((insets.bottom || 0) + 12, 36));
+  // Espaço igual ao das abas de navegação: safe area + folgão confortável
+  const bottomSpacer = Math.max(32, (insets.bottom || 0) + 24);
 
   return (
     <View style={styles.container}>
@@ -400,22 +409,65 @@ export default function Settings() {
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={{ paddingBottom: 16 }}
         showsVerticalScrollIndicator={false}
       >
+
+
         {/* Premium */}
         <View style={styles.section}>
           <Card>
-            <Text style={styles.sectionTitleWithMargin}>
-              <Crown size={20} color={colors.primary} />
-              Plano Atual
-            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, flexDirection: 'row', alignItems: 'center' }}>
+                <Crown size={20} color={colors.primary} style={{ marginRight: 8 }} />
+                Plano Atual
+              </Text>
+
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                  borderRadius: 20,
+                  backgroundColor: colors.surface,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  opacity: isCheckingPremium ? 0.6 : 1,
+                }}
+                disabled={isCheckingPremium}
+                onPress={async () => {
+                  setIsCheckingPremium(true);
+                  try {
+                    const hasPremium = await isPremium(true);
+                    const details = await getPremiumStatus();
+                    setPremium(hasPremium);
+                    setPremiumDetails(details);
+                  } catch (e) {
+                    console.error('Failed to verify premium quietly', e);
+                  } finally {
+                    setIsCheckingPremium(false);
+                  }
+                }}
+              >
+                {isCheckingPremium ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <RefreshCw size={14} color={colors.textSecondary} />
+                )}
+                <Text style={{ fontSize: 12, fontFamily: 'Inter-Medium', color: colors.textSecondary }}>
+                  {isCheckingPremium ? 'Verificando' : 'Atualizar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.premiumContainer}>
-              <Text style={styles.labelWithMargin}>Status</Text>
               <View style={styles.statusRow}>
                 <Text style={premium ? styles.premiumStatusText : styles.freeStatusText}>
-                  {premium ? 'Premium' : 'Gratuito'}
+                  {premium
+                    ? (premiumDetails?.hasLifetimeAccess ? 'Premium (Vitalício)' : 'Premium')
+                    : 'Gratuito'}
                 </Text>
                 {premium && (
                   <View style={styles.premiumBadgeContainer}>
@@ -425,12 +477,41 @@ export default function Settings() {
                   </View>
                 )}
               </View>
+
+              {premium && premiumDetails && (
+                <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>
+                  {!premiumDetails.hasLifetimeAccess && premiumDetails.productId && (
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: colors.text, marginBottom: 4 }}>
+                      Periodicidade: <Text style={{ color: colors.textSecondary }}>{premiumDetails.productId.includes('monthly') ? 'Mensal' : 'Anual'}</Text>
+                    </Text>
+                  )}
+                  {!premiumDetails.hasLifetimeAccess && premiumDetails.expiryDate && (
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: colors.text }}>
+                      Próx. vencimento: <Text style={{ color: colors.textSecondary }}>{new Date(premiumDetails.expiryDate).toLocaleDateString('pt-BR')}</Text>
+                    </Text>
+                  )}
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: featureTextColor, marginTop: 8 }}>
+                    ✓ Backup manual dos dados (exportação)
+                  </Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: featureTextColor, marginTop: 4 }}>
+                    ✓ Restauração de dados (importação)
+                  </Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: featureTextColor, marginTop: 4 }}>
+                    ✓ Relatórios detalhados em PDF
+                  </Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: featureTextColor, marginTop: 4 }}>
+                    ✓ Relatórios de inteligência de negócio
+                  </Text>
+                </View>
+              )}
             </View>
 
-            <Button
-              title="Gerenciar Plano"
-              onPress={() => router.push('/planos')}
-            />
+            <View style={{ marginTop: 12 }}>
+              <Button
+                title="Gerenciar Plano"
+                onPress={() => router.push('/planos')}
+              />
+            </View>
           </Card>
         </View>
 
@@ -530,7 +611,7 @@ export default function Settings() {
                   )}
                 </View>
               ))}
-              
+
               {isEditing && storeSettings.pixKeys.length < 4 && (
                 <TouchableOpacity
                   style={styles.addPixButton}
@@ -609,7 +690,7 @@ export default function Settings() {
               >
                 <Download size={20} color={premium ? colors.primary : colors.textSecondary} />
                 <Text style={premium ? styles.actionButtonTextPrimary : styles.actionButtonTextSecondary}>
-                  {isExporting ? 'Exportando...' : 'Backup do Banco'}
+                  {isExporting ? 'Exportando...' : 'Exportar Backup'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -622,7 +703,7 @@ export default function Settings() {
               >
                 <Upload size={20} color={premium ? colors.primary : colors.textSecondary} />
                 <Text style={premium ? styles.actionButtonTextPrimary : styles.actionButtonTextSecondary}>
-                  {isImporting ? 'Importando...' : 'Restaurar Banco'}
+                  {isImporting ? 'Importando...' : 'Importar Backup'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -686,25 +767,83 @@ export default function Settings() {
             <View style={styles.actionButton}>
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={() => { const next = !agentEnabled; setAgentEnabled(next); try { setAgentMode(next); } catch {}; }}
+                onPress={() => { const next = !agentEnabled; setAgentEnabled(next); try { setAgentMode(next); } catch { }; }}
               >
                 <Text style={styles.actionButtonText}>{agentEnabled ? 'Desativar Modo Agente' : 'Ativar Modo Agente'}</Text>
               </TouchableOpacity>
             </View>
           </Card>
         </View>
-  </ScrollView>
-    <View style={[styles.bottomSpacer, { height: bottomSpacer }]} />
+
+        {/* Perfil e Sair da conta */}
+        <View style={styles.section}>
+          <Card>
+            <Text style={styles.sectionTitleWithMargin}>
+              <UserIcon size={20} color={colors.primary} />
+              Seu Perfil
+            </Text>
+
+            {user ? (
+              <View style={{ marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ color: colors.primary, fontSize: 18, fontFamily: 'Inter-Bold' }}>
+                    {user.email?.charAt(0).toUpperCase() || '?'}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: colors.text, fontSize: 14, fontFamily: 'Inter-SemiBold' }}>
+                    Conta Conectada
+                  </Text>
+                  <Text style={{ color: colors.textSecondary, fontSize: 13, fontFamily: 'Inter-Regular' }} numberOfLines={1}>
+                    {user.email}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={{ marginBottom: 16 }}>
+                <Text style={{ color: colors.textSecondary, fontSize: 14, fontFamily: 'Inter-Regular' }}>Nenhum usuário logado</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.resetButton, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
+              onPress={() =>
+                Alert.alert(
+                  'Sair da conta',
+                  'Deseja desconectar sua conta? Você poderá entrar novamente quando quiser.',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    {
+                      text: 'Sair e Voltar para Login',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await signOut();
+                        router.replace('/login');
+                      },
+                    },
+                  ]
+                )
+              }
+            >
+              <LogOut size={20} color={colors.error} />
+              <Text style={[styles.resetButtonText, { color: colors.error }]}>Desconectar Conta</Text>
+            </TouchableOpacity>
+          </Card>
+        </View>
+      </ScrollView>
+
+      {/* Faixa colorida cobrindo a barra de gestos */}
+      <View style={[styles.bottomSpacer, { height: bottomSpacer }]} />
 
       {/* Modal de Reset */}
       <Modal visible={showResetModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-              <Text style={styles.modalTitle}>⚠️ ZONA DE PERIGO</Text>
-              <Text style={styles.modalText}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>⚠️ ZONA DE PERIGO</Text>
+            <Text style={styles.modalText}>
               Esta ação irá APAGAR TODOS os dados do aplicativo permanentemente. Digite exatamente:
             </Text>
-              <Text style={styles.modalTextBold}>
+            <Text style={styles.modalTextBold}>
               deletar o banco
             </Text>
             <TextInput
@@ -714,16 +853,16 @@ export default function Settings() {
               placeholder="Digite aqui para confirmar"
               placeholderTextColor={colors.textSecondary}
             />
-              <View style={styles.modalButtonRow}>
-                <Button title="Cancelar" variant="outline" onPress={() => { setShowResetModal(false); setResetConfirmText(''); }} style={styles.modalButtonFlex} />
+            <View style={styles.modalButtonRow}>
+              <Button title="Cancelar" variant="outline" onPress={() => { setShowResetModal(false); setResetConfirmText(''); }} style={styles.modalButtonFlex} />
               <Button
                 title={isResetting ? 'Resetando...' : 'Apagar Tudo'}
                 onPress={performDatabaseReset}
                 disabled={isResetting || resetConfirmText.trim().toLowerCase() !== 'deletar o banco'}
-                  style={styles.modalButtonFlex}
+                style={styles.modalButtonFlex}
               />
             </View>
-              <Text style={styles.modalNote}>
+            <Text style={styles.modalNote}>
               Observação: credenciais de login (OAuth) não serão apagadas.
             </Text>
           </View>

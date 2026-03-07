@@ -40,24 +40,34 @@ export interface UserSubscriptionInfo {
  */
 export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatus | null> {
   try {
+    // Tenta via RPC primeiro
     const { data, error } = await supabase
       .rpc('get_early_adopter_status');
 
-    if (error) {
-      console.error('Erro ao verificar vagas early adopter:', error);
+    if (!error && data && data.length > 0) {
+      return data[0];
+    }
+
+    // Fallback: lê direto da tabela se a RPC falhar (ex: timeout no Free tier)
+    const { data: configData, error: configError } = await supabase
+      .from('early_adopter_config')
+      .select('total_slots, current_count')
+      .eq('is_active', true)
+      .limit(1)
+      .single();
+
+    if (configError || !configData) {
+      console.error('Erro ao verificar vagas early adopter:', configError);
       return null;
     }
 
-    if (!data || data.length === 0) {
-      return {
-        totalSlots: PRICING.TOTAL_EARLY_ADOPTER_SLOTS,
-        currentCount: PRICING.TOTAL_EARLY_ADOPTER_SLOTS,
-        slotsRemaining: 0,
-        isAvailable: false,
-      };
-    }
-
-    return data[0];
+    const slotsRemaining = configData.total_slots - configData.current_count;
+    return {
+      totalSlots: configData.total_slots,
+      currentCount: configData.current_count,
+      slotsRemaining,
+      isAvailable: slotsRemaining > 0,
+    };
   } catch (error) {
     console.error('Erro ao verificar early adopter:', error);
     return null;
@@ -159,7 +169,7 @@ export function getAvailabilityMessage(status: EarlyAdopterStatus | null): strin
 
   const remaining = status.slotsRemaining;
   const current = status.currentCount;
-  
+
   if (remaining <= 10) {
     return `⚡ ÚLTIMAS ${remaining} VAGAS com preço especial!`;
   } else if (remaining <= 50) {
@@ -185,10 +195,10 @@ export interface PricingDisplayInfo {
 export async function getPricingDisplayInfo(productId: string): Promise<PricingDisplayInfo> {
   const status = await checkEarlyAdopterAvailability();
   const isMonthly = productId.includes('monthly');
-  
+
   const earlyAdopterPrice = isMonthly ? PRICING.MONTHLY.earlyAdopter : PRICING.YEARLY.earlyAdopter;
   const regularPrice = isMonthly ? PRICING.MONTHLY.regular : PRICING.YEARLY.regular;
-  
+
   const isAvailable = status?.isAvailable || false;
   const currentPrice = isAvailable ? earlyAdopterPrice : regularPrice;
   const slotsRemaining = status?.slotsRemaining || 0;

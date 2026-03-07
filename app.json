@@ -30,13 +30,7 @@
           }
         }
       ],
-      [
-        "react-native-bootsplash",
-        {
-          "logo": "./assets/splash.png",
-          "backgroundColor": "#4A90E2"
-        }
-      ]
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true
@@ -62,6 +56,11 @@
         "barStyle": "light-content",
         "translucent": false
       }
+    },
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2E8B57"
     }
   }
 }

@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
+import {
+  View,
+  Text,
   ScrollView,
   TouchableOpacity,
   Alert
 } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
-import { 
-  Plus, 
-  Minus, 
+import {
+  Plus,
+  Minus,
   Edit,
   Trash2
 } from 'lucide-react-native';
@@ -52,7 +52,7 @@ export default function Vendas() {
   const { colors } = useTheme();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
-  
+
   // New Sale State
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState('');
@@ -131,13 +131,13 @@ export default function Vendas() {
 
   const loadData = async () => {
     const { loadProducts: loadProductsData, loadCustomers: loadCustomersData, loadSales: loadSalesData } = await import('@/lib/data-loader');
-    
+
     const [productsData, customersData, salesData] = await Promise.all([
       loadProductsData(),
       loadCustomersData(),
       loadSalesData()
     ]);
-    
+
     setProducts(productsData as Product[]);
     setCustomers(customersData);
 
@@ -239,10 +239,9 @@ export default function Vendas() {
 
     Alert.alert(
       'Confirmar Venda',
-      `Valor Total: R$ ${totalSale.toFixed(2)}\nForma de Pagamento: ${
-        paymentMethod === 'cash' ? 'Dinheiro' :
+      `Valor Total: R$ ${totalSale.toFixed(2)}\nForma de Pagamento: ${paymentMethod === 'cash' ? 'Dinheiro' :
         paymentMethod === 'credit' ? 'Crédito' :
-        paymentMethod === 'debit' ? 'Débito' : 'PIX'
+          paymentMethod === 'debit' ? 'Débito' : 'PIX'
       }${selectedCustomer ? `\nCliente: ${selectedCustomer}` : ''}`,
       [
         {
@@ -254,7 +253,8 @@ export default function Vendas() {
           onPress: async () => {
             try {
               const now = new Date();
-              const brDate = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+              const isoNow = now.toISOString();
+              const brDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
               const trimmedCustomer = selectedCustomer.trim();
 
               let customerId = selectedCustomerId;
@@ -275,8 +275,8 @@ export default function Vendas() {
                     phone: null,
                     email: null,
                     whatsapp: false,
-                    created_at: brDate,
-                    updated_at: brDate,
+                    created_at: isoNow,
+                    updated_at: isoNow,
                   });
                   customerId = newCustomerId;
                 }
@@ -289,7 +289,7 @@ export default function Vendas() {
                 total: totalSale,
                 payment_method: paymentMethod.toUpperCase(),
                 observation: observation.trim() ? observation.trim() : null,
-                created_at: brDate,
+                created_at: isoNow,
               });
 
               await Promise.all(
@@ -310,7 +310,7 @@ export default function Vendas() {
                     const newStock = Math.max(0, currentStock - item.quantity);
                     await db.update(
                       'products',
-                      { stock: newStock, updated_at: brDate },
+                      { stock: newStock, updated_at: isoNow },
                       'id = ?',
                       [item.product.id]
                     );
@@ -498,7 +498,7 @@ export default function Vendas() {
                       <TouchableOpacity
                         style={styles.quantityButton}
                         onPress={() => updateItemQuantity(item.product.id, item.quantity + 1)}
-                        disabled={item.quantity >= item.product.stock}
+                        disabled={item.product.type !== 'service' && item.quantity >= item.product.stock}
                       >
                         <Plus size={16} color={colors.white} />
                       </TouchableOpacity>

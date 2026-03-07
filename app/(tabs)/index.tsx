@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  Dimensions 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Dimensions
 } from 'react-native';
-import { 
-  TrendingUp, 
-  DollarSign, 
-  Package, 
-  Users} from 'lucide-react-native';
+import {
+  TrendingUp,
+  DollarSign,
+  Package,
+  Users
+} from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { Header } from '@/components/ui/Header';
@@ -166,32 +167,52 @@ export default function Dashboard() {
     },
   });
 
-  const StatCard = ({ 
-    icon, 
-    value, 
-    label, 
-    color = colors.primary 
-  }: { 
-    icon: React.ReactNode; 
-    value: string | number; 
-    label: string; 
-    color?: string; 
-  }) => (
-    <Card style={styles.statCard}>
-      <View style={styles.statHeader}>
-        <View style={[styles.statIcon, { backgroundColor: color + '20' }]}>
-          {icon}
+  const StatCard = ({
+    icon,
+    value,
+    label,
+    color = colors.primary,
+    prefix,
+  }: {
+    icon: React.ReactNode;
+    value: string | number;
+    label: string;
+    color?: string;
+    prefix?: string;
+  }) => {
+    const valueStr = String(value);
+    const hasCents = valueStr.includes(',');
+    const [integerPart, centsPart] = hasCents ? valueStr.split(',') : [valueStr, ''];
+
+    return (
+      <Card style={styles.statCard}>
+        <View style={styles.statHeader}>
+          <View style={[styles.statIcon, { backgroundColor: color + '20' }]}>
+            {icon}
+          </View>
         </View>
-      </View>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </Card>
-  );
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          {prefix ? (
+            <Text style={[styles.statValue, { fontSize: 13, fontFamily: 'Inter-Medium', color: colors.textSecondary, marginBottom: 6, marginRight: 2 }]}>
+              {prefix}
+            </Text>
+          ) : null}
+          <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{integerPart}</Text>
+          {hasCents && (
+            <Text style={[styles.statValue, { fontSize: 15, marginBottom: 6 }]}>
+              ,{centsPart}
+            </Text>
+          )}
+        </View>
+        <Text style={styles.statLabel}>{label}</Text>
+      </Card>
+    );
+  };
 
   return (
     <View style={styles.container}>
       <Header title="Dashboard" showSettings />
-      
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
 
         {/* Stats Grid */}
@@ -203,7 +224,8 @@ export default function Dashboard() {
           />
           <StatCard
             icon={<DollarSign size={20} color={colors.success} />}
-            value={`R$ ${stats.dailyRevenue.toFixed(2)}`}
+            prefix="R$"
+            value={stats.dailyRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             label="Faturamento do Mês"
             color={colors.success}
           />

@@ -4,7 +4,9 @@ import { Bell, Settings, Crown, ArrowLeft } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { isPremium } from '@/lib/premium';
+import { useCallback } from 'react';
 
 interface HeaderProps {
   title: string;
@@ -31,6 +33,20 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
     })();
     return () => { mounted = false; };
   }, []);
+
+  // Reavaliar premium toda vez que a tela ganha foco
+  useFocusEffect(
+    useCallback(() => {
+      let mounted = true;
+      (async () => {
+        try {
+          const p = await isPremium();
+          if (mounted) setPremium(p);
+        } catch (e) { /* ignore */ }
+      })();
+      return () => { mounted = false; };
+    }, [])
+  );
 
   const styles = StyleSheet.create({
     header: {
@@ -108,7 +124,7 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
   return (
     <View style={styles.header}>
       {showBack && (
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={onBackPress || (() => router.back())}
           style={{ padding: 8, marginRight: 8 }}
         >

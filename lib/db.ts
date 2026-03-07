@@ -25,13 +25,13 @@ function initializeDatabase(): SQLite.SQLiteDatabase | null {
   }
 }
 
-async function execSql(sql: string, params: any[] = []): Promise<any> {
+async function execSql(sql: string, params: any[] = [], silent: boolean = false): Promise<any> {
   if (!db) {
     console.warn('Database not available');
     return { rows: { length: 0, item: () => null, _array: [] } };
   }
 
-  const isSelect = /^\s*SELECT/i.test(sql);
+  const isSelect = /^\s*(SELECT|PRAGMA)/i.test(sql);
 
   // New API detection: runAsync/getAllAsync/withTransactionAsync
   const hasNewApi = typeof (db as any).runAsync === 'function' && typeof (db as any).getAllAsync === 'function';
@@ -58,13 +58,15 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
         };
       }
     } catch (error: any) {
-      console.error('SQL execution error (new API):', error, sql);
-      // Log more details about the error
-      if (error.message) {
-        console.error('Error message:', error.message);
-      }
-      if (error.stack) {
-        console.error('Error stack:', error.stack);
+      if (!silent) {
+        console.error('SQL execution error (new API):', error, sql);
+        // Log more details about the error
+        if (error.message) {
+          console.error('Error message:', error.message);
+        }
+        if (error.stack) {
+          console.error('Error stack:', error.stack);
+        }
       }
       throw error;
     }
@@ -100,7 +102,9 @@ async function execSql(sql: string, params: any[] = []): Promise<any> {
             });
           },
           (_: any, error: any) => {
-            console.error('SQL execution error (legacy):', error, sql);
+            if (!silent) {
+              console.error('SQL execution error (legacy):', error, sql);
+            }
             reject(error);
             return false;
           }
@@ -189,14 +193,31 @@ export async function initDB() {
     `);
 
     // Lightweight migration: add paid_at column iff missing
-    // Approach: probe the column; if SELECT fails, add the column.
+    // Use PRAGMA table_info to safely detect if the column already exists before altering.
     try {
-      await execSql(`SELECT paid_at FROM expenses LIMIT 1;`);
-    } catch (_err) {
+      const info: any = await execSql(`PRAGMA table_info(expenses);`, [], true);
+      const cols: any[] = info.rows._array || [];
+      const hasPaidAt = cols.some((c: any) => c.name === 'paid_at');
+      if (!hasPaidAt) {
+        // Only runs if column doesn't exist yet — swallow any race-condition duplicates
+        try {
+          await execSql(`ALTER TABLE expenses ADD COLUMN paid_at TEXT;`, [], true);
+        } catch (alterErr: any) {
+          const msg: string = alterErr?.message ?? '';
+          if (!msg.toLowerCase().includes('duplicate column')) {
+            console.warn('[DB] Unexpected ALTER TABLE error:', msg);
+          }
+        }
+      }
+    } catch (_e) {
+      // PRAGMA failed for some reason — attempt the ALTER anyway and swallow duplicate errors
       try {
-        await execSql(`ALTER TABLE expenses ADD COLUMN paid_at TEXT;`);
-      } catch (_e) {
-        // ignore if another race added it
+        await execSql(`ALTER TABLE expenses ADD COLUMN paid_at TEXT;`, [], true);
+      } catch (alterErr: any) {
+        const msg: string = alterErr?.message ?? '';
+        if (!msg.toLowerCase().includes('duplicate column')) {
+          console.warn('[DB] Unexpected ALTER TABLE error (fallback):', msg);
+        }
       }
     }
 

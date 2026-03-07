@@ -9,9 +9,9 @@ export function filterCustomers(customers: any[], searchQuery: string) {
   if (!searchQuery || !searchQuery.trim()) {
     return customers;
   }
-  
+
   const query = searchQuery.toLowerCase().trim();
-  
+
   return customers.filter(customer =>
     customer.name?.toLowerCase().includes(query) ||
     customer.phone?.includes(searchQuery) ||
@@ -26,9 +26,9 @@ export function filterProducts(products: any[], searchQuery: string) {
   if (!searchQuery || !searchQuery.trim()) {
     return products;
   }
-  
+
   const query = searchQuery.toLowerCase().trim();
-  
+
   return products.filter(product =>
     product.name?.toLowerCase().includes(query) ||
     product.barcode?.toLowerCase().includes(query)
@@ -49,7 +49,7 @@ export function getTodaySales(sales: any[]) {
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
       br = raw;
     } else if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
-      const [y,m,d] = raw.slice(0,10).split('-');
+      const [y, m, d] = raw.slice(0, 10).split('-');
       br = `${d}/${m}/${y}`;
     } else {
       try {
@@ -63,17 +63,27 @@ export function getTodaySales(sales: any[]) {
 }
 
 /**
- * Format timestamp to locale time string with error handling
+ * Format timestamp to locale date+time string with error handling.
+ * Supports ISO 8601 (new records) and legacy dd/mm/yyyy (old records).
  */
 export function formatTimestamp(timestamp: string | undefined): string {
-  if (!timestamp) return 'Horário inválido';
-  
+  if (!timestamp) return 'Sem data';
+
   try {
+    // Formato legado: dd/mm/yyyy — exibe só a data, sem horário
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(timestamp)) {
+      return timestamp;
+    }
+
     const date = new Date(timestamp);
-    if (isNaN(date.getTime())) return 'Horário inválido';
-    return date.toLocaleTimeString('pt-BR');
-  } catch (error) {
-    return 'Horário inválido';
+    if (isNaN(date.getTime())) return 'Data inválida';
+
+    // Exibe data + hora: "05/03/2026 às 14:32"
+    const datePart = date.toLocaleDateString('pt-BR');
+    const timePart = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    return `${datePart} às ${timePart}`;
+  } catch {
+    return 'Data inválida';
   }
 }
 
@@ -90,7 +100,7 @@ export function paginateItems<T>(items: T[], currentPage: number, itemsPerPage: 
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedItems = items.slice(startIndex, endIndex);
-  
+
   return {
     paginatedItems,
     totalPages,
@@ -108,7 +118,7 @@ export function toTitleCase(input: string): string {
   if (!input) return '';
   const lower = input.toLowerCase().trim().replace(/\s+/g, ' ');
   const smallWords = new Set([
-    'da','de','do','das','dos','e','em','para','por','a','o','as','os','no','na','nos','nas','du','d\'','di'
+    'da', 'de', 'do', 'das', 'dos', 'e', 'em', 'para', 'por', 'a', 'o', 'as', 'os', 'no', 'na', 'nos', 'nas', 'du', 'd\'', 'di'
   ]);
   const words = lower.split(' ');
   const result = words.map((w, i) => {
@@ -123,8 +133,8 @@ export function toTitleCase(input: string): string {
 
 // === Datas (PT-BR) ===
 export function formatBrDate(d: Date): string {
-  const day = String(d.getDate()).padStart(2,'0');
-  const month = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 }
@@ -132,7 +142,7 @@ export function formatBrDate(d: Date): string {
 export function parseBrDate(str: string): Date | null {
   if (!/^\d{2}\/\d{2}\/\d{4}$/.test(str)) return null;
   const [dd, mm, yyyy] = str.split('/').map(Number);
-  const d = new Date(yyyy, (mm||1)-1, dd||1);
+  const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
   return isNaN(d.getTime()) ? null : d;
 }
 
@@ -141,17 +151,17 @@ export function normalizeToBrDate(raw: string): string {
   if (!raw) return formatBrDate(new Date());
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return raw;
   if (/^\d{2}-\d{2}-\d{4}$/.test(raw)) {
-    const [dd,mm,yyyy] = raw.split('-');
+    const [dd, mm, yyyy] = raw.split('-');
     return `${dd}/${mm}/${yyyy}`;
   }
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
-    const [y,m,d] = raw.slice(0,10).split('-');
+    const [y, m, d] = raw.slice(0, 10).split('-');
     return `${d}/${m}/${y}`;
   }
   // Fallback: Date parse
   try {
     const d = new Date(raw);
     if (!isNaN(d.getTime())) return formatBrDate(d);
-  } catch {}
+  } catch { }
   return formatBrDate(new Date());
 }

@@ -27,11 +27,11 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     sku: SUBSCRIPTION_SKUS.MONTHLY,
     description: 'Proteção total dos seus dados',
     features: [
-      'Backup automático dos dados',
+      'Backup manual dos dados (exportação)',
+      'Restauração de dados (importação)',
       'Relatórios detalhados em PDF',
-      'Exportação de dados em CSV',
-      'Sincronização na nuvem'
-    ]
+      'Relatórios de inteligência de negócio',
+    ],
   },
   {
     id: 'yearly',
@@ -41,14 +41,13 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     sku: SUBSCRIPTION_SKUS.YEARLY,
     description: 'Melhor custo-benefício',
     features: [
-      'Backup  dos dados',
+      'Backup manual dos dados (exportação)',
+      'Restauração de dados (importação)',
       'Relatórios detalhados em PDF',
-      'Inteligência de negocio em relatorios',
-      'Exportação de dados em CSV',
-      'Sincronização na nuvem'
+      'Relatórios de inteligência de negócio',
     ],
-    savings: 'Economize R$ 19,10'
-  }
+    savings: 'Economize R$ 19,10',
+  },
 ];
 
 export interface BillingResult {
@@ -92,7 +91,7 @@ class SubscriptionManager {
       // Chamar o IAP real
       const { purchaseSubscription } = await import('./iap');
       const result = await purchaseSubscription(plan.sku);
-      
+
       if (result.success) {
         // Simular sucesso da compra
         await this.saveActiveSubscription(plan, 'mock_transaction_' + Date.now());
@@ -159,7 +158,7 @@ class SubscriptionManager {
     try {
       // Aqui você implementaria a restauração real
       const subscription = await this.getActiveSubscription();
-      
+
       if (subscription && subscription.isActive) {
         Alert.alert('Assinatura Restaurada', 'Sua assinatura foi restaurada com sucesso!');
         return true;

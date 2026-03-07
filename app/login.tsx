@@ -1,136 +1,224 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { useTheme } from '@/contexts/ThemeContext';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'expo-router';
 import { AntDesign } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import Svg, { Defs, LinearGradient, Stop, Circle, Rect } from 'react-native-svg';
 
 export default function LoginScreen() {
-  const { colors } = useTheme();
-  const { signInWithGoogle, loading } = useAuth();
-  const router = useRouter();
+  const { signInWithGoogle } = useAuth();
+  const [loading, setLoading] = useState(false);
 
-  const styles = StyleSheet.create({
-    container: {
+  const appVersion = Constants?.expoConfig?.version || '1.0.0';
+
+  const handleLogin = async () => {
+    setLoading(true);
+    try {
+      const { error } = await signInWithGoogle();
+      if (error) {
+        Alert.alert('Erro ao entrar', error);
+      }
+      // Se não houve erro, o AuthContext detecta a sessão via onAuthStateChange
+      // e o AuthGate redireciona automaticamente para "/"
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const s = StyleSheet.create({
+    root: {
       flex: 1,
-      backgroundColor: colors.background,
+      backgroundColor: '#0F172A',
+    },
+    bg: {
+      ...StyleSheet.absoluteFillObject,
+    },
+    inner: {
+      flex: 1,
       padding: 24,
       justifyContent: 'center',
     },
-    bgWrap: {
-      ...StyleSheet.absoluteFillObject,
-    },
-    headerWrap: {
+    header: {
       alignItems: 'center',
-      marginBottom: 40,
+      marginBottom: 44,
+    },
+    logo: {
+      width: 84,
+      height: 84,
+      borderRadius: 18,
+      marginBottom: 18,
     },
     brand: {
       fontSize: 28,
       fontFamily: 'Inter-Bold',
-      color: colors.text,
-      marginTop: 8,
+      color: '#F1F5F9',
+      marginBottom: 6,
     },
     tagline: {
       fontSize: 14,
       fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
+      color: '#94A3B8',
       textAlign: 'center',
-      marginTop: 6,
+      lineHeight: 20,
     },
     card: {
-      backgroundColor: colors.surface,
-      borderRadius: 16,
-      padding: 20,
+      backgroundColor: 'rgba(30, 41, 59, 0.95)',
+      borderRadius: 20,
+      padding: 28,
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.08)',
       shadowColor: '#000',
-      shadowOpacity: 0.08,
-      shadowOffset: { width: 0, height: 6 },
-      shadowRadius: 12,
-      elevation: 3,
+      shadowOpacity: 0.35,
+      shadowOffset: { width: 0, height: 8 },
+      shadowRadius: 24,
+      elevation: 10,
+    },
+    cardTitle: {
+      fontSize: 18,
+      fontFamily: 'Inter-SemiBold',
+      color: '#F1F5F9',
+      textAlign: 'center',
+      marginBottom: 24,
     },
     googleBtn: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: '#1F1F1F',
-      borderColor: '#303134',
-      borderWidth: 1,
+      backgroundColor: '#FFFFFF',
       borderRadius: 12,
-      paddingVertical: 14,
+      paddingVertical: 15,
+      paddingHorizontal: 20,
+      gap: 12,
+      shadowColor: '#000',
+      shadowOpacity: 0.15,
+      shadowOffset: { width: 0, height: 2 },
+      shadowRadius: 6,
+      elevation: 3,
+    },
+    googleBtnDisabled: {
+      opacity: 0.6,
     },
     googleText: {
-      marginLeft: 10,
       fontSize: 16,
       fontFamily: 'Inter-SemiBold',
-      color: '#FFFFFF',
+      color: '#1F1F1F',
     },
-    help: {
-      marginTop: 16,
+    divider: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginVertical: 20,
+      gap: 12,
+    },
+    dividerLine: {
+      flex: 1,
+      height: 1,
+      backgroundColor: 'rgba(255,255,255,0.08)',
+    },
+    dividerText: {
       fontSize: 12,
-      color: colors.textSecondary,
-      textAlign: 'center',
       fontFamily: 'Inter-Regular',
+      color: '#475569',
     },
-    versionText: {
+    helpText: {
       fontSize: 12,
-      color: colors.textSecondary,
       fontFamily: 'Inter-Regular',
+      color: '#64748B',
       textAlign: 'center',
+      lineHeight: 18,
     },
-    logo: {
-      width: 88,
-      height: 88,
-      borderRadius: 18,
-      marginBottom: 12,
+    version: {
+      fontSize: 11,
+      fontFamily: 'Inter-Regular',
+      color: '#334155',
+      textAlign: 'center',
+      marginTop: 24,
     },
   });
 
-  const handleLogin = async () => {
-    await signInWithGoogle();
-    router.replace('/');
-  };
-
-  const appVersion = Constants?.expoConfig?.version || '1.0.0';
-
   return (
-    <View style={styles.container}>
+    <View style={s.root}>
       {/* Background SVG */}
-      <View pointerEvents="none" style={styles.bgWrap}>
-        <Svg width="100%" height="100%" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice">
+      <View pointerEvents="none" style={s.bg}>
+        <Svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 400 800"
+          preserveAspectRatio="xMidYMid slice"
+        >
           <Defs>
-            <LinearGradient id="grad1" x1="0" y1="0" x2="1" y2="1">
+            <LinearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
               <Stop offset="0%" stopColor="#0F172A" stopOpacity="1" />
               <Stop offset="100%" stopColor="#1E293B" stopOpacity="1" />
             </LinearGradient>
-            <LinearGradient id="grad2" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0%" stopColor="#0EA5E9" stopOpacity="0.35" />
-              <Stop offset="100%" stopColor="#6366F1" stopOpacity="0.35" />
+            <LinearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+              <Stop offset="0%" stopColor="#4F46E5" stopOpacity="0.35" />
+              <Stop offset="100%" stopColor="#0EA5E9" stopOpacity="0.2" />
             </LinearGradient>
           </Defs>
-          <Rect x="0" y="0" width="400" height="800" fill="url(#grad1)" />
-          <Circle cx="60" cy="120" r="90" fill="url(#grad2)" />
-          <Circle cx="360" cy="90" r="120" fill="url(#grad2)" />
-          <Circle cx="340" cy="720" r="160" fill="url(#grad2)" />
-          <Circle cx="40" cy="640" r="100" fill="url(#grad2)" />
+          <Rect x="0" y="0" width="400" height="800" fill="url(#g1)" />
+          <Circle cx="50" cy="130" r="110" fill="url(#g2)" />
+          <Circle cx="370" cy="80" r="130" fill="url(#g2)" />
+          <Circle cx="340" cy="700" r="160" fill="url(#g2)" />
+          <Circle cx="30" cy="660" r="90" fill="url(#g2)" />
         </Svg>
       </View>
-      <View style={styles.headerWrap}>
-        <Image source={require('@/assets/images/icon.png')} style={styles.logo} resizeMode="contain" />
-        <Text style={styles.brand}>Loja Inteligente</Text>
-        <Text style={styles.tagline}>Acesse com sua conta Google para continuar</Text>
-      </View>
 
-      <View style={styles.card}>
-        <TouchableOpacity style={styles.googleBtn} onPress={handleLogin} disabled={loading}>
-          <AntDesign name="google" size={20} color="#4285F4" />
-          <Text style={styles.googleText}>{loading ? 'Carregando...' : 'Continuar com Google'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.help}>Usaremos apenas para identificar e sincronizar seus dados.</Text>
-        <Text style={[styles.versionText, { marginTop: 16 }]}>Versão {appVersion} • PT-BR</Text>
+      <View style={s.inner}>
+        {/* Header */}
+        <View style={s.header}>
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={s.logo}
+            resizeMode="contain"
+          />
+          <Text style={s.brand}>Loja Inteligente</Text>
+          <Text style={s.tagline}>
+            Gestão de vendas e estoque{'\n'}na palma da sua mão
+          </Text>
+        </View>
+
+        {/* Card */}
+        <View style={s.card}>
+          <Text style={s.cardTitle}>Acesse sua conta</Text>
+
+          <TouchableOpacity
+            style={[s.googleBtn, loading && s.googleBtnDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            {loading ? (
+              <ActivityIndicator color="#4285F4" size="small" />
+            ) : (
+              <AntDesign name="google" size={22} color="#4285F4" />
+            )}
+            <Text style={s.googleText}>
+              {loading ? 'Abrindo Google...' : 'Continuar com Google'}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={s.divider}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>seguro e rápido</Text>
+            <View style={s.dividerLine} />
+          </View>
+
+          <Text style={s.helpText}>
+            Usamos apenas seu e-mail e nome para identificar sua conta.{'\n'}
+            Nunca postamos nada em seu nome. 🔒
+          </Text>
+        </View>
+
+        <Text style={s.version}>Versão {appVersion} • PT-BR</Text>
       </View>
     </View>
   );
 }
-
-
