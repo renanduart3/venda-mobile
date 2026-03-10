@@ -38,21 +38,21 @@ interface ThemeContextType {
 }
 
 const lightColors: Colors = {
-  primary: '#4f46e5',
-  primaryLight: '#818cf8',
-  secondary: '#7c3aed',
-  secondaryLight: '#a78bfa',
-  background: '#ffffff',
-  surface: '#f8fafc',
-  topbar: '#3b3b4c',
-  bottombar: '#3b3b4c',
-  onTopbar: '#ffffff',
-  onBottombar: '#ffffff',
-  card: '#ffffff',
-  text: '#1e293b',
-  textSecondary: '#64748b',
-  border: '#e2e8f0',
-  inputBorder: '#cbd5e1',
+  primary: '#124559', // Dark Teal
+  primaryLight: '#598392', // Air Force Blue
+  secondary: '#598392',
+  secondaryLight: '#aec3b0',
+  background: '#eff6e0', // Beige
+  surface: '#aec3b0', // Ash Grey
+  topbar: '#124559',
+  bottombar: '#124559',
+  onTopbar: '#eff6e0',
+  onBottombar: '#eff6e0',
+  card: '#ffffff', // Keeping pure white for clean contrast inside Beige or Ash Grey
+  text: '#01161e', // Ink Black
+  textSecondary: '#598392', // Air Force Blue
+  border: '#aec3b0', // Ash Grey
+  inputBorder: '#aec3b0',
   success: '#10b981',
   warning: '#f59e0b',
   error: '#ef4444',
@@ -61,21 +61,21 @@ const lightColors: Colors = {
 };
 
 const darkColors: Colors = {
-  primary: '#6366f1',
-  primaryLight: '#818cf8',
-  secondary: '#8b5cf6',
-  secondaryLight: '#a78bfa',
-  background: '#0f172a',
-  surface: '#1e293b',
-  topbar: '#515163',
-  bottombar: '#515163',
-  onTopbar: '#ffffff',
-  onBottombar: '#ffffff',
-  card: '#334155',
-  text: '#f1f5f9',
-  textSecondary: '#94a3b8',
-  border: '#475569',
-  inputBorder: '#334155',
+  primary: '#598392', // Air Force Blue
+  primaryLight: '#aec3b0', // Ash Grey
+  secondary: '#124559', // Dark Teal
+  secondaryLight: '#598392',
+  background: '#01161e', // Ink Black
+  surface: '#124559', // Dark Teal
+  topbar: '#01161e', // Ink Black
+  bottombar: '#01161e', // Ink Black
+  onTopbar: '#eff6e0',
+  onBottombar: '#eff6e0',
+  card: '#124559', // Dark Teal
+  text: '#eff6e0', // Beige
+  textSecondary: '#aec3b0', // Ash Grey
+  border: '#598392', // Air Force Blue
+  inputBorder: '#598392',
   success: '#10b981',
   warning: '#f59e0b',
   error: '#ef4444',
@@ -87,18 +87,21 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('system');
-  const [customPrimary, setCustomPrimary] = useState<string>('#4f46e5');
-  const [customSecondary, setCustomSecondary] = useState<string>('#7c3aed');
+  const [customPrimary, setCustomPrimary] = useState<string | null>(null);
+  const [customSecondary, setCustomSecondary] = useState<string | null>(null);
   const [systemTheme, setSystemTheme] = useState(Appearance.getColorScheme());
 
   const isDark = theme === 'dark' || (theme === 'system' && systemTheme === 'dark');
 
   // Memoize colors object to avoid recreating on every render (performance optimization)
-  const colors = React.useMemo(() => ({
-    ...(isDark ? darkColors : lightColors),
-    primary: customPrimary,
-    secondary: customSecondary,
-  }), [isDark, customPrimary, customSecondary]);
+  const colors = React.useMemo(() => {
+    const base = isDark ? darkColors : lightColors;
+    return {
+      ...base,
+      primary: customPrimary || base.primary,
+      secondary: customSecondary || base.secondary,
+    };
+  }, [isDark, customPrimary, customSecondary]);
 
   useEffect(() => {
     loadThemeSettings();

@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { View } from 'react-native';
 import {
   ShoppingCart,
   Package,
@@ -21,7 +22,7 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.onBottombar,
-        tabBarInactiveTintColor: 'rgba(255,255,255,0.7)',
+        tabBarInactiveTintColor: 'rgba(255,255,255,0.4)',
         tabBarStyle: {
           backgroundColor: colors.bottombar,
           borderTopColor: colors.border,
@@ -51,9 +52,17 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Dashboard',
-          tabBarIcon: ({ size, color }) => {
-            console.log('Dashboard icon - size:', size, 'color:', color);
-            return <Home size={24} color={color} />;
+          tabBarIcon: ({ focused, size, color }) => {
+            return (
+              <View style={{
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+                borderRadius: 16,
+                backgroundColor: focused ? 'rgba(255,255,255,0.2)' : 'transparent',
+              }}>
+                <Home size={24} color={color} />
+              </View>
+            );
           },
         }}
       />
@@ -61,8 +70,15 @@ export default function TabLayout() {
         name="vendas"
         options={{
           title: 'Vendas',
-          tabBarIcon: ({ size, color }) => (
-            <ShoppingCart size={size} color={color} />
+          tabBarIcon: ({ focused, size, color }) => (
+            <View style={{
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+              borderRadius: 16,
+              backgroundColor: focused ? 'rgba(255,255,255,0.2)' : 'transparent',
+            }}>
+              <ShoppingCart size={size} color={color} />
+            </View>
           ),
         }}
       />
@@ -70,8 +86,15 @@ export default function TabLayout() {
         name="produtos"
         options={{
           title: 'Produtos',
-          tabBarIcon: ({ size, color }) => (
-            <Package size={size} color={color} />
+          tabBarIcon: ({ focused, size, color }) => (
+            <View style={{
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+              borderRadius: 16,
+              backgroundColor: focused ? 'rgba(255,255,255,0.2)' : 'transparent',
+            }}>
+              <Package size={size} color={color} />
+            </View>
           ),
         }}
       />
@@ -79,8 +102,15 @@ export default function TabLayout() {
         name="clientes"
         options={{
           title: 'Clientes',
-          tabBarIcon: ({ size, color }) => (
-            <Users size={size} color={color} />
+          tabBarIcon: ({ focused, size, color }) => (
+            <View style={{
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+              borderRadius: 16,
+              backgroundColor: focused ? 'rgba(255,255,255,0.2)' : 'transparent',
+            }}>
+              <Users size={size} color={color} />
+            </View>
           ),
         }}
       />
@@ -88,8 +118,15 @@ export default function TabLayout() {
         name="financas"
         options={{
           title: 'Finanças',
-          tabBarIcon: ({ size, color }) => (
-            <Wallet size={size} color={color} />
+          tabBarIcon: ({ focused, size, color }) => (
+            <View style={{
+              paddingHorizontal: 12,
+              paddingVertical: 4,
+              borderRadius: 16,
+              backgroundColor: focused ? 'rgba(255,255,255,0.2)' : 'transparent',
+            }}>
+              <Wallet size={size} color={color} />
+            </View>
           ),
         }}
       />
