@@ -158,6 +158,7 @@ export async function loadDashboardStats() {
 
     const lowStockCount = products.filter(
       (product: any) =>
+        product.type !== 'service' &&
         typeof product.stock === 'number' &&
         typeof product.min_stock === 'number' &&
         product.stock <= product.min_stock

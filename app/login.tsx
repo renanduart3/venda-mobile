@@ -16,6 +16,8 @@ import Svg, { Defs, LinearGradient, Stop, Circle, Rect } from 'react-native-svg'
 export default function LoginScreen() {
   const { signInWithGoogle } = useAuth();
   const [loading, setLoading] = useState(false);
+  // Fica em true apos o WebBrowser fechar, ate o AuthContext detectar a sessao
+  const [waitingAuth, setWaitingAuth] = useState(false);
 
   const appVersion = Constants?.expoConfig?.version || '1.0.0';
 
@@ -25,10 +27,16 @@ export default function LoginScreen() {
       const { error } = await signInWithGoogle();
       if (error) {
         Alert.alert('Erro ao entrar', error);
+        setLoading(false);
+      } else {
+        // WebBrowser fechou com sucesso — aguarda o onAuthStateChange redirecionar
+        // Mantemos uma tela de loading para nao deixar o usuario sem feedback
+        setLoading(false);
+        setWaitingAuth(true);
+        // Timeout de seguranca: se em 15s nao navegar, libera o botao novamente
+        setTimeout(() => setWaitingAuth(false), 15000);
       }
-      // Se não houve erro, o AuthContext detecta a sessão via onAuthStateChange
-      // e o AuthGate redireciona automaticamente para "/"
-    } finally {
+    } catch {
       setLoading(false);
     }
   };
@@ -145,6 +153,15 @@ export default function LoginScreen() {
 
   return (
     <View style={s.root}>
+      {/* Overlay de transicao apos login bem-sucedido */}
+      {waitingAuth && (
+        <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: '#0F172A', justifyContent: 'center', alignItems: 'center', zIndex: 99 }}>
+          <ActivityIndicator size="large" color="#4f46e5" />
+          <Text style={{ color: '#94A3B8', marginTop: 16, fontFamily: 'Inter-Regular', fontSize: 14 }}>
+            Entrando na sua conta...
+          </Text>
+        </View>
+      )}
       {/* Background SVG */}
       <View pointerEvents="none" style={s.bg}>
         <Svg

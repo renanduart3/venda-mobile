@@ -39,26 +39,27 @@ export function filterProducts(products: any[], searchQuery: string) {
  * Get sales for today only
  */
 export function getTodaySales(sales: any[]) {
-  const today = new Date();
-  const todayBr = formatBrDate(today); // DD/MM/YYYY
+  const todayBr = formatBrDate(new Date()); // DD/MM/YYYY
   return sales.filter(sale => {
     const raw = sale.timestamp || sale.created_at;
     if (!raw) return false;
-    // Accept already BR format or ISO
-    let br: string;
+
+    // Converte raw format to DD/MM/YYYY explicitly and strictly
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
-      br = raw;
-    } else if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
-      const [y, m, d] = raw.slice(0, 10).split('-');
-      br = `${d}/${m}/${y}`;
-    } else {
-      try {
-        const d = new Date(raw);
-        if (isNaN(d.getTime())) return false;
-        br = formatBrDate(d);
-      } catch { return false; }
+      return raw === todayBr;
     }
-    return br === todayBr;
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+      const [y, m, d] = raw.slice(0, 10).split('-');
+      return `${d}/${m}/${y}` === todayBr;
+    }
+    
+    // Fallback rigorous Date parsing
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) {
+      return formatBrDate(d) === todayBr;
+    }
+
+    return false;
   });
 }
 

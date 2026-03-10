@@ -106,7 +106,14 @@ function pad2(n: number) {
   return String(n).padStart(2, '0');
 }
 function formatMethod(m: string) {
-  return (m || '').toUpperCase();
+  if (!m) return 'Transação';
+  switch (m.toLowerCase()) {
+    case 'credit': return 'Crédito';
+    case 'debit': return 'Débito';
+    case 'pix': return 'PIX';
+    case 'cash':
+    default: return 'Dinheiro';
+  }
 }
 function daysFromNow(iso: any) {
   try {

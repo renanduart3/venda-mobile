@@ -1,4 +1,4 @@
-﻿import * as Sharing from 'expo-sharing';
+import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system/legacy';
 import { htmlShell, renderSummary, renderTable, renderHBarChart } from './report-templates';
@@ -56,9 +56,20 @@ const LABEL_PT: Record<string, string> = {
 export function generateReportHTML(reportTitle: string, reportData: any[], period: string, extraHtml?: string): string {
   const currentDate = new Date().toLocaleDateString('pt-BR');
   const sections: string[] = [];
+  
+  // Format known enums for tables
+  const formattedData = (reportData || []).map(r => {
+    const copy = { ...r };
+    if (copy.method) {
+      const m = String(copy.method).toLowerCase();
+      copy.method = m === 'credit' ? 'Crédito' : m === 'debit' ? 'Débito' : m === 'pix' ? 'PIX' : 'Dinheiro';
+    }
+    return copy;
+  });
+
   if (extraHtml) sections.push(extraHtml);
-  sections.push(renderSummary(`<strong>Resumo:</strong> ${Array.isArray(reportData) ? reportData.length : 0} registros`));
-  sections.push(renderTable(reportData, LABEL_PT));
+  sections.push(renderSummary(`<strong>Resumo:</strong> ${Array.isArray(formattedData) ? formattedData.length : 0} registros`));
+  sections.push(renderTable(formattedData, LABEL_PT));
   const body = sections.join('');
   return htmlShell({ title: reportTitle, period, currentDate, body });
 }
@@ -87,7 +98,11 @@ export function generateReportChartHTML(reportId: string, reportData: any[]): st
       return renderHBarChart({ title: 'Tendência de Vendas (Receita)', items });
     }
     case '4': {
-      const items = rows.map((r:any)=>({ label: String(r.method||'Método').toUpperCase(), value: Number(r.percentage||0) }));
+      const items = rows.map((r:any)=>{
+        const m = String(r.method||'Método').toLowerCase();
+        const lbl = m === 'credit' ? 'Crédito' : m === 'debit' ? 'Débito' : m === 'pix' ? 'PIX' : 'Dinheiro';
+        return { label: lbl, value: Number(r.percentage||0) };
+      });
       return renderHBarChart({ title: 'Participação por Método de Pagamento (%)', items });
     }
     case '5': {

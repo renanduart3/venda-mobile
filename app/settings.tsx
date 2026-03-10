@@ -24,8 +24,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { isPremium, getPremiumStatus, PremiumStatus } from '@/lib/premium';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createSettingsStyles } from './settings.styles';
-import { getAgentMode, setAgentMode } from '@/lib/dev-flags';
 import { useAuth } from '@/contexts/AuthContext';
+import db from '@/lib/db';
 
 export default function Settings() {
   const { colors, theme, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
@@ -57,13 +57,11 @@ export default function Settings() {
   const [isResetting, setIsResetting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [agentEnabled, setAgentEnabled] = useState(false);
   const [isCheckingPremium, setIsCheckingPremium] = useState(false);
 
   useEffect(() => {
     loadStoreSettings();
     loadPremium();
-    try { setAgentEnabled(getAgentMode()); } catch { }
   }, []);
 
   // Recarregar status premium quando a tela ganhar foco
@@ -116,6 +114,28 @@ export default function Settings() {
 
   const saveStoreSettings = async () => {
     try {
+      // Formata a lista de PIX removendo as vazias
+      const validKeys = storeSettings.pixKeys.filter(k => k.trim());
+      const pixKeyJson = JSON.stringify(validKeys.length > 0 ? validKeys : ['']);
+      const timestamp = new Date().toISOString();
+
+      await db.query(
+        `INSERT INTO store_settings 
+          (id, store_name, owner_name, pix_key, created_at, updated_at) 
+        VALUES ('1', ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET 
+          store_name = excluded.store_name,
+          owner_name = excluded.owner_name,
+          pix_key = excluded.pix_key,
+          updated_at = excluded.updated_at;`,
+        [
+          storeSettings.storeName.trim(),
+          storeSettings.ownerName.trim(),
+          pixKeyJson,
+          timestamp,
+          timestamp
+        ]
+      );
       Alert.alert('Sucesso', 'Configurações salvas com sucesso!');
       setIsEditing(false);
     } catch (error) {
@@ -759,19 +779,6 @@ export default function Settings() {
               </Text>
             </View>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Modo Agente</Text>
-              <Text style={styles.infoValue}>{agentEnabled ? 'Ativado' : 'Desativado'}</Text>
-            </View>
-
-            <View style={styles.actionButton}>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => { const next = !agentEnabled; setAgentEnabled(next); try { setAgentMode(next); } catch { }; }}
-              >
-                <Text style={styles.actionButtonText}>{agentEnabled ? 'Desativar Modo Agente' : 'Ativar Modo Agente'}</Text>
-              </TouchableOpacity>
-            </View>
           </Card>
         </View>
 

@@ -142,7 +142,7 @@ export default function Financas() {
   const expenseStats = useMemo(() => {
     const monthKey = selectedMonth;
     const monthExpenses = expenses.filter(expense => {
-      const expMonthKey = toMonthKey(expense.due_date) || '';
+      const expMonthKey = toMonthKey(expense.due_date || expense.created_at) || '';
       return expMonthKey === monthKey;
     });
     const total = monthExpenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -158,14 +158,20 @@ export default function Financas() {
   const filteredExpenses = useMemo(() => {
     const monthKey = selectedMonth;
     const monthExpenses = expenses.filter(expense => {
-      const expMonthKey = toMonthKey(expense.due_date) || '';
+      const expMonthKey = toMonthKey(expense.due_date || expense.created_at) || '';
       return expMonthKey === monthKey;
     });
     if (expenseStatusFilter === 'all') return monthExpenses;
     if (expenseStatusFilter === 'paid') return monthExpenses.filter(exp => exp.paid);
     if (expenseStatusFilter === 'unpaid') return monthExpenses.filter(exp => !exp.paid);
     if (expenseStatusFilter === 'overdue') {
-      return monthExpenses.filter(exp => !exp.paid && exp.due_date && new Date(exp.due_date) < new Date());
+      return monthExpenses.filter(exp => {
+        if (exp.paid || !exp.due_date) return false;
+        const due = parseBrDate(exp.due_date);
+        if (!due) return false;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        return due < today;
+      });
     }
     return monthExpenses;
   }, [expenses, selectedMonth, expenseStatusFilter]);
@@ -433,6 +439,17 @@ export default function Financas() {
     try { return Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); } catch { return String(n); }
   };
 
+  const getPaymentMethodDisplay = (method: string) => {
+    if (!method) return 'Transação';
+    switch (method.toLowerCase()) {
+      case 'credit': return 'Crédito';
+      case 'debit': return 'Débito';
+      case 'pix': return 'PIX';
+      case 'cash':
+      default: return 'Dinheiro';
+    }
+  };
+
   // --- Premium Sale Details ---
   const openSaleDetails = async (sale: any) => {
     console.log('🔍 openSaleDetails chamado:', { userIsPremium, fetchInProgress: saleDetailsFetchRef.current, saleId: sale.id });
@@ -488,7 +505,7 @@ export default function Financas() {
 
   const monthExpenses = useMemo(() => {
     return expenses.filter(expense => {
-      const monthKey = toMonthKey(expense.due_date) || '';
+      const monthKey = toMonthKey(expense.due_date || expense.created_at) || '';
       return monthKey === selectedMonth;
     });
   }, [expenses, selectedMonth]);
@@ -528,7 +545,15 @@ export default function Financas() {
         category: 'Venda'
       }))
     ];
-    return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return combined.sort((a, b) => {
+      const getTime = (d: string) => {
+        if (!d) return 0;
+        const parsed = parseBrDate(d);
+        if (parsed) return parsed.getTime();
+        return new Date(d).getTime() || 0;
+      };
+      return getTime(b.date) - getTime(a.date);
+    });
   }, [expenses, sales, customers, selectedMonth, monthExpenses, monthSales]);
 
   const filteredData = useMemo(() => {
@@ -1158,7 +1183,7 @@ export default function Financas() {
                         <Text style={[styles.amountText, { color: colors.success }]}>
                           +R$ {sale.total.toFixed(2)}
                         </Text>
-                        <Text style={styles.statusText}>Pago</Text>
+                        <Text style={styles.statusText}>Pago ({getPaymentMethodDisplay(sale.payment_method)})</Text>
                         {userIsPremium ? (
                           <Pressable style={styles.detailsButton} onPress={() => openSaleDetails(sale)}>
                             <List size={14} color={colors.white} />

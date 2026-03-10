@@ -6,7 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Platform
+  Platform,
+  Linking
 } from 'react-native';
 import {
   ArrowLeft,
@@ -425,13 +426,6 @@ export default function Planos() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: bottomSpacer }}
       >
-        {/* Hero Section */}
-        <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>Proteja Seus Dados</Text>
-          <Text style={styles.heroSubtitle}>
-            Com o Premium, você extrai o máximo da sua operação: exporte sua base de dados manualmente com segurança e destrave os relatórios inteligentes de performance.
-          </Text>
-        </View>
 
         {/* Early Adopter Banner — vagas disponíveis */}
         {isEarlyAdopter && earlyAdopterStatus !== null && (
@@ -610,9 +604,16 @@ export default function Planos() {
         <View style={styles.footer}>
           <Text style={styles.footerText}>
             <Text style={{ fontWeight: 'bold' }}>Plano Gratuito:</Text> Gestão comercial básica com operações fundamentais{'\n'}
-            <Text style={{ fontWeight: 'bold' }}>Plano Premium:</Text> Cópia de segurança manual, inteligência de negócio e relatórios detalhados{'\n\n'}
-            As assinaturas são gerenciadas pelo Google Play Store.{'\n'}
-            Você pode cancelar a qualquer momento nas configurações da sua conta.
+            <Text style={{ fontWeight: 'bold' }}>Plano Premium:</Text> Serviço estendido com backups na nuvem, análises e relatórios{'\n\n'}
+          </Text>
+          <Button
+            title="Cancelar ou Gerenciar Assinaturas"
+            variant="outline"
+            onPress={() => Linking.openURL('https://play.google.com/store/account/subscriptions?package=com.renanduart3.vendamobile')}
+            style={{ marginBottom: 16 }}
+          />
+          <Text style={[styles.footerText, { fontSize: 12 }]}>
+            O Venda Mobile não possui carência nem taxas de cancelamento. Diretrizes Google Play respeitadas.
           </Text>
         </View>
       </ScrollView>

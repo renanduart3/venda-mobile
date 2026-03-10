@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, Linking } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -273,10 +273,18 @@ export default function PremiumPage() {
           </Text>
         </Card>
 
-        <Text style={styles.infoText}>
-          As assinaturas são gerenciadas através da sua conta Google Play ou App Store.
-          Você pode cancelar a qualquer momento através das configurações da sua conta.
-        </Text>
+        <View style={{ marginTop: 24, paddingBottom: 20 }}>
+          <Button
+            title="Cancelar ou Gerenciar Assinatura"
+            variant="outline"
+            onPress={() => {
+              Linking.openURL('https://play.google.com/store/account/subscriptions?package=com.renanduart3.vendamobile');
+            }}
+          />
+          <Text style={[styles.infoText, { textAlign: 'center', marginTop: 12 }]}>
+            O cancelamento é integrado com sua conta da Play Store. Rápido e fácil.
+          </Text>
+        </View>
       </ScrollView>
       {/* Discreet dark bottom area only for manage plan screen */}
       <View style={{ backgroundColor: colors.bottombar, height: bottomSpacer }} />

@@ -11,9 +11,11 @@ import {
   Plus,
   Minus,
   Edit,
-  Trash2
+  Trash2,
+  Crown
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
 import { Card } from '@/components/ui/Card';
@@ -61,6 +63,8 @@ export default function Vendas() {
   const [customerSuggestionsVisible, setCustomerSuggestionsVisible] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit' | 'debit' | 'pix'>('credit');
   const [observation, setObservation] = useState('');
+  const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
+  const [editingSaleDate, setEditingSaleDate] = useState<string | null>(null);
 
   // Sales History State
   const [sales, setSales] = useState<Sale[]>([]);
@@ -115,19 +119,55 @@ export default function Vendas() {
 
   // Função para editar venda
   const handleEditSale = (sale: Sale) => {
-    Alert.alert(
-      'Editar Venda',
-      'Funcionalidade de edição será implementada em breve.',
-      [{ text: 'OK' }]
-    );
+    if (!premium) {
+      Alert.alert(
+        'Funcionalidade Premium',
+        'A edição de vendas é exclusiva para assinantes premium. Faça upgrade para ter total controle do seu caixa.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Fazer Upgrade', onPress: () => router.push('/planos') }
+        ]
+      );
+      return;
+    }
+
+    const freshSaleItems = sale.items.map(item => {
+      const prod = products.find(p => p.id === item.product.id) || item.product;
+      return {
+        ...item,
+        product: {
+          ...prod,
+          stock: prod.type === 'service' ? 0 : prod.stock + item.quantity
+        }
+      };
+    });
+
+    setSaleItems(freshSaleItems);
+    if (sale.customer) {
+      const match = customers.find(c => c.name === sale.customer);
+      setSelectedCustomerId(match?.id || null);
+      setSelectedCustomer(sale.customer);
+      setCustomerSearch(sale.customer);
+    } else {
+      setSelectedCustomer('');
+      setSelectedCustomerId(null);
+      setCustomerSearch('');
+    }
+    setPaymentMethod(sale.paymentMethod);
+    setObservation(sale.observation || '');
+    setEditingSaleId(sale.id);
+    setEditingSaleDate(sale.timestamp);
+    setActiveTab('new');
   };
 
   const totalSale = saleItems.reduce((sum, item) => sum + item.total, 0);
   const todaySales = React.useMemo(() => getTodaySalesUtil(sales), [sales]);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useFocusEffect(
+    React.useCallback(() => {
+      loadData();
+    }, [])
+  );
 
   const loadData = async () => {
     const { loadProducts: loadProductsData, loadCustomers: loadCustomersData, loadSales: loadSalesData } = await import('@/lib/data-loader');
@@ -238,7 +278,7 @@ export default function Vendas() {
     }
 
     Alert.alert(
-      'Confirmar Venda',
+      editingSaleId ? 'Salvar Alterações' : 'Confirmar Venda',
       `Valor Total: R$ ${totalSale.toFixed(2)}\nForma de Pagamento: ${paymentMethod === 'cash' ? 'Dinheiro' :
         paymentMethod === 'credit' ? 'Crédito' :
           paymentMethod === 'debit' ? 'Débito' : 'PIX'
@@ -282,22 +322,42 @@ export default function Vendas() {
                 }
               }
 
-              const saleId = Date.now().toString();
+              let finalSaleId = Date.now().toString();
+              let finalCreatedAt = isoNow;
+
+              if (editingSaleId) {
+                finalSaleId = editingSaleId;
+                finalCreatedAt = editingSaleDate || isoNow;
+                
+                const oldSale = sales.find(s => s.id === editingSaleId);
+                if (oldSale) {
+                  for (const item of oldSale.items) {
+                    if (item.product.type === 'service') continue;
+                    await db.query(
+                      'UPDATE products SET stock = stock + ? WHERE id = ?;',
+                      [item.quantity, item.product.id]
+                    );
+                  }
+                  await db.del('sale_items', 'sale_id = ?', [editingSaleId]);
+                  await db.del('sales', 'id = ?', [editingSaleId]);
+                }
+              }
+
               await db.insert('sales', {
-                id: saleId,
+                id: finalSaleId,
                 customer_id: customerId,
                 total: totalSale,
                 payment_method: paymentMethod.toUpperCase(),
                 observation: observation.trim() ? observation.trim() : null,
-                created_at: isoNow,
+                created_at: finalCreatedAt,
               });
 
               await Promise.all(
                 saleItems.map(async (item, index) => {
-                  const saleItemId = `${saleId}-${index}`;
+                  const saleItemId = `${finalSaleId}-${index}`;
                   await db.insert('sale_items', {
                     id: saleItemId,
-                    sale_id: saleId,
+                    sale_id: finalSaleId,
                     product_id: item.product.id,
                     quantity: item.quantity,
                     unit_price: item.product.price,
@@ -327,8 +387,10 @@ export default function Vendas() {
               setPaymentMethod('credit');
               setObservation('');
               setCustomerSuggestionsVisible(false);
+              setEditingSaleId(null);
+              setEditingSaleDate(null);
 
-              Alert.alert('✅ Sucesso', `Venda de R$ ${totalSale.toFixed(2)} realizada com sucesso!`);
+              Alert.alert('✅ Sucesso', `Venda de R$ ${totalSale.toFixed(2)} ${editingSaleId ? 'atualizada' : 'realizada'} com sucesso!`);
             } catch (error) {
               console.error('Error finalizing sale:', error);
               Alert.alert('❌ Erro', 'Não foi possível finalizar a venda. Tente novamente.');
@@ -358,6 +420,8 @@ export default function Vendas() {
             setCustomerSuggestionsVisible(false);
             setProductSearch('');
             setSuggestionsVisible(false);
+            setEditingSaleId(null);
+            setEditingSaleDate(null);
           },
         },
       ]
@@ -443,14 +507,25 @@ export default function Vendas() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <Button
-            title="Limpar venda"
-            onPress={clearSale}
-            variant="outline"
-            size="sm"
-            textStyle={{ color: colors.error }}
-            style={{ alignSelf: 'flex-end', marginTop: 8, marginBottom: 8 }}
-          />
+          {editingSaleId ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.primary }}>
+                Editando Venda #{editingSaleId.slice(-6)}
+              </Text>
+              <TouchableOpacity onPress={clearSale}>
+                <Text style={{ color: colors.error, fontFamily: 'Inter-Medium', fontSize: 16 }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <Button
+              title="Limpar venda"
+              onPress={clearSale}
+              variant="outline"
+              size="sm"
+              textStyle={{ color: colors.error }}
+              style={{ alignSelf: 'flex-end', marginTop: 8, marginBottom: 8 }}
+            />
+          )}
 
           <Card style={{ marginBottom: 16 }}>
             <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 8 }}>
@@ -584,7 +659,7 @@ export default function Vendas() {
             <Text style={styles.totalText}>Total: R$ {totalSale.toFixed(2)}</Text>
           </View>
           <Button
-            title="Finalizar Venda"
+            title={editingSaleId ? "Salvar Alterações" : "Finalizar Venda"}
             onPress={finalizeSale}
             disabled={saleItems.length === 0}
             style={{ marginBottom: 40 }}
@@ -618,9 +693,10 @@ export default function Vendas() {
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <TouchableOpacity
                       onPress={() => handleEditSale(sale)}
-                      style={{ padding: 4 }}
+                      style={{ padding: 4, flexDirection: 'row', gap: 6, alignItems: 'center' }}
                     >
                       <Edit size={16} color={colors.primary} />
+                      {!premium && <Crown size={12} color={colors.warning} />}
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleDeleteSale(sale)}
@@ -660,10 +736,13 @@ export default function Vendas() {
                       style={{
                         fontSize: 12,
                         fontFamily: 'Inter-Medium',
-                        color: sale.paymentMethod === 'credit' ? colors.success : colors.primary,
+                        color: sale.paymentMethod === 'credit' ? colors.success : 
+                               sale.paymentMethod === 'pix' ? colors.secondary : colors.primary,
                       }}
                     >
-                      {sale.paymentMethod === 'credit' ? 'Crédito' : 'Dinheiro'}
+                      {sale.paymentMethod === 'credit' ? 'Crédito' : 
+                       sale.paymentMethod === 'debit' ? 'Débito' : 
+                       sale.paymentMethod === 'pix' ? 'PIX' : 'Dinheiro'}
                     </Text>
                   </View>
                 </View>

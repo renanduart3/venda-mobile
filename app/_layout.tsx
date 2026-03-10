@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, LogBox } from 'react-native';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+
+LogBox.ignoreLogs(['Unable to activate keep awake']);
 import { useFonts } from 'expo-font';
 import {
   Inter_400Regular,
