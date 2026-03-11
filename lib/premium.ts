@@ -191,32 +191,18 @@ export async function validateSubscription(
       };
     }
 
-    const apiUrl = `${supabaseUrl}/functions/v1/validate-iap`;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey || '',
-      },
-      body: JSON.stringify({
+    const { data: result, error } = await supabase.functions.invoke('validate-iap', {
+      body: {
         platform,
         purchaseToken,
         productId,
         userId: user.id,
-      }),
+      },
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { success: false, error: `Validation failed: ${errorText}` };
+    if (error) {
+      return { success: false, error: `Validation failed: ${error.message}` };
     }
-
-    const result = await response.json();
 
     if (result.is_premium) {
       await enablePremium(result.expiry_date, platform, productId);
