@@ -44,16 +44,18 @@ export function getTodaySales(sales: any[]) {
     const raw = sale.timestamp || sale.created_at;
     if (!raw) return false;
 
-    // Converte raw format to DD/MM/YYYY explicitly and strictly
+    // Legacy BR format
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
       return raw === todayBr;
     }
-    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+
+    // Date-only ISO (YYYY-MM-DD): compare directly without timezone conversion
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
       const [y, m, d] = raw.slice(0, 10).split('-');
       return `${d}/${m}/${y}` === todayBr;
     }
-    
-    // Fallback rigorous Date parsing
+
+    // ISO datetime should be converted to local time before comparing day
     const d = new Date(raw);
     if (!isNaN(d.getTime())) {
       return formatBrDate(d) === todayBr;

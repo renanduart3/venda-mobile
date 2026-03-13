@@ -4,9 +4,9 @@ import {
   Text, 
   StyleSheet, 
   ScrollView,
-  TouchableOpacity,
-  FlatList
+  TouchableOpacity
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { 
   ArrowLeft,
   Bell,
@@ -282,7 +282,7 @@ export default function Notifications() {
         </TouchableOpacity>
       </View>
       
-      <FlatList
+      <FlashList
         data={notifications}
         keyExtractor={(item) => item.id}
         style={styles.content}

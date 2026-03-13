@@ -1,0 +1,8 @@
+{
+  "checkout": {
+    "title": "Finalizar Compra",
+    "pay_button": "Pagar Agora",
+    "total": "Total",
+    "currency": "R$"
+  }
+}

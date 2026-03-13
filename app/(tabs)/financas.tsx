@@ -340,16 +340,25 @@ export default function Financas() {
         selectedMonth
       });
 
+      const originalAmount = editingExpense
+        ? (Number(editingExpense.original_amount ?? 0) > 0
+            ? Number(editingExpense.original_amount)
+            : amountValue)
+        : amountValue;
+
       const expensePayload = {
         name: formData.name.trim(),
         amount: amountValue,
+        original_amount: originalAmount,
         due_date: dueDateValue, // pode ser '' se não informado
         paid: formData.paid,
         recurring: formData.recurring,
         customer_id: formData.customer_id || null,
         updated_at: todayBr,
         paid_at: formData.paid ? todayBr : null,
-      }; if (editingExpense) {
+      };
+
+      if (editingExpense) {
         await db.update('expenses', expensePayload, 'id = ?', [editingExpense.id]);
       } else {
         const id = Date.now().toString();

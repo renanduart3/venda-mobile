@@ -4,11 +4,10 @@ import {
   Text, 
   ScrollView,
   TouchableOpacity,
-  FlatList,
   Modal,
   Alert,
-  Image
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { TextInput } from '@/components/ui/TextInput';
 import { 
   Plus, 
@@ -16,7 +15,8 @@ import {
   Edit, 
   Trash2, 
   Package,
-  AlertTriangle
+  AlertTriangle,
+  Wrench,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
@@ -30,6 +30,7 @@ interface Product {
   id: string;
   name: string;
   price: number;
+  cost_price: number;
   stock: number;
   min_stock: number;
   barcode?: string;
@@ -54,6 +55,7 @@ export default function Produtos() {
   const [formData, setFormData] = useState({
     name: '',
     price: '',
+    cost_price: '',
     stock: '',
     min_stock: '',
     barcode: '',
@@ -117,6 +119,7 @@ export default function Produtos() {
       setFormData({
         name: product.name,
         price: product.price.toString(),
+        cost_price: (product.cost_price || 0).toString(),
         stock: product.stock.toString(),
         min_stock: product.min_stock.toString(),
         barcode: product.barcode || '',
@@ -128,6 +131,7 @@ export default function Produtos() {
       setFormData({
         name: '',
         price: '',
+        cost_price: '',
         stock: '',
         min_stock: '',
         barcode: '',
@@ -144,6 +148,7 @@ export default function Produtos() {
     setFormData({
       name: '',
       price: '',
+      cost_price: '',
       stock: '',
       min_stock: '',
       barcode: '',
@@ -171,6 +176,8 @@ export default function Produtos() {
         return;
       }
 
+      const costPriceValue = formData.cost_price ? parseFloat(formData.cost_price.replace(',', '.')) : 0;
+
       const stockValue = formData.type === 'service' ? 0 : parseInt(formData.stock, 10);
       if (formData.type === 'product' && Number.isNaN(stockValue)) {
         Alert.alert('Erro', 'Informe um estoque válido.');
@@ -184,6 +191,7 @@ export default function Produtos() {
       const productPayload = {
         name: formData.name.trim(),
         price: priceValue,
+        cost_price: Number.isNaN(costPriceValue) ? 0 : costPriceValue,
         stock: formData.type === 'service' ? 0 : Math.max(0, stockValue),
         min_stock: minStockValue,
         barcode: formData.barcode.trim() ? formData.barcode.trim() : null,
@@ -314,16 +322,29 @@ export default function Produtos() {
               </View>
             )}
 
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Preço *</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.price}
-                onChangeText={(text) => setFormData({ ...formData, price: text })}
-                placeholder="0,00"
-                placeholderTextColor={colors.textSecondary}
-                keyboardType="numeric"
-              />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={[styles.formGroup, { flex: 1 }]}>
+                <Text style={styles.label}>Preço de Venda *</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.price}
+                  onChangeText={(text) => setFormData({ ...formData, price: text })}
+                  placeholder="0,00"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={[styles.formGroup, { flex: 1 }]}>
+                <Text style={styles.label}>Preço de Custo</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.cost_price}
+                  onChangeText={(text) => setFormData({ ...formData, cost_price: text })}
+                  placeholder="0,00"
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType="numeric"
+                />
+              </View>
             </View>
 
             {formData.type === 'product' && (
@@ -401,7 +422,8 @@ export default function Produtos() {
               onChangeText={setSearchQuery}
             />
           </View>
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.addButton}
             onPress={() => openProductModal()}
           >
@@ -456,21 +478,29 @@ export default function Produtos() {
             onAction={() => openProductModal()}
           />
         ) : (
-          <FlatList
+          <FlashList
             data={paginatedProducts}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
             renderItem={({ item: product }) => {
               const stockStatus = getStockStatus(product);
+              const isService = product.type === 'service';
               
               return (
                 <Card style={styles.productCard}>
                   <View style={styles.productItem}>
-                    <Image
-                      source={{ uri: product.image_url || 'https://images.pexels.com/photos/264547/pexels-photo-264547.jpeg?auto=compress&cs=tinysrgb&w=400' }}
-                      style={styles.productImage}
-                      defaultSource={{ uri: 'https://images.pexels.com/photos/264547/pexels-photo-264547.jpeg?auto=compress&cs=tinysrgb&w=400' }}
-                    />
+                    <View
+                      style={[
+                        styles.productTypeIcon,
+                        isService ? styles.productTypeIconService : styles.productTypeIconProduct,
+                      ]}
+                    >
+                      {isService ? (
+                        <Wrench size={24} color={colors.success} />
+                      ) : (
+                        <Package size={24} color={colors.primary} />
+                      )}
+                    </View>
                     
                     <View style={styles.productInfo}>
                       <Text style={styles.productName} numberOfLines={2} ellipsizeMode="tail">
@@ -628,42 +658,83 @@ export default function Produtos() {
                   </View>
                 )}
 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Preço *</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.price}
-                    onChangeText={(text) => setFormData({ ...formData, price: text })}
-                    placeholder="0,00"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="numeric"
-                  />
+                <View style={{ flexDirection: 'row', gap: 16 }}>
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Custo (R$)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.cost_price}
+                      onChangeText={(text) => setFormData({ ...formData, cost_price: text })}
+                      placeholder="0,00"
+                      placeholderTextColor={colors.textSecondary}
+                      keyboardType="numeric"
+                    />
+                  </View>
+
+                  <View style={[styles.formGroup, { flex: 1 }]}>
+                    <Text style={styles.label}>Preço de Venda * (R$)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={formData.price}
+                      onChangeText={(text) => setFormData({ ...formData, price: text })}
+                      placeholder="0,00"
+                      placeholderTextColor={colors.textSecondary}
+                      keyboardType="numeric"
+                    />
+                  </View>
                 </View>
+
+                {(() => {
+                  const p = parseFloat(formData.price.replace(',', '.')) || 0;
+                  const c = parseFloat(formData.cost_price.replace(',', '.')) || 0;
+                  if (c > 0 && p > c) {
+                    const lucro = p - c;
+                    const margem = (lucro / p) * 100;
+                    return (
+                      <View style={{ backgroundColor: colors.success + '20', padding: 8, borderRadius: 6, marginBottom: 16, flexDirection: 'row', alignItems: 'center' }}>
+                         <Text style={{ color: colors.success, fontFamily: 'Inter-Medium', fontSize: 13 }}>
+                           Lucro Bruto: R$ {lucro.toFixed(2)} ({margem.toFixed(1)}% de margem)
+                         </Text>
+                      </View>
+                    );
+                  } else if (c > 0 && p > 0 && p <= c) {
+                     return (
+                       <View style={{ backgroundColor: colors.error + '20', padding: 8, borderRadius: 6, marginBottom: 16, flexDirection: 'row', alignItems: 'center' }}>
+                         <Text style={{ color: colors.error, fontFamily: 'Inter-Medium', fontSize: 13 }}>
+                           Atenção: margem negativa ou nula!
+                         </Text>
+                       </View>
+                     );
+                  }
+                  return null;
+                })()}
 
                 {formData.type === 'product' && (
                   <>
-                    <View style={styles.formGroup}>
-                      <Text style={styles.label}>Quantidade em Estoque *</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={formData.stock}
-                        onChangeText={(text) => setFormData({ ...formData, stock: text })}
-                        placeholder="0"
-                        placeholderTextColor={colors.textSecondary}
-                        keyboardType="numeric"
-                      />
-                    </View>
+                    <View style={{ flexDirection: 'row', gap: 16 }}>
+                      <View style={[styles.formGroup, { flex: 1 }]}>
+                        <Text style={styles.label}>Estoque *</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={formData.stock}
+                          onChangeText={(text) => setFormData({ ...formData, stock: text })}
+                          placeholder="0"
+                          placeholderTextColor={colors.textSecondary}
+                          keyboardType="numeric"
+                        />
+                      </View>
 
-                    <View style={styles.formGroup}>
-                      <Text style={styles.label}>Estoque Mínimo</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={formData.min_stock}
-                        onChangeText={(text) => setFormData({ ...formData, min_stock: text })}
-                        placeholder="0"
-                        placeholderTextColor={colors.textSecondary}
-                        keyboardType="numeric"
-                      />
+                      <View style={[styles.formGroup, { flex: 1 }]}>
+                        <Text style={styles.label}>Est. Mínimo</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={formData.min_stock}
+                          onChangeText={(text) => setFormData({ ...formData, min_stock: text })}
+                          placeholder="0"
+                          placeholderTextColor={colors.textSecondary}
+                          keyboardType="numeric"
+                        />
+                      </View>
                     </View>
 
                     <View style={styles.formGroup}>
@@ -697,6 +768,7 @@ export default function Produtos() {
           </View>
         </Modal>
       )}
+
     </View>
   );
 }

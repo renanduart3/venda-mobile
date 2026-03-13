@@ -19,6 +19,7 @@ interface Expense {
   id: string;
   name: string;
   amount: number;
+  original_amount?: number;
   due_date: string;
   paid: boolean;
   customer_id: string | null;
@@ -36,6 +37,7 @@ export default function ClienteDetalhe() {
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [editDueDate, setEditDueDate] = useState<string>('');
+  const [paymentAmount, setPaymentAmount] = useState<string>('');
 
   useEffect(() => {
     loadCustomerData();
@@ -57,6 +59,11 @@ export default function ClienteDetalhe() {
   const totalDebt = expenses
     .filter(e => !e.paid)
     .reduce((sum, e) => sum + e.amount, 0);
+
+  const getOriginalAmount = (expense: Expense): number => {
+    const original = Number(expense.original_amount ?? 0);
+    return original > 0 ? original : Number(expense.amount ?? 0);
+  };
 
   const navigateToExpense = (expenseId: string) => {
     router.push({
@@ -80,6 +87,8 @@ export default function ClienteDetalhe() {
   const openExpenseModal = (expense: Expense) => {
     setSelectedExpense(expense);
     setEditDueDate(formatDate(expense.due_date));
+    // Start with empty input for partial payment
+    setPaymentAmount('');
     setShowExpenseModal(true);
   };
 
@@ -117,29 +126,99 @@ export default function ClienteDetalhe() {
     }
   };
 
-  const markAsPaid = async (expenseId: string) => {
+  const handlePayment = async () => {
+    if (!selectedExpense) return;
+
+    const valueStr = paymentAmount.replace(',', '.');
+    const value = parseFloat(valueStr);
+    
+    if (isNaN(value) || value <= 0) {
+      Alert.alert('Erro', 'Insira um valor válido e maior que zero.');
+      return;
+    }
+
+    // Permitir uma margem pequena para arredondamento (ex: 0.01)
+    if (value > selectedExpense.amount + 0.05) {
+      Alert.alert('Erro', `O valor não pode ser maior que R$ ${selectedExpense.amount.toFixed(2)}.`);
+      return;
+    }
+
+    const isPartial = value < selectedExpense.amount;
+    const remaining = selectedExpense.amount - value;
+    const currentOriginal = getOriginalAmount(selectedExpense);
+
     Alert.alert(
-      'Confirmar Pagamento',
-      'Deseja marcar esta despesa como paga?',
+      isPartial ? 'Confirmar Pagamento Parcial' : 'Confirmar Pagamento Total',
+      isPartial 
+        ? `Deseja registrar um pagamento de R$ ${value.toFixed(2)}?\n\nSaldo pendente: R$ ${remaining.toFixed(2)}`
+        : `Deseja marcar esta dívida integralmente como paga?\n\nValor: R$ ${value.toFixed(2)}`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Confirmar',
           onPress: async () => {
             try {
+              const db = (await import('@/lib/db')).default;
               const updated_at = new Date().toISOString();
               const due = persistDueDateValue(editDueDate);
-              await (await import('@/lib/db')).default.update(
-                'expenses',
-                { paid: true, due_date: due, updated_at, paid_at: updated_at },
-                'id = ?',
-                [expenseId]
-              );
+
+              if (isPartial) {
+                // Apenas atualizar o valor pendente na mesma dívida, sem criar outra
+                await db.update(
+                  'expenses',
+                  { amount: remaining, original_amount: currentOriginal, due_date: due, updated_at },
+                  'id = ?',
+                  [selectedExpense.id]
+                );
+                Alert.alert('Sucesso', 'Pagamento parcial registrado!');
+              } else {
+                // Pagamento Total
+                await db.update(
+                  'expenses',
+                  { paid: true, original_amount: currentOriginal, due_date: due, updated_at, paid_at: updated_at },
+                  'id = ?',
+                  [selectedExpense.id]
+                );
+                Alert.alert('Sucesso', 'Dívida marcada como paga!');
+              }
+
               await loadCustomerData();
               setShowExpenseModal(false);
-              Alert.alert('Sucesso', 'Despesa marcada como paga!');
             } catch (error) {
-              Alert.alert('Erro', 'Não foi possível marcar como paga');
+              console.error(error);
+              Alert.alert('Erro', 'Não foi possível registrar o pagamento.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleTotalPayment = async (expense: Expense) => {
+    Alert.alert(
+      'Confirmar Pagamento Total',
+      `Deseja marcar esta dívida (Pendente: R$ ${expense.amount.toFixed(2)}) integralmente como paga?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar',
+          onPress: async () => {
+            try {
+              const db = (await import('@/lib/db')).default;
+              const updated_at = new Date().toISOString();
+              const currentOriginal = getOriginalAmount(expense);
+              
+              await db.update(
+                'expenses',
+                { paid: true, original_amount: currentOriginal, updated_at, paid_at: updated_at },
+                'id = ?',
+                [expense.id]
+              );
+              Alert.alert('Sucesso', 'Dívida marcada como paga!');
+              await loadCustomerData();
+            } catch (error) {
+              console.error(error);
+              Alert.alert('Erro', 'Não foi possível registrar o pagamento.');
             }
           }
         }
@@ -317,62 +396,79 @@ export default function ClienteDetalhe() {
       padding: 20,
     },
     modalContent: {
-      backgroundColor: colors.surface,
-      borderRadius: 12,
+      backgroundColor: colors.background,
+      borderRadius: 16,
       width: '100%',
       maxWidth: 400,
+      overflow: 'hidden',
     },
     modalHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       padding: 20,
+      backgroundColor: colors.surface,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
     modalTitle: {
-      fontSize: 18,
+      fontSize: 20,
       fontFamily: 'Inter-Bold',
       color: colors.text,
     },
     closeButton: {
-      padding: 4,
+      padding: 8,
+      borderRadius: 8,
+      backgroundColor: colors.card,
     },
     modalBody: {
-      padding: 20,
+      padding: 24,
     },
     detailRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 12,
+      alignItems: 'flex-start',
+      paddingVertical: 16,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+      gap: 12,
     },
     detailLabel: {
-      fontSize: 14,
+      fontSize: 13,
       fontFamily: 'Inter-Medium',
       color: colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
     },
     detailValue: {
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
+      fontSize: 15,
+      fontFamily: 'Inter-SemiBold',
       color: colors.text,
+      textAlign: 'right',
+      flex: 1,
     },
     modalActions: {
+      padding: 20,
+      paddingTop: 20,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
       flexDirection: 'row',
       gap: 12,
-      padding: 20,
-    },
-    modalButton: {
-      flex: 1,
-      paddingVertical: 12,
-      borderRadius: 8,
+      justifyContent: 'space-between',
       alignItems: 'center',
     },
+    modalButton: {
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 48,
+    },
     modalButtonText: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
+      fontSize: 16,
+      fontFamily: 'Inter-SemiBold',
+      textAlign: 'center',
     },
   });
 
@@ -438,8 +534,28 @@ export default function ClienteDetalhe() {
               <Card key={expense.id} style={styles.expenseCard}>
                 <View style={styles.expenseHeader}>
                   <Text style={styles.expenseName} numberOfLines={2} ellipsizeMode="tail">{expense.name}</Text>
-                  <Text style={styles.expenseAmount}>R$ {expense.amount.toFixed(2)}</Text>
+                  <Text style={[styles.expenseAmount, { color: colors.text }]}>R$ {getOriginalAmount(expense).toFixed(2)}</Text>
                 </View>
+
+                {(() => {
+                  const orig = getOriginalAmount(expense);
+                  if (!expense.paid) {
+                    const pago = orig - expense.amount;
+                    return (
+                      <View style={{ marginBottom: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={{ fontSize: 13, color: colors.warning, fontFamily: 'Inter-Medium' }}>
+                          Pendente: R$ {expense.amount.toFixed(2)}
+                        </Text>
+                        {pago > 0 && (
+                           <Text style={{ fontSize: 13, color: colors.success, fontFamily: 'Inter-Medium' }}>
+                             Pago: R$ {pago.toFixed(2)}
+                           </Text>
+                        )}
+                      </View>
+                    );
+                  }
+                  return null;
+                })()}
 
                 <View style={styles.expenseDetails}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -475,24 +591,34 @@ export default function ClienteDetalhe() {
 
                 {/* Botões de Ação */}
                 <View style={styles.expenseActions}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, { backgroundColor: colors.primary }]}
-                    onPress={() => openExpenseModal(expense)}
-                  >
-                    <Text style={[styles.actionButtonText, { color: colors.white }]}>
-                      Ver Detalhes
-                    </Text>
-                  </TouchableOpacity>
-                  
-                  {!expense.paid && (
+                  {expense.paid ? (
                     <TouchableOpacity
-                      style={[styles.actionButton, { backgroundColor: colors.success }]}
-                      onPress={() => markAsPaid(expense.id)}
+                      style={[styles.actionButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border }]}
+                      onPress={() => openExpenseModal(expense)}
                     >
-                      <Text style={[styles.actionButtonText, { color: colors.white }]}>
-                        Marcar como Paga
+                      <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                        Ver Detalhes
                       </Text>
                     </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border }]}
+                        onPress={() => openExpenseModal(expense)}
+                      >
+                        <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                          Pagamento Parcial
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionButton, { backgroundColor: colors.success }]}
+                        onPress={() => handleTotalPayment(expense)}
+                      >
+                        <Text style={[styles.actionButtonText, { color: colors.white }]}>
+                          Pagamento Total
+                        </Text>
+                      </TouchableOpacity>
+                    </>
                   )}
                 </View>
               </Card>
@@ -506,89 +632,107 @@ export default function ClienteDetalhe() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Detalhes da Despesa</Text>
+              <Text style={styles.modalTitle}>Pagamento de Dívida</Text>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={() => setShowExpenseModal(false)}
               >
-                <XCircle size={24} color={colors.textSecondary} />
+                <XCircle size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.modalBody}>
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Nome:</Text>
-                <Text style={styles.detailValue}>{selectedExpense.name}</Text>
+                <Text style={styles.detailLabel}>Descrição:</Text>
+                <Text style={[styles.detailValue, { textAlign: 'left', flex: 1 }]}>{selectedExpense.name}</Text>
               </View>
               
               <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Valor:</Text>
-                <Text style={[styles.detailValue, { color: colors.primary, fontSize: 18, fontFamily: 'Inter-Bold' }]}>
-                  R$ {selectedExpense.amount.toFixed(2)}
+                <Text style={styles.detailLabel}>Valor Original:</Text>
+                <Text style={[styles.detailValue, { color: colors.primary, fontSize: 17 }]}>
+                  R$ {getOriginalAmount(selectedExpense).toFixed(2)}
                 </Text>
               </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Vencimento:</Text>
-                <TextInput
-                  style={[styles.detailValue, { borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6 }]}
-                  value={editDueDate}
-                  onChangeText={(text) => {
-                    let v = text.replace(/\D/g, '');
-                    if (v.length >= 2) v = v.substring(0,2) + '/' + v.substring(2);
-                    if (v.length >= 5) v = v.substring(0,5) + '/' + v.substring(5,9);
-                    setEditDueDate(v);
-                  }}
-                  placeholder="DD/MM/AAAA"
-                  keyboardType="numeric"
-                  maxLength={10}
-                />
-              </View>
-              
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Status:</Text>
-                <View style={[
-                  styles.statusBadge,
-                  {
-                    backgroundColor: selectedExpense.paid ? colors.success + '20' : colors.error + '20',
-                  },
-                ]}>
-                  {selectedExpense.paid ? (
-                    <CheckCircle size={16} color={colors.success} />
-                  ) : (
-                    <XCircle size={16} color={colors.error} />
-                  )}
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: selectedExpense.paid ? colors.success : colors.error },
-                    ]}
-                  >
-                    {selectedExpense.paid ? 'Quitada' : 'Pendente'}
+
+              {!selectedExpense.paid && (
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Valor Pendente:</Text>
+                  <Text style={[styles.detailValue, { color: colors.error, fontSize: 17, fontFamily: 'Inter-Bold' }]}>
+                    R$ {selectedExpense.amount.toFixed(2)}
                   </Text>
                 </View>
-              </View>
+              )}
+
+              {!selectedExpense.paid && (
+                <View style={[styles.detailRow, { flexDirection: 'column', alignItems: 'stretch', borderBottomWidth: 0 }]}>
+                  <Text style={styles.detailLabel}>Valor a Pagar (R$):</Text>
+                  <TextInput
+                    style={[
+                      {
+                        borderWidth: 1, 
+                        borderColor: colors.primary, 
+                        borderRadius: 10, 
+                        paddingHorizontal: 14, 
+                        paddingVertical: 12, 
+                        color: colors.text, 
+                        fontFamily: 'Inter-Bold', 
+                        fontSize: 18,
+                        backgroundColor: colors.card,
+                        marginTop: 8,
+                      }
+                    ]}
+                    value={paymentAmount}
+                    onChangeText={(text) => {
+                      // Allow only numbers, comma and dot as decimal separator
+                      const cleaned = text.replace(/[^\d.,]/g, '');
+                      setPaymentAmount(cleaned);
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder="0,00"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                  <Text style={[styles.detailLabel, { marginTop: 8, fontSize: 12, color: colors.textSecondary }]}>
+                    Máximo: R$ {selectedExpense.amount.toFixed(2)}
+                  </Text>
+                </View>
+              )}
+
+              {selectedExpense.paid && (
+                <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+                  <Text style={styles.detailLabel}>Status:</Text>
+                  <View style={[
+                    styles.statusBadge,
+                    { backgroundColor: colors.success + '20' }
+                  ]}>
+                    <CheckCircle size={14} color={colors.success} />
+                    <Text style={[styles.statusText, { color: colors.success }]}>
+                      Quitada
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
 
             <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={updateExpenseDueDate}
-              >
-                <Text style={[styles.modalButtonText, { color: colors.white }]}>Salvar Vencimento</Text>
-              </TouchableOpacity>
-
               {!selectedExpense.paid && (
                 <TouchableOpacity
-                  style={[styles.modalButton, { backgroundColor: colors.success }]}
-                  onPress={() => markAsPaid(selectedExpense.id)}
+                  style={[styles.modalButton, { backgroundColor: colors.success, flex: 1 }]}
+                  onPress={handlePayment}
                 >
-                  <Text style={[styles.modalButtonText, { color: colors.white }]}>Marcar como Paga</Text>
+                  <Text style={[styles.modalButtonText, { color: colors.white }]}>Pagar</Text>
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.border }]}
+                style={[
+                  styles.modalButton, 
+                  { 
+                    backgroundColor: colors.card,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    flex: 1
+                  }
+                ]}
                 onPress={() => setShowExpenseModal(false)}
               >
                 <Text style={[styles.modalButtonText, { color: colors.text }]}>Fechar</Text>

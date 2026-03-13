@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Loja Inteligente — Vendas & Estoque",
+    "name": "Vendas, Estoque e Fiado (PDV)",
     "slug": "venda-mobile",
     "version": "1.0.0",
     "sdkVersion": "54.0.0",
@@ -42,7 +42,7 @@
         "BILLING"
       ],
       "package": "com.renanduart3.vendamobile",
-      "versionCode": 2,
+      "versionCode": 12,
       "adaptiveIcon": {
         "foregroundImage": "./assets/playstore-icon.png",
         "backgroundColor": "#4A90E2"

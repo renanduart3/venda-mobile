@@ -1,0 +1,2 @@
+json_key_file("android/app/api-key-fastlane.json")
+package_name("com.renanduart3.vendamobile")

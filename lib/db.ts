@@ -1,4 +1,4 @@
-﻿import * as SQLite from 'expo-sqlite';
+import * as SQLite from 'expo-sqlite';
 
 // We support both the new expo-sqlite v15+ API (openDatabaseSync + runAsync/getAllAsync)
 // and the legacy WebSQL-style API (openDatabase + transaction/executeSql).
@@ -133,6 +133,7 @@ export async function initDB() {
         id TEXT PRIMARY KEY,
         name TEXT,
         price REAL,
+        cost_price REAL DEFAULT 0,
         stock INTEGER,
         min_stock INTEGER,
         barcode TEXT,
@@ -143,6 +144,10 @@ export async function initDB() {
         updated_at TEXT
       );
     `);
+
+    try {
+      await execSql(`ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0;`, [], true);
+    } catch (e) { /* ignore */ }
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS customers (
@@ -161,11 +166,16 @@ export async function initDB() {
         id TEXT PRIMARY KEY,
         customer_id TEXT,
         total REAL,
+        discount REAL DEFAULT 0,
         payment_method TEXT,
         observation TEXT,
         created_at TEXT
       );
     `);
+
+    try {
+      await execSql(`ALTER TABLE sales ADD COLUMN discount REAL DEFAULT 0;`, [], true);
+    } catch (e) { /* ignore */ }
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS sale_items (
@@ -174,15 +184,21 @@ export async function initDB() {
         product_id TEXT,
         quantity INTEGER,
         unit_price REAL,
+        unit_cost REAL DEFAULT 0,
         total REAL
       );
     `);
+
+    try {
+      await execSql(`ALTER TABLE sale_items ADD COLUMN unit_cost REAL DEFAULT 0;`, [], true);
+    } catch (e) { /* ignore */ }
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS expenses (
         id TEXT PRIMARY KEY,
         name TEXT,
         amount REAL,
+        original_amount REAL DEFAULT 0,
         due_date TEXT,
         paid INTEGER,
         recurring INTEGER,
@@ -191,6 +207,25 @@ export async function initDB() {
         updated_at TEXT
       );
     `);
+
+    // Add original_amount column to expenses
+    try {
+      const info: any = await execSql(`PRAGMA table_info(expenses);`, [], true);
+      const cols: any[] = info.rows._array || [];
+      const hasOriginalAmount = cols.some((c: any) => c.name === 'original_amount');
+      if (!hasOriginalAmount) {
+        await execSql(`ALTER TABLE expenses ADD COLUMN original_amount REAL DEFAULT 0;`, [], true);
+      }
+      await execSql(
+        `UPDATE expenses
+         SET original_amount = amount
+         WHERE (original_amount IS NULL OR original_amount <= 0) AND amount > 0;`,
+        [],
+        true
+      );
+    } catch (e) {
+      console.warn('[DB] Error migrating original_amount:', e);
+    }
 
     // Lightweight migration: add paid_at column iff missing
     // Use PRAGMA table_info to safely detect if the column already exists before altering.

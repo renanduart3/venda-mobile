@@ -27,12 +27,11 @@ const MAX_REPORT_MONTHS = 6;
 export default function Relatorios() {
   const { colors, theme } = useTheme();
 
-  // Cores invertidas para a Modal dar grande contraste
   const isDark = theme === 'dark';
-  const modalBg = isDark ? '#ffffff' : '#1e293b';
-  const modalText = isDark ? '#0f172a' : '#f1f5f9';
-  const modalTextSec = isDark ? '#475569' : '#94a3b8';
-  const modalBorder = isDark ? '#cbd5e1' : '#334155';
+  const modalBg = colors.card;
+  const modalText = colors.text;
+  const modalTextSec = colors.textSecondary;
+  const modalBorder = colors.border;
   const insets = useSafeAreaInsets();
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [selectedPeriod] = useState<'month' | 'year'>('month');

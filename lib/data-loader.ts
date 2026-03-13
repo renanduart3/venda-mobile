@@ -30,6 +30,7 @@ export async function loadProducts() {
     return rows.map((row: any) => ({
       ...row,
       price: Number(row.price ?? 0),
+      cost_price: Number(row.cost_price ?? 0),
       stock: Number(row.stock ?? 0),
       min_stock: Number(row.min_stock ?? 0),
       type: row.type || 'product',
@@ -56,7 +57,7 @@ export async function loadCustomers() {
 export async function loadSales() {
   return loadData(mockSales, async () => {
     const sales = await db.query(
-      `SELECT s.*, c.name as customer_name
+      `SELECT s.*, c.name as customer_name, c.phone as customer_phone
        FROM sales s
        LEFT JOIN customers c ON c.id = s.customer_id
        ORDER BY datetime(s.created_at) DESC;`
@@ -75,11 +76,14 @@ export async function loadSales() {
         return {
           ...sale,
           total: Number(sale.total ?? 0),
+          discount: Number(sale.discount ?? 0),
+          customer_phone: sale.customer_phone || '',
           items: items.map((item: any) => ({
             product_id: item.product_id,
             product_name: item.product_name || '',
             quantity: Number(item.quantity ?? 0),
             unit_price: Number(item.unit_price ?? 0),
+            unit_cost: Number(item.unit_cost ?? 0),
             total: Number(item.total ?? 0),
             product_type: item.product_type || 'product',
           })),
@@ -100,6 +104,10 @@ export async function loadExpenses() {
     return rows.map((row: any) => ({
       ...row,
       amount: Number(row.amount ?? 0),
+      original_amount:
+        Number(row.original_amount ?? 0) > 0
+          ? Number(row.original_amount)
+          : Number(row.amount ?? 0),
       paid: Boolean(row.paid),
       recurring: Boolean(row.recurring),
     }));
@@ -117,44 +125,184 @@ export async function loadDashboardStats() {
       loadExpenses(),
       db.query('SELECT * FROM sales;'),
       db.query(
-        `SELECT si.product_id, si.quantity, p.name as product_name
+        `SELECT si.product_id, si.quantity, si.unit_cost, si.sale_id, p.name as product_name
          FROM sale_items si
          LEFT JOIN products p ON p.id = si.product_id;`
       ),
     ]);
 
     const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    // Converte qualquer formato de data para "yyyy-MM" (suporta ISO e dd/mm/yyyy legado)
-    const toMonthKey = (dateString: any): string | null => {
-      if (!dateString) return null;
-      if (typeof dateString === 'string' && /^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(dateString)) {
-        const sep = dateString.includes('/') ? '/' : '-';
-        const [dd, mm, yyyy] = dateString.split(sep).map((n: string) => parseInt(n, 10));
-        const d = new Date(yyyy, (mm || 1) - 1, dd || 1);
-        if (!isNaN(d.getTime())) {
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        }
-        return null;
+    const formatMonthKey = (date: Date): string =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+    const formatDayKey = (date: Date): string =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+    const parseDate = (dateValue: any): Date | null => {
+      if (!dateValue) return null;
+
+      if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+        return dateValue;
       }
-      if (typeof dateString === 'string') {
-        const d = new Date(dateString);
-        if (!isNaN(d.getTime())) {
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+      if (typeof dateValue === 'string') {
+        const legacyDateMatch = dateValue.match(
+          /^(\d{2})[\/\-](\d{2})[\/\-](\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/
+        );
+
+        if (legacyDateMatch) {
+          const [, dd, mm, yyyy, hh = '0', min = '0', ss = '0'] = legacyDateMatch;
+          const parsedLegacy = new Date(
+            Number(yyyy),
+            Number(mm) - 1,
+            Number(dd),
+            Number(hh),
+            Number(min),
+            Number(ss)
+          );
+
+          if (!isNaN(parsedLegacy.getTime())) {
+            return parsedLegacy;
+          }
+        }
+
+        const parsedIso = new Date(dateValue);
+        if (!isNaN(parsedIso.getTime())) {
+          return parsedIso;
         }
       }
+
       return null;
     };
+
+    const toMonthKey = (dateValue: any): string | null => {
+      const parsed = parseDate(dateValue);
+      return parsed ? formatMonthKey(parsed) : null;
+    };
+
+    const toDayKey = (dateValue: any): string | null => {
+      const parsed = parseDate(dateValue);
+      return parsed ? formatDayKey(parsed) : null;
+    };
+
+    const currentMonth = formatMonthKey(now);
+    const todayKey = formatDayKey(now);
+    const yesterdayDate = new Date(now);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayKey = formatDayKey(yesterdayDate);
+
+    const saleCogsBySaleId = new Map<string, number>();
+    for (const item of saleItems) {
+      const saleId = String(item.sale_id ?? '');
+      if (!saleId) continue;
+      const currentCogs = saleCogsBySaleId.get(saleId) || 0;
+      saleCogsBySaleId.set(
+        saleId,
+        currentCogs + Number(item.quantity ?? 0) * Number(item.unit_cost ?? 0)
+      );
+    }
+
+    type DailyBucket = {
+      sales: number;
+      revenue: number;
+      discounts: number;
+      gross: number;
+      cogs: number;
+      profit: number;
+    };
+
+    const emptyDailyBucket = (): DailyBucket => ({
+      sales: 0,
+      revenue: 0,
+      discounts: 0,
+      gross: 0,
+      cogs: 0,
+      profit: 0,
+    });
+
+    const dailyTotals: Record<string, DailyBucket> = {};
+
+    const getDailyBucket = (dayKey: string): DailyBucket => {
+      if (!dailyTotals[dayKey]) {
+        dailyTotals[dayKey] = emptyDailyBucket();
+      }
+      return dailyTotals[dayKey];
+    };
+
+    for (const sale of sales) {
+      const dayKey = toDayKey(sale.created_at);
+      if (!dayKey) continue;
+
+      const saleId = String(sale.id ?? '');
+      const netRevenue = Number(sale.total ?? 0);
+      const discounts = Number(sale.discount ?? 0);
+      const grossRevenue = netRevenue + discounts;
+      const cogs = saleCogsBySaleId.get(saleId) || 0;
+      const profit = netRevenue - cogs;
+
+      const bucket = getDailyBucket(dayKey);
+      bucket.sales += 1;
+      bucket.revenue += netRevenue;
+      bucket.discounts += discounts;
+      bucket.gross += grossRevenue;
+      bucket.cogs += cogs;
+      bucket.profit += profit;
+    }
 
     // Filtra vendas do mês — suporta ISO e dd/mm/yyyy legado
     const monthlySales = sales.filter((sale: any) =>
       toMonthKey(sale.created_at) === currentMonth
     );
-    const monthlyRevenue = monthlySales.reduce(
+    const monthlyNetRevenue = monthlySales.reduce(
       (sum: number, sale: any) => sum + Number(sale.total ?? 0),
       0
     );
+    const monthlyDiscounts = monthlySales.reduce(
+      (sum: number, sale: any) => sum + Number(sale.discount ?? 0),
+      0
+    );
+    const monthlyGrossRevenue = monthlyNetRevenue + monthlyDiscounts;
+
+    const monthlySalesIds = new Set(monthlySales.map((s: any) => String(s.id ?? '')));
+    let monthlyCogs = 0;
+    for (const saleId of monthlySalesIds) {
+      monthlyCogs += saleCogsBySaleId.get(saleId) || 0;
+    }
+    const monthlyProfit = monthlyNetRevenue - monthlyCogs;
+
+    const todayTotals = dailyTotals[todayKey] || emptyDailyBucket();
+    const yesterdayTotals = dailyTotals[yesterdayKey] || emptyDailyBucket();
+
+    const percentChange = (currentValue: number, previousValue: number): number => {
+      if (previousValue === 0) {
+        return currentValue === 0 ? 0 : 100;
+      }
+      return ((currentValue - previousValue) / Math.abs(previousValue)) * 100;
+    };
+
+    const todayMarginPct =
+      todayTotals.revenue > 0 ? (todayTotals.profit / todayTotals.revenue) * 100 : 0;
+    const todayDiscountPct =
+      todayTotals.gross > 0 ? (todayTotals.discounts / todayTotals.gross) * 100 : 0;
+
+    const last7Days = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(now);
+      date.setDate(now.getDate() - (6 - index));
+
+      const dayKey = formatDayKey(date);
+      const totals = dailyTotals[dayKey] || emptyDailyBucket();
+      const dayLabel = date
+        .toLocaleDateString('pt-BR', { weekday: 'short' })
+        .replace('.', '')
+        .trim();
+
+      return {
+        label: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1, 3),
+        revenue: Number(totals.revenue.toFixed(2)),
+        profit: Number(totals.profit.toFixed(2)),
+      };
+    });
 
     const lowStockCount = products.filter(
       (product: any) =>
@@ -174,6 +322,9 @@ export async function loadDashboardStats() {
       .reduce((sum: number, expense: any) => sum + Number(expense.amount ?? 0), 0);
 
     const productSalesMap = saleItems.reduce((acc: Record<string, { name: string; sales: number }>, item: any) => {
+      if (!monthlySalesIds.has(String(item.sale_id ?? ''))) {
+        return acc;
+      }
       if (!item.product_id) {
         return acc;
       }
@@ -183,16 +334,13 @@ export async function loadDashboardStats() {
       return acc;
     }, {} as Record<string, { name: string; sales: number }>);
 
-    const topProducts = (Object.values(productSalesMap) as Array<{ name: string; sales: number }>)
+    const topProducts = (Object.values(productSalesMap) as { name: string; sales: number }[])
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 5);
 
     const peakHourMap = monthlySales.reduce((acc: Record<string, number>, sale: any) => {
-      if (typeof sale.created_at !== 'string') {
-        return acc;
-      }
-      const date = new Date(sale.created_at);
-      if (isNaN(date.getTime())) {
+      const date = parseDate(sale.created_at);
+      if (!date) {
         return acc;
       }
       const hourLabel = `${String(date.getHours()).padStart(2, '0')}:00`;
@@ -200,14 +348,29 @@ export async function loadDashboardStats() {
       return acc;
     }, {} as Record<string, number>);
 
-    const peakHours = (Object.entries(peakHourMap) as Array<[string, number]>)
+    const peakHours = (Object.entries(peakHourMap) as [string, number][])
       .map(([hour, salesCount]) => ({ hour, sales: salesCount }))
       .sort((a, b) => b.sales - a.sales)
       .slice(0, 6);
 
     return {
-      dailySales: monthlySales.length,
-      dailyRevenue: monthlyRevenue,
+      dailySales: todayTotals.sales,
+      dailyRevenue: monthlyNetRevenue,
+      monthlyGrossRevenue,
+      monthlyDiscounts,
+      monthlyCogs,
+      monthlyProfit,
+      todayRevenue: todayTotals.revenue,
+      todayProfit: todayTotals.profit,
+      todayDiscounts: todayTotals.discounts,
+      todayGrossRevenue: todayTotals.gross,
+      todayCogs: todayTotals.cogs,
+      todayMarginPct,
+      todayDiscountPct,
+      revenueChangePct: percentChange(todayTotals.revenue, yesterdayTotals.revenue),
+      profitChangePct: percentChange(todayTotals.profit, yesterdayTotals.profit),
+      discountChangePct: percentChange(todayTotals.discounts, yesterdayTotals.discounts),
+      last7Days,
       lowStockCount,
       totalCustomers: customers.length,
       monthlyExpenses: monthlyExpensesTotal,
@@ -244,7 +407,7 @@ export async function loadStoreSettings() {
           } else if (typeof parsed === 'string') {
             pixKeys = parsed.split(',').map((value: string) => value.trim()).filter(Boolean);
           }
-        } catch (error) {
+        } catch {
           pixKeys = String(row.pix_key)
             .split(',')
             .map((value: string) => value.trim())

@@ -4,11 +4,13 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   Alert,
   Platform,
+  ActivityIndicator,
+  TouchableOpacity,
   Linking
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import {
   ArrowLeft,
   Crown,
@@ -37,6 +39,7 @@ import {
 
 export default function Planos() {
   const { colors } = useTheme();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [selectedPlan, setSelectedPlan] = useState<string>('yearly');
   const [isLoading, setIsLoading] = useState(false);
@@ -105,8 +108,19 @@ export default function Planos() {
       const result = await subscriptionManager.purchaseSubscription(currentPlan);
 
       if (result.success) {
-        Alert.alert('Sucesso!', 'Assinatura ativada com sucesso!');
-        await loadActiveSubscription();
+        Alert.alert(
+          'Sucesso!', 
+          'Assinatura ativada com sucesso! Bem-vindo(a) ao Premium.',
+          [
+            { 
+               text: 'Começar',
+               onPress: async () => {
+                 await loadActiveSubscription();
+                 router.replace('/(tabs)');
+               }
+            }
+          ]
+        );
       } else {
         Alert.alert('Erro', result.error || 'Não foi possível processar a assinatura.');
       }

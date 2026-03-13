@@ -82,11 +82,21 @@ export const createProdutosStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  productImage: {
+  productTypeIcon: {
     width: 60,
     height: 60,
     borderRadius: 8,
-    backgroundColor: colors.border,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productTypeIconProduct: {
+    backgroundColor: `${colors.primary}15`,
+    borderColor: `${colors.primary}45`,
+  },
+  productTypeIconService: {
+    backgroundColor: `${colors.success}15`,
+    borderColor: `${colors.success}45`,
   },
   productInfo: {
     flex: 1,

@@ -1,7 +1,5 @@
 import db from './db';
 import { isPremium } from './premium';
-import { getUseReportsMock } from './dev-flags';
-import { getReportData as getReportDataMock } from './advanced-reports.mock';
 
 export type Period = 'monthly' | 'yearly' | 'custom';
 
@@ -46,7 +44,7 @@ const MAX_MONTHS = 6;
 async function checkPremiumAccess(): Promise<void> {
   const premium = await isPremium();
   if (!premium) {
-    throw new Error('Funcionalidade premium disponível apenas para usuários Premium.');
+    throw new Error('Funcionalidade premium disponï¿½vel apenas para usuï¿½rios Premium.');
   }
 }
 
@@ -62,15 +60,15 @@ function calculatePeriod(opts: ReportOptions): { start: Date; end: Date } {
     start = new Date(now.getFullYear(), 0, 1);
     end = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
   } else {
-    if (!opts.start || !opts.end) throw new Error('Período custom exige início e fim');
+    if (!opts.start || !opts.end) throw new Error('Perï¿½odo custom exige inï¿½cio e fim');
     start = new Date(opts.start);
     end = new Date(opts.end);
   }
 
-  // mínimo 1 mês e máximo 6 meses
+  // mï¿½nimo 1 mï¿½s e mï¿½ximo 6 meses
   const msInMonth = 1000 * 60 * 60 * 24 * 30;
   if (end.getTime() - start.getTime() < msInMonth) {
-    throw new Error('Período deve ter pelo menos 1 mês.');
+    throw new Error('Perï¿½odo deve ter pelo menos 1 mï¿½s.');
   }
   if ((end.getTime() - start.getTime()) / msInMonth > MAX_MONTHS) {
     end = new Date(start.getTime() + MAX_MONTHS * msInMonth - 1);
@@ -85,17 +83,35 @@ export async function getTopSellingProducts(opts: ReportOptions): Promise<Produc
   const { start, end } = calculatePeriod(opts);
 
   const query = `
+    WITH sale_totals AS (
+      SELECT sale_id, SUM(total) AS sale_gross_total
+      FROM sale_items
+      GROUP BY sale_id
+    ),
+    line_net AS (
+      SELECT
+        si.product_id,
+        si.quantity,
+        si.total * (
+          CASE
+            WHEN COALESCE(st.sale_gross_total, 0) > 0 THEN COALESCE(s.total, 0) / st.sale_gross_total
+            ELSE 1
+          END
+        ) AS net_line_total
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      LEFT JOIN sale_totals st ON st.sale_id = si.sale_id
+      WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+    )
     SELECT 
-      si.product_id,
+      ln.product_id,
       p.name as product_name,
-      SUM(si.quantity) as total_sold,
-      SUM(si.total) as total_revenue,
-      AVG(si.unit_price) as average_price
-    FROM sale_items si
-    JOIN products p ON si.product_id = p.id
-    JOIN sales s ON si.sale_id = s.id
-    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
-    GROUP BY si.product_id, p.name
+      SUM(ln.quantity) as total_sold,
+      SUM(ln.net_line_total) as total_revenue,
+      COALESCE(SUM(ln.net_line_total) / NULLIF(SUM(ln.quantity), 0), 0) as average_price
+    FROM line_net ln
+    JOIN products p ON ln.product_id = p.id
+    GROUP BY ln.product_id, p.name
     ORDER BY total_sold DESC
     LIMIT 20
   `;
@@ -132,7 +148,7 @@ export async function getProductABCAnalysis(opts: ReportOptions): Promise<any[]>
   });
 }
 
-// 3. Tendência de Vendas por período (por dia)
+// 3. Tendï¿½ncia de Vendas por perï¿½odo (por dia)
 export async function getSalesTrendAnalysis(opts: ReportOptions): Promise<any[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
@@ -180,7 +196,7 @@ export async function getPaymentMethodAnalysis(opts: ReportOptions): Promise<Pay
   }));
 }
 
-// 5. Horários de Pico
+// 5. Horï¿½rios de Pico
 export async function getPeakSalesHours(opts: ReportOptions): Promise<HourlySalesData[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
@@ -277,20 +293,54 @@ export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[
   const { start, end } = calculatePeriod(opts);
 
   const query = `
+    WITH sale_totals AS (
+      SELECT sale_id, SUM(total) AS sale_gross_total
+      FROM sale_items
+      GROUP BY sale_id
+    ),
+    line_net AS (
+      SELECT
+        si.product_id,
+        si.quantity,
+        si.total * (
+          CASE
+            WHEN COALESCE(st.sale_gross_total, 0) > 0 THEN COALESCE(s.total, 0) / st.sale_gross_total
+            ELSE 1
+          END
+        ) AS net_line_total
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      LEFT JOIN sale_totals st ON st.sale_id = si.sale_id
+      WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+    ),
+    product_net AS (
+      SELECT
+        product_id,
+        SUM(quantity) AS total_sold,
+        SUM(net_line_total) AS total_revenue
+      FROM line_net
+      GROUP BY product_id
+    )
     SELECT 
       p.id as product_id,
       p.name as product_name,
-      p.price as cost_price,
-      AVG(si.unit_price) as selling_price,
-      SUM(si.quantity) as total_sold,
-      SUM(si.total) as total_revenue,
-      (AVG(si.unit_price) - p.price) as profit_per_unit,
-      ((AVG(si.unit_price) - p.price) / AVG(si.unit_price)) * 100 as profit_margin_percentage
+      COALESCE(p.cost_price, 0) as cost_price,
+      COALESCE(pn.total_revenue / NULLIF(pn.total_sold, 0), 0) as selling_price,
+      COALESCE(pn.total_sold, 0) as total_sold,
+      COALESCE(pn.total_revenue, 0) as total_revenue,
+      COALESCE((pn.total_revenue / NULLIF(pn.total_sold, 0)) - COALESCE(p.cost_price, 0), 0) as profit_per_unit,
+      CASE
+        WHEN COALESCE(pn.total_revenue / NULLIF(pn.total_sold, 0), 0) > 0
+        THEN (
+          (
+            (pn.total_revenue / NULLIF(pn.total_sold, 0)) - COALESCE(p.cost_price, 0)
+          ) /
+          (pn.total_revenue / NULLIF(pn.total_sold, 0))
+        ) * 100
+        ELSE 0
+      END as profit_margin_percentage
     FROM products p
-    JOIN sale_items si ON p.id = si.product_id
-    JOIN sales s ON si.sale_id = s.id
-    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
-    GROUP BY p.id, p.name, p.price
+    JOIN product_net pn ON p.id = pn.product_id
     ORDER BY profit_margin_percentage DESC
     LIMIT 200
   `;
@@ -309,9 +359,6 @@ export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[
 }
 
 export async function getReportData(reportId: string, opts: ReportOptions): Promise<any> {
-  if (getUseReportsMock() || process.env.EXPO_PUBLIC_USE_REPORTS_MOCK === '1') {
-    return getReportDataMock(reportId, opts);
-  }
   let result: any;
   switch (reportId) {
     case '1':
@@ -339,12 +386,9 @@ export async function getReportData(reportId: string, opts: ReportOptions): Prom
       result = await getProfitMarginAnalysis(opts);
       break;
     default:
-      throw new Error('Relat?rio n?o encontrado');
+      throw new Error('Relatrio no encontrado');
   }
-  const isEmpty = !result || (Array.isArray(result) && result.length === 0);
-  if (isEmpty && process.env.EXPO_PUBLIC_USE_REPORTS_MOCK !== '0') {
-    return getReportDataMock(reportId, opts);
-  }
+
   return result;
 }
 

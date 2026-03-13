@@ -468,10 +468,33 @@ export const mockExpenses = [
 // Dashboard mock data
 export const mockDashboardStats = {
   dailySales: 5, // 5 vendas hoje
-  dailyRevenue: 100.50, // R$ 100,50 em vendas hoje
+  dailyRevenue: 100.50, // Compatibilidade: faturamento líquido mensal
+  monthlyGrossRevenue: 110.50, // Bruto antes do desconto (mês)
+  monthlyDiscounts: 10.00, // Descontos concedidos no mês
+  monthlyCogs: 60.50, // Custo das mercadorias vendidas (mês)
   lowStockCount: 2, // 2 produtos com estoque baixo (Leite e Sabonete)
   totalCustomers: 8, // 8 clientes cadastrados
   monthlyExpenses: 3500.00, // R$ 3.500 em despesas do mês
+  monthlyProfit: 40.00, // Lucro bruto (liquido de descontos e custo)
+  todayRevenue: 1850.00,
+  todayProfit: 620.00,
+  todayDiscounts: 120.00,
+  todayGrossRevenue: 1970.00,
+  todayCogs: 1230.00,
+  todayMarginPct: 33.51,
+  todayDiscountPct: 6.09,
+  revenueChangePct: 18.0,
+  profitChangePct: 11.4,
+  discountChangePct: -9.2,
+  last7Days: [
+    { label: 'Sex', revenue: 1420.00, profit: 430.00 },
+    { label: 'Sab', revenue: 980.00, profit: 280.00 },
+    { label: 'Dom', revenue: 870.00, profit: 250.00 },
+    { label: 'Seg', revenue: 1290.00, profit: 410.00 },
+    { label: 'Ter', revenue: 1560.00, profit: 520.00 },
+    { label: 'Qua', revenue: 1680.00, profit: 550.00 },
+    { label: 'Qui', revenue: 1850.00, profit: 620.00 },
+  ],
   topProducts: [
     { name: 'Coca-Cola 350ml', sales: 9 }, // 9 unidades vendidas
     { name: 'Cerveja Skol 350ml', sales: 8 }, // 8 unidades vendidas

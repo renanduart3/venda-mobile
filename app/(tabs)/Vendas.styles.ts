@@ -211,7 +211,12 @@ export const createVendasStyles = (colors: any) => StyleSheet.create({
     color: colors.text,
     textAlign: 'center',
   },
-    
+  label: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: colors.text,
+    marginBottom: 8,
+  },
 });
 
 

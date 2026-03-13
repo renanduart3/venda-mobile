@@ -12,7 +12,9 @@ import {
   Minus,
   Edit,
   Trash2,
-  Crown
+  Crown,
+  Share2,
+  Calculator
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -28,6 +30,7 @@ interface Product {
   id: string;
   name: string;
   price: number;
+  cost_price?: number;
   stock: number;
   barcode?: string;
   type?: 'product' | 'service';
@@ -44,8 +47,10 @@ interface Sale {
   id: string;
   items: SaleItem[];
   customer?: string;
+  customerPhone?: string;
   paymentMethod: 'cash' | 'credit' | 'debit' | 'pix';
   total: number;
+  discount?: number;
   timestamp: string;
   observation?: string;
 }
@@ -53,7 +58,11 @@ interface Sale {
 export default function Vendas() {
   const { colors } = useTheme();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
+  const [activeTab, setActiveTab] = useState<'new' | 'avulsa' | 'history'>('new');
+
+  // Venda Avulsa State
+  const [avulsaValue, setAvulsaValue] = useState('');
+  const [avulsaDesc, setAvulsaDesc] = useState('Venda Avulsa / Diversos');
 
   // New Sale State
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
@@ -65,6 +74,7 @@ export default function Vendas() {
   const [observation, setObservation] = useState('');
   const [editingSaleId, setEditingSaleId] = useState<string | null>(null);
   const [editingSaleDate, setEditingSaleDate] = useState<string | null>(null);
+  const [discountInput, setDiscountInput] = useState('');
 
   // Sales History State
   const [sales, setSales] = useState<Sale[]>([]);
@@ -77,6 +87,9 @@ export default function Vendas() {
   // Mock data
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+
+  const roundMoney = (value: number) =>
+    Math.round((value + Number.EPSILON) * 100) / 100;
 
   // Função para deletar venda
   const handleDeleteSale = (sale: Sale) => {
@@ -157,10 +170,32 @@ export default function Vendas() {
     setObservation(sale.observation || '');
     setEditingSaleId(sale.id);
     setEditingSaleDate(sale.timestamp);
+    
+    // Calcula a porcentagem do desconto, se houver
+    if (sale.discount && sale.discount > 0) {
+      const saleSubtotal = Number(sale.total ?? 0) + Number(sale.discount ?? 0);
+      if (saleSubtotal > 0) {
+        const descPercent = (Number(sale.discount ?? 0) / saleSubtotal) * 100;
+        setDiscountInput(descPercent.toFixed(2).replace('.', ','));
+      } else {
+        setDiscountInput('');
+      }
+    } else {
+      setDiscountInput('');
+    }
+
     setActiveTab('new');
   };
 
-  const totalSale = saleItems.reduce((sum, item) => sum + item.total, 0);
+  const subtotalSale = roundMoney(saleItems.reduce((sum, item) => sum + item.total, 0));
+  const discountPercentStr = discountInput.replace(',', '.');
+  const discountPercentRaw = parseFloat(discountPercentStr);
+  const discountPercent = Number.isFinite(discountPercentRaw)
+    ? Math.min(100, Math.max(0, discountPercentRaw))
+    : 0;
+  const parsedDiscount = roundMoney((subtotalSale * discountPercent) / 100);
+  const totalSale = roundMoney(Math.max(0, subtotalSale - parsedDiscount));
+
   const todaySales = React.useMemo(() => getTodaySalesUtil(sales), [sales]);
 
   useFocusEffect(
@@ -191,6 +226,7 @@ export default function Vendas() {
             id: item.product_id,
             name: item.product_name,
             price: Number(item.unit_price ?? 0),
+            cost_price: Number(item.unit_cost ?? 0),
             stock: 0,
             type: item.product_type === 'service' ? 'service' : 'product',
           },
@@ -198,8 +234,10 @@ export default function Vendas() {
           total: Number(item.total ?? 0),
         })),
         customer: sale.customer_name || '',
+        customerPhone: sale.customer_phone || '',
         paymentMethod: ((sale.payment_method || 'cash').toLowerCase()) as 'cash' | 'credit' | 'debit' | 'pix',
         total: Number(sale.total ?? 0),
+        discount: Number(sale.discount ?? 0),
         timestamp: sale.created_at,
         observation: sale.observation,
       };
@@ -347,6 +385,7 @@ export default function Vendas() {
                 id: finalSaleId,
                 customer_id: customerId,
                 total: totalSale,
+                discount: parsedDiscount,
                 payment_method: paymentMethod.toUpperCase(),
                 observation: observation.trim() ? observation.trim() : null,
                 created_at: finalCreatedAt,
@@ -361,6 +400,7 @@ export default function Vendas() {
                     product_id: item.product.id,
                     quantity: item.quantity,
                     unit_price: item.product.price,
+                    unit_cost: item.product.cost_price || 0,
                     total: item.total,
                   });
 
@@ -389,6 +429,7 @@ export default function Vendas() {
               setCustomerSuggestionsVisible(false);
               setEditingSaleId(null);
               setEditingSaleDate(null);
+              setDiscountInput('');
 
               Alert.alert('✅ Sucesso', `Venda de R$ ${totalSale.toFixed(2)} ${editingSaleId ? 'atualizada' : 'realizada'} com sucesso!`);
             } catch (error) {
@@ -422,6 +463,10 @@ export default function Vendas() {
             setSuggestionsVisible(false);
             setEditingSaleId(null);
             setEditingSaleDate(null);
+            setDiscountInput('');
+            setAvulsaValue('');
+            setDiscountInput('');
+            setAvulsaValue('');
           },
         },
       ]
@@ -473,6 +518,128 @@ export default function Vendas() {
     setSuggestionsVisible(true);
   };
 
+  const handleShareReceipt = async (sale: Sale) => {
+    if (!premium) {
+      Alert.alert(
+        'Funcionalidade Premium',
+        'O envio de recibo direto para o WhatsApp do cliente é exclusivo para assinantes premium.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Fazer Upgrade', onPress: () => router.push('/planos') }
+        ]
+      );
+      return;
+    }
+
+    const d = new Date(sale.timestamp);
+    const dateStr = d.toLocaleDateString('pt-BR');
+    const timeStr = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    let msg = `*RECIBO DE VENDA*\n`;
+    msg += `Data: ${dateStr} às ${timeStr}\n`;
+    msg += `------------------------\n`;
+    for (const item of sale.items) {
+      msg += `${item.quantity}x ${item.product.name} - R$ ${item.total.toFixed(2)}\n`;
+    }
+    msg += `------------------------\n`;
+    if (sale.discount && sale.discount > 0) {
+      msg += `Subtotal: R$ ${(sale.total + sale.discount).toFixed(2)}\n`;
+      msg += `Desconto: R$ ${sale.discount.toFixed(2)}\n`;
+    }
+    msg += `*TOTAL A PAGAR: R$ ${sale.total.toFixed(2)}*\n\n`;
+    msg += `Forma de pagamento: ${sale.paymentMethod}\n`;
+    msg += `Obrigado pela preferência!`;
+
+    const encodedMsg = encodeURIComponent(msg);
+    // Let react-native handle the link to system share or whatsapp
+    const { Share, Linking } = await import('react-native');
+
+    if (sale.customerPhone) {
+      const numericPhone = sale.customerPhone.replace(/\D/g, '');
+      if (numericPhone.length >= 10 && numericPhone.length <= 13) {
+        let finalPhone = numericPhone;
+        if (!finalPhone.startsWith('55')) finalPhone = `55${finalPhone}`;
+        
+        const wpUrl = `whatsapp://send?phone=${finalPhone}&text=${encodedMsg}`;
+        try {
+          const canOpen = await Linking.canOpenURL(wpUrl);
+          if (canOpen) {
+            await Linking.openURL(wpUrl);
+            return;
+          }
+        } catch (e) {
+          console.log('Não foi possível abrir o WhatsApp (app não instalado?)', e);
+        }
+      }
+    }
+
+    try {
+      await Share.share({
+        message: msg,
+        title: 'Recibo'
+      });
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  const finalizeAvulsa = async () => {
+    const val = parseFloat(avulsaValue.replace(',', '.'));
+    if (isNaN(val) || val <= 0) {
+      Alert.alert('Erro', 'Insira um valor válido para a venda.');
+      return;
+    }
+
+    Alert.alert(
+      'Confirmar Venda Avulsa',
+      `Valor: R$ ${val.toFixed(2)}\nForma de Pagamento: ${
+        paymentMethod === 'cash' ? 'Dinheiro' :
+        paymentMethod === 'credit' ? 'Crédito' :
+        paymentMethod === 'debit' ? 'Débito' : 'PIX'
+      }`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar',
+          onPress: async () => {
+            try {
+              const isoNow = new Date().toISOString();
+              const finalSaleId = Date.now().toString();
+
+              await db.insert('sales', {
+                id: finalSaleId,
+                customer_id: null,
+                total: val,
+                discount: 0,
+                payment_method: paymentMethod.toUpperCase(),
+                observation: avulsaDesc.trim(),
+                created_at: isoNow,
+              });
+
+              // Add a dummy generic item
+              await db.insert('sale_items', {
+                id: `${finalSaleId}-0`,
+                sale_id: finalSaleId,
+                product_id: 'avulso', // requires it not to break Foreign key if sqlite enforcement is not strict, but it is text so it's fine
+                quantity: 1,
+                unit_price: val,
+                total: val,
+              });
+              
+              await loadData();
+              setAvulsaValue('');
+              setAvulsaDesc('Venda Avulsa / Diversos');
+              Alert.alert('Sucesso', 'Venda avulsa registrada!');
+            } catch (error) {
+              console.error(error);
+              Alert.alert('Erro', 'Não foi possível registrar a venda.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const styles = createVendasStyles(colors);
 
   // NOTE: Avoid inline component definitions that remount on each render.
@@ -481,27 +648,87 @@ export default function Vendas() {
     <View style={styles.container}>
       <Header title="Vendas" showSettings />
 
-      <View style={styles.tabSelector}>
+      <View style={[styles.tabSelector, { marginBottom: 16 }]}>
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'new' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('new')}
+          style={[styles.tabButton, activeTab === 'avulsa' && styles.tabButtonActive, { flex: 1 }]}
+          onPress={() => setActiveTab('avulsa')}
         >
-          <Text style={[styles.tabButtonText, activeTab === 'new' && styles.tabButtonTextActive]}>
-            Nova Venda
+          <Calculator size={16} color={activeTab === 'avulsa' ? colors.primary : colors.textSecondary} style={{ marginBottom: 4 }} />
+          <Text style={[styles.tabButtonText, activeTab === 'avulsa' && styles.tabButtonTextActive, { fontSize: 12 }]}>
+            Venda Avulsa
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive]}
+          style={[styles.tabButton, activeTab === 'new' && styles.tabButtonActive, { flex: 1.2 }]}
+          onPress={() => setActiveTab('new')}
+        >
+          <Plus size={16} color={activeTab === 'new' ? colors.primary : colors.textSecondary} style={{ marginBottom: 4 }} />
+          <Text style={[styles.tabButtonText, activeTab === 'new' && styles.tabButtonTextActive, { fontSize: 12 }]}>
+            Modo Carrinho
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive, { flex: 1 }]}
           onPress={() => setActiveTab('history')}
         >
-          <Text style={[styles.tabButtonText, activeTab === 'history' && styles.tabButtonTextActive]}>
-            Histórico
+          <Text style={[styles.tabButtonText, activeTab === 'history' && styles.tabButtonTextActive, { fontSize: 12 }]}>
+            Histórico de hoje
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* Tab Content */}
-      {activeTab === 'new' ? (
+      {activeTab === 'avulsa' ? (
+        <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
+          <Card style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 16, textAlign: 'center' }}>
+              Venda Rápida (Avulsa)
+            </Text>
+            
+            <Text style={styles.label}>Valor (R$)</Text>
+            <TextInput
+              style={[styles.input, { fontSize: 32, height: 70, textAlign: 'center', fontFamily: 'Inter-Bold', color: colors.primary, marginBottom: 16 }]}
+              placeholder="0,00"
+              placeholderTextColor={colors.textSecondary}
+              value={avulsaValue}
+              onChangeText={setAvulsaValue}
+              keyboardType="numeric"
+            />
+
+            <Text style={styles.label}>Descrição</Text>
+            <TextInput
+              style={[styles.input, { marginBottom: 24 }]}
+              value={avulsaDesc}
+              onChangeText={setAvulsaDesc}
+            />
+
+            <Text style={styles.label}>Forma de Pagamento</Text>
+            <View style={[styles.paymentMethods, { marginBottom: 24 }]}>
+              {[
+                { key: 'cash', label: 'Dinheiro' },
+                { key: 'credit', label: 'Crédito' },
+                { key: 'debit', label: 'Débito' },
+                { key: 'pix', label: 'PIX' },
+              ].map((method) => (
+                <TouchableOpacity
+                  key={method.key}
+                  style={[styles.paymentButton, paymentMethod === method.key && styles.paymentButtonActive]}
+                  onPress={() => setPaymentMethod(method.key as any)}
+                >
+                  <Text style={[styles.paymentButtonText, paymentMethod === method.key && styles.paymentButtonTextActive]}>
+                    {method.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Button
+              title="Vender Agora"
+              onPress={finalizeAvulsa}
+            />
+          </Card>
+        </ScrollView>
+      ) : activeTab === 'new' ? (
         <ScrollView
           style={styles.content}
           showsVerticalScrollIndicator={false}
@@ -655,8 +882,28 @@ export default function Vendas() {
             />
           </View>
 
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+             <Text style={{ fontSize: 16, fontFamily: 'Inter-Medium', color: colors.text }}>Desconto (%):</Text>
+             <TextInput 
+               style={[styles.input, { width: 120, height: 40 }]}
+               keyboardType="numeric"
+               placeholder="0,00"
+               placeholderTextColor={colors.textSecondary}
+               value={discountInput}
+               onChangeText={setDiscountInput}
+             />
+          </View>
+
           <View style={styles.totalSection}>
-            <Text style={styles.totalText}>Total: R$ {totalSale.toFixed(2)}</Text>
+             <Text style={[styles.totalText, { fontSize: 18, fontFamily: 'Inter-Medium', color: colors.textSecondary }]}>
+               Subtotal: R$ {subtotalSale.toFixed(2)}
+             </Text>
+             {parsedDiscount > 0 && (
+               <Text style={[styles.totalText, { color: colors.error, fontSize: 16, fontFamily: 'Inter-Medium' }]}>
+                 - Desconto: R$ {parsedDiscount.toFixed(2)}
+               </Text>
+             )}
+            <Text style={styles.totalText}>Total Venda: R$ {totalSale.toFixed(2)}</Text>
           </View>
           <Button
             title={editingSaleId ? "Salvar Alterações" : "Finalizar Venda"}
@@ -703,6 +950,13 @@ export default function Vendas() {
                       style={{ padding: 4 }}
                     >
                       <Trash2 size={16} color={colors.error} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => handleShareReceipt(sale)}
+                      style={{ padding: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    >
+                      <Share2 size={16} color={colors.secondary} />
+                      {!premium && <Crown size={12} color={colors.warning} />}
                     </TouchableOpacity>
                   </View>
                 </View>

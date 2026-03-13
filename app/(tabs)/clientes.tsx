@@ -4,11 +4,11 @@ import {
   Text, 
   ScrollView,
   TouchableOpacity,
-  FlatList,
   Modal,
   Alert,
   Linking
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { TextInput } from '@/components/ui/TextInput';
 import { 
   Plus, 
@@ -345,7 +345,7 @@ export default function Clientes() {
             onAction={() => openCustomerModal()}
           />
         ) : (
-          <FlatList
+          <FlashList
             data={filteredCustomers}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}

@@ -1,0 +1,8 @@
+{
+  "checkout": {
+    "title": "Checkout",
+    "pay_button": "Pay Now",
+    "total": "Total",
+    "currency": "$"
+  }
+}
