@@ -6,6 +6,7 @@ import * as SQLite from 'expo-sqlite';
 
 let db: SQLite.SQLiteDatabase | null = null;
 const DB_NAME = 'venda.db';
+let sqlExecutionQueue: Promise<void> = Promise.resolve();
 
 function initializeDatabase(): SQLite.SQLiteDatabase | null {
   try {
@@ -25,8 +26,31 @@ function initializeDatabase(): SQLite.SQLiteDatabase | null {
   }
 }
 
-async function execSql(sql: string, params: any[] = [], silent: boolean = false): Promise<any> {
+function ensureDatabase(): SQLite.SQLiteDatabase | null {
   if (!db) {
+    db = initializeDatabase();
+  }
+  return db;
+}
+
+function shouldRetryAfterReopen(error: unknown): boolean {
+  const message = String((error as any)?.message ?? error ?? '').toLowerCase();
+  return (
+    message.includes('shared object that was already released') ||
+    (message.includes('prepareasync') && message.includes('cannot be cast')) ||
+    (message.includes('nativestatement') && message.includes('cannot be cast'))
+  );
+}
+
+function runSerializedSql<T>(task: () => Promise<T>): Promise<T> {
+  const nextRun = sqlExecutionQueue.then(task, task);
+  sqlExecutionQueue = nextRun.then(() => undefined, () => undefined);
+  return nextRun;
+}
+
+async function execSqlInternal(sql: string, params: any[] = [], silent: boolean = false, allowRetry = true): Promise<any> {
+  const activeDb = ensureDatabase();
+  if (!activeDb) {
     console.warn('Database not available');
     return { rows: { length: 0, item: () => null, _array: [] } };
   }
@@ -34,13 +58,12 @@ async function execSql(sql: string, params: any[] = [], silent: boolean = false)
   const isSelect = /^\s*(SELECT|PRAGMA)/i.test(sql);
 
   // New API detection: runAsync/getAllAsync/withTransactionAsync
-  const hasNewApi = typeof (db as any).runAsync === 'function' && typeof (db as any).getAllAsync === 'function';
+  const hasNewApi = typeof (activeDb as any).runAsync === 'function' && typeof (activeDb as any).getAllAsync === 'function';
 
   if (hasNewApi) {
     try {
       if (isSelect) {
-        // Use getAllAsync directly without prepared statements to avoid "shared object already released" error
-        const rows: any[] = await (db as any).getAllAsync(sql, ...params);
+        const rows: any[] = await (activeDb as any).getAllAsync(sql, ...params);
         return {
           rows: {
             length: rows.length,
@@ -48,19 +71,31 @@ async function execSql(sql: string, params: any[] = [], silent: boolean = false)
             _array: rows,
           },
         };
-      } else {
-        // Mutating statement - use runAsync directly
-        const result = await (db as any).runAsync(sql, ...params);
-        return {
-          rows: { length: 0, item: () => null, _array: [] },
-          insertId: result?.lastInsertRowId,
-          rowsAffected: result?.changes || 0
-        };
       }
+
+      const result = await (activeDb as any).runAsync(sql, ...params);
+      return {
+        rows: { length: 0, item: () => null, _array: [] },
+        insertId: result?.lastInsertRowId,
+        rowsAffected: result?.changes || 0,
+      };
     } catch (error: any) {
+      if (allowRetry && shouldRetryAfterReopen(error)) {
+        if (!silent) {
+          console.warn('[DB] SQLite handle foi liberado; reabrindo e repetindo query uma vez.', {
+            sql,
+            error: error?.message,
+          });
+        }
+
+        db = initializeDatabase();
+        if (db) {
+          return execSqlInternal(sql, params, silent, false);
+        }
+      }
+
       if (!silent) {
         console.error('SQL execution error (new API):', error, sql);
-        // Log more details about the error
         if (error.message) {
           console.error('Error message:', error.message);
         }
@@ -74,7 +109,7 @@ async function execSql(sql: string, params: any[] = [], silent: boolean = false)
 
   // Legacy transaction path
   return new Promise((resolve, reject) => {
-    const legacyDb: any = db as any;
+    const legacyDb: any = activeDb as any;
     if (!legacyDb.transaction) {
       console.error('Database transaction method not available');
       reject(new Error('Database transaction method not available'));
@@ -116,6 +151,10 @@ async function execSql(sql: string, params: any[] = [], silent: boolean = false)
       }
     );
   });
+}
+
+async function execSql(sql: string, params: any[] = [], silent: boolean = false): Promise<any> {
+  return runSerializedSql(() => execSqlInternal(sql, params, silent, true));
 }
 
 export async function initDB() {

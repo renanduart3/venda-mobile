@@ -26,7 +26,7 @@ import { useRouter, useSegments } from 'expo-router';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { OfflineProvider } from '@/contexts/OfflineContext';
 import db from '@/lib/db';
-import { initializeIAP, restorePurchases } from '@/lib/iap';
+import { initializeIAP } from '@/lib/iap';
 import { checkSubscriptionFromDatabase, isPremium } from '@/lib/premium';
 import { supabase } from '@/lib/supabase';
 
@@ -92,11 +92,6 @@ export default function RootLayout() {
       try {
         await db.initDB();
         await initializeIAP();
-        await checkSubscriptionFromDatabase();
-        const premium = await isPremium();
-        if (!premium) {
-          try { await restorePurchases(); } catch { }
-        }
       } catch (err) {
         console.error('Error initializing app:', err);
       }
@@ -152,6 +147,7 @@ export default function RootLayout() {
       <ThemeProvider>
         <ThemeBootstrapper />
         <AuthProvider>
+          <SubscriptionBootstrapper />
           <OfflineProvider>
             <NotificationProvider>
               <AuthGate>
@@ -174,6 +170,47 @@ export default function RootLayout() {
       </ThemeProvider>
     </SafeAreaProvider>
   );
+}
+
+function SubscriptionBootstrapper() {
+  const { loading, isAuthenticated, user } = useAuth();
+  const [syncedUserId, setSyncedUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (loading) return;
+
+    if (!isAuthenticated || !user?.id) {
+      setSyncedUserId(null);
+      return;
+    }
+
+    if (syncedUserId === user.id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const syncSubscription = async () => {
+      try {
+        await checkSubscriptionFromDatabase();
+        await isPremium();
+      } catch (error) {
+        console.warn('[Premium] Falha ao sincronizar assinatura no bootstrap:', error);
+      } finally {
+        if (!cancelled) {
+          setSyncedUserId(user.id);
+        }
+      }
+    };
+
+    syncSubscription();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, isAuthenticated, user?.id, syncedUserId]);
+
+  return null;
 }
 
 function ThemedStatusBar() {

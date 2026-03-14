@@ -1,7 +1,10 @@
 import { Platform } from 'react-native';
 // react-native-iap v14 usa named exports individuais, nao um objeto default.
 // Fazemos import dinamico para nao quebrar no Expo Go (sem NitroModules).
-import { validateSubscription } from './premium';
+import { enablePremium, savePendingIapValidation, validateSubscription } from './premium';
+import { supabase } from './supabase';
+
+export type PurchaseFailureReason = 'cancelled' | 'auth' | 'config' | 'validation' | 'infra';
 
 // SKUs reais do Google Play Console
 export const PRODUCT_IDS = {
@@ -27,6 +30,8 @@ export interface Product {
 export interface PurchaseResult {
   success: boolean;
   error?: string;
+  cancelled?: boolean;
+  reason?: PurchaseFailureReason;
 }
 
 let iapAvailable = false;
@@ -34,11 +39,53 @@ let purchaseUpdateSubscription: { remove?: () => void } | null = null;
 let purchaseErrorSubscription: { remove?: () => void } | null = null;
 const purchaseResultQueue: Array<(result: PurchaseResult) => void> = [];
 
+const RECENT_PURCHASE_EVENT_TTL_MS = 120000;
+const recentPurchaseEvents = new Map<string, number>();
+
 // Modulo carregado dinamicamente (named exports do rn-iap v14)
 let iap: any = null;
 
 // Cache de produtos buscados — evita re-fetch na hora da compra
 const productCache = new Map<string, any>();
+
+function logIap(level: 'log' | 'warn' | 'error', reason: 'lifecycle' | PurchaseFailureReason, message: string, details?: unknown) {
+  const prefix = `[IAP][${reason.toUpperCase()}] ${message}`;
+  const writer = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+  if (details !== undefined) {
+    writer(prefix, details);
+    return;
+  }
+  writer(prefix);
+}
+
+function getIapErrorMessage(error: any): string {
+  if (typeof error?.message === 'string' && error.message.trim()) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error;
+  }
+  return 'Unknown error';
+}
+
+async function getAuthSnapshotForIap() {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+    return {
+      hasSession: !!session,
+      accessTokenLen: session?.access_token?.length,
+      userId: session?.user?.id,
+      userEmail: session?.user?.email,
+      expiresAt: session?.expires_at,
+    };
+  } catch (error) {
+    return {
+      hasSession: false,
+      authSnapshotError: error instanceof Error ? error.message : 'unknown',
+    };
+  }
+}
 
 function tryLoadIap(): any | null {
   try {
@@ -48,10 +95,10 @@ function tryLoadIap(): any | null {
     if (mod && typeof mod.initConnection === 'function') {
       return mod;
     }
-    console.warn('[IAP] Modulo carregado mas initConnection nao encontrado. Exports:', Object.keys(mod || {}).slice(0, 10));
+    logIap('warn', 'config', 'Modulo IAP carregado sem initConnection.', Object.keys(mod || {}).slice(0, 10));
     return null;
   } catch (e) {
-    console.warn('[IAP] react-native-iap nao disponivel:', e);
+    logIap('warn', 'config', 'react-native-iap nao disponivel.', e);
     return null;
   }
 }
@@ -59,6 +106,108 @@ function tryLoadIap(): any | null {
 function resolveNextPurchase(result: PurchaseResult) {
   const resolver = purchaseResultQueue.shift();
   if (resolver) resolver(result);
+}
+
+function buildPurchaseEventKey(purchase: any): string {
+  const productId = Array.isArray(purchase?.productId)
+    ? purchase.productId[0]
+    : (purchase?.productId ?? purchase?.id ?? 'unknown-product');
+
+  const platform: 'android' | 'ios' = Platform.OS === 'ios' ? 'ios' : 'android';
+  const rawToken = platform === 'ios'
+    ? (purchase?.transactionReceipt ?? purchase?.transactionId)
+    : (purchase?.purchaseToken ?? purchase?.transactionId);
+
+  const token = typeof rawToken === 'string' ? rawToken : String(rawToken ?? 'no-token');
+  return `${platform}:${productId}:${token}`;
+}
+
+function shouldSkipDuplicatePurchaseEvent(purchase: any): boolean {
+  const now = Date.now();
+
+  // Cleanup opportunistic to avoid unbounded growth.
+  for (const [key, seenAt] of recentPurchaseEvents.entries()) {
+    if (now - seenAt > RECENT_PURCHASE_EVENT_TTL_MS) {
+      recentPurchaseEvents.delete(key);
+    }
+  }
+
+  const eventKey = buildPurchaseEventKey(purchase);
+  const seenAt = recentPurchaseEvents.get(eventKey);
+  if (seenAt && now - seenAt <= RECENT_PURCHASE_EVENT_TTL_MS) {
+    return true;
+  }
+
+  recentPurchaseEvents.set(eventKey, now);
+  return false;
+}
+
+function isPurchaseCancelled(error: any): boolean {
+  const code = String(error?.code ?? '').toLowerCase();
+  const message = String(error?.message ?? '').toLowerCase();
+
+  return (
+    code === 'user-cancelled' ||
+    code === 'user_cancelled' ||
+    code === 'e_user_cancelled' ||
+    message.includes('user cancelled')
+  );
+}
+
+function classifyIapError(error: any): PurchaseFailureReason {
+  if (isPurchaseCancelled(error)) {
+    return 'cancelled';
+  }
+
+  const code = String(error?.code ?? '').toLowerCase();
+  const message = String(error?.message ?? '').toLowerCase();
+
+  const configCodes = new Set([
+    'billing-unavailable',
+    'item-unavailable',
+    'developer-error',
+    'feature-not-supported',
+    'e_billing_unavailable',
+    'e_item_unavailable',
+    'e_developer_error',
+    'e_feature_not_supported',
+  ]);
+
+  const infraCodes = new Set([
+    'service-error',
+    'service-disconnected',
+    'network-error',
+    'timeout',
+    'e_service_error',
+    'e_service_disconnected',
+    'e_network_error',
+  ]);
+
+  if (configCodes.has(code) || message.includes('billing unavailable') || message.includes('item unavailable')) {
+    return 'config';
+  }
+
+  if (infraCodes.has(code) || message.includes('network') || message.includes('timeout') || message.includes('service disconnected')) {
+    return 'infra';
+  }
+
+  return 'validation';
+}
+
+function buildPurchaseFailure(reason: PurchaseFailureReason, error?: string): PurchaseResult {
+  return {
+    success: false,
+    cancelled: reason === 'cancelled',
+    reason,
+    error: reason === 'cancelled' ? undefined : error,
+  };
+}
+
+function removePendingPurchaseResolver(resolver: (result: PurchaseResult) => void) {
+  const lastResolver = purchaseResultQueue[purchaseResultQueue.length - 1];
+  if (lastResolver === resolver) {
+    purchaseResultQueue.pop();
+  }
 }
 
 async function processPurchase(purchase: any, source: 'purchase' | 'restore'): Promise<PurchaseResult> {
@@ -80,15 +229,51 @@ async function processPurchase(purchase: any, source: 'purchase' | 'restore'): P
     if (!purchaseToken) throw new Error('Missing purchase token');
 
     const validation = await validateSubscription(platform, purchaseToken, productId);
-    if (!validation.success) throw new Error(validation.error || 'Subscription validation failed');
+    if (!validation.success) {
+      const reason = validation.reason === 'auth' ? 'auth' : 'infra';
+      logIap(reason === 'infra' ? 'error' : 'warn', reason, `Falha ao validar compra via loja durante ${source}.`, {
+        productId,
+        platform,
+        error: validation.error,
+      });
 
+      // Se a loja confirmou a compra, mas o backend falhou por infra,
+      // liberamos premium localmente para nao bloquear usuario pagante.
+      if (reason === 'infra') {
+        const normalizedProductId = String(productId).toLowerCase();
+        const isLifetimeProduct = normalizedProductId.includes('lifetime') || normalizedProductId.includes('vitalicio');
+        const fallbackDays = isLifetimeProduct
+          ? 3650
+          : (normalizedProductId.includes('year') || normalizedProductId.includes('annual') ? 366 : 31);
+        const fallbackExpiry = new Date(Date.now() + fallbackDays * 24 * 60 * 60 * 1000).toISOString();
+
+        await savePendingIapValidation(platform, purchaseToken, productId);
+        await enablePremium(fallbackExpiry, platform, productId, isLifetimeProduct);
+        logIap('warn', 'infra', `Premium liberado via fallback local durante ${source}.`, {
+          productId,
+          platform,
+          fallbackExpiry,
+        });
+        return { success: true };
+      }
+
+      return buildPurchaseFailure(reason, validation.error || 'Subscription validation failed');
+    }
+    if (!validation.status?.isPremium) {
+      logIap('warn', 'validation', `Compra recebida, mas assinatura nao esta ativa na loja durante ${source}.`, {
+        productId,
+        platform,
+        error: validation.error,
+      });
+      return buildPurchaseFailure('validation', validation.error || 'Subscription is not active');
+    }
+
+    logIap('log', 'lifecycle', `Compra validada com sucesso durante ${source}.`, { productId, platform });
     return { success: true };
   } catch (error) {
-    console.error(`[IAP] Error processing ${source} purchase:`, error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
+    const reason = classifyIapError(error);
+    logIap(reason === 'infra' ? 'error' : 'warn', reason, `Erro inesperado ao processar ${source}.`, error);
+    return buildPurchaseFailure(reason, getIapErrorMessage(error));
   }
 }
 
@@ -98,14 +283,14 @@ export async function initializeIAP(): Promise<boolean> {
   try {
     iap = tryLoadIap();
     if (!iap) {
-      console.warn('[IAP] Modulo nao disponivel. Possivelmente Expo Go ou build sem New Arch.');
+      logIap('warn', 'config', 'Modulo IAP indisponivel. Possivelmente Expo Go ou build sem New Arch.');
       iapAvailable = false;
       return false;
     }
 
     // v14: initConnection e named export
     const connected = await iap.initConnection();
-    console.log('[IAP] initConnection result:', connected);
+    logIap('log', 'lifecycle', 'initConnection executado.', { connected });
 
     if (Platform.OS === 'android') {
       await iap.flushFailedPurchasesCachedAsPendingAndroid?.();
@@ -119,18 +304,35 @@ export async function initializeIAP(): Promise<boolean> {
 
     // v14: purchaseUpdatedListener e named export
     purchaseUpdateSubscription = iap.purchaseUpdatedListener(async (purchase: any) => {
-      console.log('[IAP] purchaseUpdated:', purchase?.productId);
+      if (shouldSkipDuplicatePurchaseEvent(purchase)) {
+        logIap('warn', 'lifecycle', 'purchaseUpdated duplicado ignorado.', {
+          productId: purchase?.productId,
+        });
+        return;
+      }
+
+      const authSnapshot = await getAuthSnapshotForIap();
+      logIap('log', 'lifecycle', 'Snapshot de auth no purchaseUpdated.', authSnapshot);
+
+      logIap('log', 'lifecycle', 'purchaseUpdated recebido.', { productId: purchase?.productId });
       const result = await processPurchase(purchase, 'purchase');
       resolveNextPurchase(result);
     });
 
     purchaseErrorSubscription = iap.purchaseErrorListener((error: any) => {
-      console.error('[IAP] purchaseError:', error);
-      resolveNextPurchase({ success: false, error: error.message });
+      if (isPurchaseCancelled(error)) {
+        logIap('log', 'cancelled', 'Fluxo de compra cancelado pelo usuario.');
+        resolveNextPurchase(buildPurchaseFailure('cancelled'));
+        return;
+      }
+
+      const reason = classifyIapError(error);
+      logIap(reason === 'infra' ? 'error' : 'warn', reason, 'Listener de erro da loja retornou falha.', error);
+      resolveNextPurchase(buildPurchaseFailure(reason, getIapErrorMessage(error)));
     });
 
     iapAvailable = true;
-    console.log('[IAP] Inicializado com sucesso!');
+    logIap('log', 'lifecycle', 'IAP inicializado com sucesso.');
 
     // Pre-fetch dos produtos para cachear offerTokens (Play Billing v5+)
     // No rn-iap v14 Nitro: campo 'id' (nao 'productId'), 'subscriptionOfferDetailsAndroid'
@@ -142,21 +344,21 @@ export async function initializeIAP(): Promise<boolean> {
           const pid = p.id ?? p.productId;
           productCache.set(pid, p);
           const offerDetails = p.subscriptionOfferDetailsAndroid ?? p.subscriptionOfferDetails ?? p.subscriptionOffers ?? p.offers;
-          console.log(`[IAP] Produto cacheado: ${pid} — offerDetails length: ${offerDetails?.length}`);
+          logIap('log', 'lifecycle', `Produto cacheado: ${pid}.`, { offerCount: offerDetails?.length });
           if (offerDetails?.length > 0) {
-            console.log(`[IAP] offerToken para ${pid}:`, offerDetails[0].offerToken?.substring(0, 30));
+            logIap('log', 'lifecycle', `offerToken carregado para ${pid}.`, offerDetails[0].offerToken?.substring(0, 30));
           } else {
-            console.warn(`[IAP] Sem offerToken para ${pid}`);
+            logIap('warn', 'config', `Produto ${pid} sem offerToken.`);
           }
         });
       }
     } catch (cacheError) {
-      console.warn('[IAP] Erro no pre-fetch de produtos (nao critico):', cacheError);
+      logIap('warn', 'infra', 'Erro no pre-fetch de produtos.', cacheError);
     }
 
     return true;
   } catch (error) {
-    console.error('[IAP] Erro ao inicializar:', error);
+    logIap('error', 'infra', 'Falha ao inicializar IAP.', error);
     iapAvailable = false;
     return false;
   }
@@ -169,7 +371,7 @@ export async function getProducts(): Promise<Product[]> {
     // v14: fetchProducts (unificado) ou getSubscriptions
     const fetchFn = iap.fetchProducts ?? iap.getSubscriptions;
     if (!fetchFn) {
-      console.warn('[IAP] fetchProducts/getSubscriptions nao encontrado');
+      logIap('warn', 'config', 'fetchProducts/getSubscriptions nao encontrado.');
       return [];
     }
 
@@ -184,18 +386,18 @@ export async function getProducts(): Promise<Product[]> {
       type: 'subs' as const,
     }));
   } catch (error) {
-    console.error('[IAP] Error getting products:', error);
+    logIap('error', 'infra', 'Erro ao carregar produtos da loja.', error);
     return [];
   }
 }
 
 export async function purchaseSubscription(productId: string): Promise<PurchaseResult> {
   if (!iapAvailable || !iap) {
-    return { success: false, error: 'IAP not available' };
+    return buildPurchaseFailure('config', 'IAP not available');
   }
 
   if (Platform.OS === 'web') {
-    return { success: false, error: 'Purchases not available on web' };
+    return buildPurchaseFailure('config', 'Purchases not available on web');
   }
 
   return new Promise(async (resolve) => {
@@ -205,9 +407,9 @@ export async function purchaseSubscription(productId: string): Promise<PurchaseR
       const requestFn = iap.requestPurchase;
 
       if (!requestFn) {
-        purchaseResultQueue.pop();
-        console.error('[IAP] requestPurchase nao encontrado');
-        resolve({ success: false, error: 'requestPurchase nao disponivel nesta versao do IAP' });
+        removePendingPurchaseResolver(resolve);
+        logIap('warn', 'config', 'requestPurchase nao encontrado no modulo IAP.');
+        resolve(buildPurchaseFailure('config', 'requestPurchase nao disponivel nesta versao do IAP'));
         return;
       }
 
@@ -240,12 +442,12 @@ export async function purchaseSubscription(productId: string): Promise<PurchaseR
 
           if (offerDetails?.length > 0) {
             offerToken = offerDetails[0].offerToken ?? offerDetails[0].token;
-            console.log('[IAP] offerToken obtido:', offerToken?.substring(0, 30));
+            logIap('log', 'lifecycle', 'offerToken obtido para compra.', offerToken?.substring(0, 30));
           } else {
-            console.warn('[IAP] offerToken nao encontrado. Produto:', JSON.stringify(product));
+            logIap('warn', 'config', 'offerToken nao encontrado para o produto.', { productId, product });
           }
         } catch (fetchError) {
-          console.warn('[IAP] Erro ao obter offerToken:', fetchError);
+          logIap('warn', 'infra', 'Erro ao obter offerToken.', fetchError);
         }
       }
 
@@ -264,7 +466,7 @@ export async function purchaseSubscription(productId: string): Promise<PurchaseR
         if (offerToken) {
           purchaseConfig.request.google.subscriptionOffers = [{ sku: productId, offerToken }];
         } else {
-          console.warn('[IAP] Sem offerToken — a compra pode falhar no Android');
+          logIap('warn', 'config', 'Compra Android sem offerToken; a loja pode rejeitar o fluxo.', { productId });
         }
       } else {
         purchaseConfig.request.apple = {
@@ -273,15 +475,20 @@ export async function purchaseSubscription(productId: string): Promise<PurchaseR
         };
       }
 
-      console.log('[IAP] Chamando requestPurchase com:', JSON.stringify(purchaseConfig));
+      logIap('log', 'lifecycle', 'Chamando requestPurchase.', purchaseConfig);
       await requestFn(purchaseConfig);
     } catch (error) {
-      purchaseResultQueue.pop();
-      console.error('[IAP] Error requesting purchase:', error);
-      resolve({
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      removePendingPurchaseResolver(resolve);
+
+      if (isPurchaseCancelled(error)) {
+        logIap('log', 'cancelled', 'Request de compra cancelado pelo usuario.');
+        resolve(buildPurchaseFailure('cancelled'));
+        return;
+      }
+
+      const reason = classifyIapError(error);
+      logIap(reason === 'infra' ? 'error' : 'warn', reason, 'Falha ao iniciar requestPurchase.', error);
+      resolve(buildPurchaseFailure(reason, getIapErrorMessage(error)));
     }
   });
 }
@@ -311,10 +518,10 @@ export async function restorePurchases(): Promise<{ success: boolean; error?: st
     if (restored > 0) return { success: true, restored };
     return { success: false, restored: 0, error: lastError || 'No purchases available to restore' };
   } catch (error) {
-    console.error('[IAP] Error restoring purchases:', error);
+    logIap('error', 'infra', 'Erro ao restaurar compras.', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: getIapErrorMessage(error),
       restored: 0,
     };
   }
@@ -331,7 +538,7 @@ export async function endConnection(): Promise<void> {
       await iap.endConnection();
     }
   } catch (error) {
-    console.error('[IAP] Error ending connection:', error);
+    logIap('warn', 'infra', 'Erro ao encerrar conexao IAP.', error);
   } finally {
     iapAvailable = false;
   }

@@ -1,5 +1,6 @@
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { PurchaseFailureReason } from './iap';
 
 // Google Play Billing SKUs (substitua pelos seus SKUs reais)
 export const SUBSCRIPTION_SKUS = {
@@ -54,6 +55,8 @@ export interface BillingResult {
   success: boolean;
   transactionId?: string;
   error?: string;
+  cancelled?: boolean;
+  reason?: PurchaseFailureReason;
 }
 
 class SubscriptionManager {
@@ -93,13 +96,13 @@ class SubscriptionManager {
       const result = await purchaseSubscription(plan.sku);
 
       if (result.success) {
-        // Simular sucesso da compra
-        await this.saveActiveSubscription(plan, 'mock_transaction_' + Date.now());
         return { success: true };
       } else {
         return {
           success: false,
-          error: result.error || 'Erro na compra'
+          error: result.cancelled ? undefined : (result.error || 'Erro na compra'),
+          cancelled: result.cancelled,
+          reason: result.reason,
         };
       }
     } catch (error) {
@@ -111,28 +114,32 @@ class SubscriptionManager {
     }
   }
 
-  private async processPurchase(plan: SubscriptionPlan): Promise<void> {
-    // Função removida - lógica movida para lib/iap.ts
-    console.log('Purchase processing moved to lib/iap.ts');
-  }
-
-  private async saveActiveSubscription(plan: SubscriptionPlan, transactionId: string): Promise<void> {
-    const subscription = {
-      planId: plan.id,
-      sku: plan.sku,
-      transactionId,
-      startDate: new Date().toISOString(),
-      isActive: true,
-      platform: 'google_play'
-    };
-
-    await AsyncStorage.setItem('active_subscription', JSON.stringify(subscription));
-  }
-
   async getActiveSubscription(): Promise<any | null> {
     try {
-      const subscription = await AsyncStorage.getItem('active_subscription');
-      return subscription ? JSON.parse(subscription) : null;
+      const { isPremium, getPremiumStatus } = await import('./premium');
+      const premiumActive = await isPremium(true);
+
+      if (!premiumActive) {
+        await AsyncStorage.removeItem('active_subscription');
+        return null;
+      }
+
+      const premiumStatus = await getPremiumStatus();
+      const normalizedProductId = premiumStatus.productId?.toLowerCase() || '';
+      const planId = normalizedProductId.includes('month')
+        ? 'monthly'
+        : (normalizedProductId.includes('year') || normalizedProductId.includes('annual'))
+          ? 'yearly'
+          : undefined;
+
+      return {
+        isActive: true,
+        planId,
+        sku: premiumStatus.productId,
+        platform: premiumStatus.platform,
+        hasLifetimeAccess: premiumStatus.hasLifetimeAccess,
+        expiryDate: premiumStatus.expiryDate,
+      };
     } catch (error) {
       console.error('Erro ao carregar assinatura:', error);
       return null;

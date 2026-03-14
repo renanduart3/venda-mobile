@@ -53,6 +53,14 @@ export default function PremiumPage() {
         Alert.alert('Sucesso', 'Assinatura premium ativada com sucesso!');
         const status = await getPremiumStatus();
         setPremiumStatus(status);
+      } else if (result.cancelled) {
+        return;
+      } else if (result.reason === 'auth') {
+        Alert.alert('Sessão expirada', 'Faça login novamente antes de concluir a assinatura.');
+      } else if (result.reason === 'config') {
+        Alert.alert('Pagamento indisponível', 'A Play Store ou a configuração da assinatura não está pronta neste dispositivo.');
+      } else if (result.reason === 'validation') {
+        Alert.alert('Assinatura não ativada', result.error || 'A compra não foi validada como assinatura ativa.');
       } else {
         Alert.alert('Erro', result.error || 'Não foi possível processar a compra.');
       }

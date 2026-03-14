@@ -78,5 +78,5 @@ As configurações abaixo refletem o preenchimento exato exigido pelo Google Pla
 
 Antes de promover para Produção, a conta de teste (`license tester`) deve passar por:
 1.  **Compra Nova:** Assinar o plano `premium_monthly_plan`, confirmar a ativação local e no Supabase (`iap_status`).
-2.  **Restauração:** Apagar dados do app, logar novamente e clicar em "Restaurar Compras".
-3.  **Cancelamento:** Cancelar via Google Play, forçar refresh no app e garantir que o acesso premium seja revogado.
+2.  **Sincronização automática:** Apagar dados do app, logar novamente e confirmar que o status premium é reidratado automaticamente.
+3.  **Cancelamento:** Cancelar via Google Play, reabrir o app e garantir que o acesso premium seja revogado.

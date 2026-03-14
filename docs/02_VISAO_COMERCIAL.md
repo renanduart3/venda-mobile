@@ -320,7 +320,7 @@ Banner principal para a loja
 
 ---
 
-## 💡 Dicas de ASO (App Store Optimization)
+## 💡 Dicas de ASO (Google Play Optimization)
 
 ### Palavras-chave importantes
 1. gestão de vendas

@@ -340,10 +340,14 @@ Os Product IDs no código estão em:
 
 **lib/iap.ts:**
 ```typescript
-const SUBSCRIPTION_SKUS = Platform.select({
-  android: ['premium_monthly_plan', 'premium_yearly_plan'],
-  ios: ['premium_monthly_plan', 'premium_yearly_plan'],
-  default: [],
+const PRODUCT_IDS = {
+   MONTHLY: 'premium_monthly_plan',
+   ANNUAL: 'premium_yearly_plan',
+};
+
+const SKUS = Platform.select({
+   android: [PRODUCT_IDS.MONTHLY, PRODUCT_IDS.ANNUAL],
+   default: [],
 });
 ```
 
@@ -412,7 +416,7 @@ Após criar os produtos no Console:
 
 **Solução:**
 1. Verifique logs do app
-2. Teste `restorePurchases()` após comprar
+2. Reabra o app e aguarde a sincronização automática de assinatura
 3. Verifique AsyncStorage key: `@isPremium`
 
 ---
@@ -950,16 +954,16 @@ Política de Privacidade: [URL da política hospedada]
 - Verificar feedback de sucesso no app e atualização do status Premium (expiração e plano).
 - Conferir no Supabase tabela `iap_status` se o registro foi criado/atualizado.
 
-### 2. Restauração de assinatura ativa
+### 2. Sincronização de assinatura ativa
 - Em um dispositivo recém-instalado (sem cache), fazer login na mesma conta.
-- Acessar **Premium** › `Restaurar compras`.
-- Verificar alerta de sucesso e status Premium atualizado.
+- Aguardar sincronização automática do status premium no bootstrap.
+- Entrar na tela de Planos/Premium e validar estado ativo.
 - Confirmar no Supabase que o registro permanece ativo.
 
 ### 3. Cancelamento e sincronização
 - No Google Play, cancelar a assinatura da conta de teste.
 - Aguardar sincronização do backend (até 15 minutos) ou disparar manualmente a validação via edge function.
-- No app, tocar em `Restaurar compras` para sincronizar o estado.
+- No app, fechar e abrir novamente para sincronizar o estado automaticamente.
 - Verificar que o status Premium foi desativado e que o alerta informa ausência de assinatura ativa.
 
 ## ✅ Critérios de aprovação
@@ -969,7 +973,7 @@ Política de Privacidade: [URL da política hospedada]
 
 ## 📝 Registro de evidências
 - Capturar screenshots ou gravações das telas de confirmação do Google Play e do app.
-- Exportar os logs da sessão (`adb logcat` ou Xcode console) contendo eventos de `initializeIAP`, `purchase`, `restore` e `validateSubscription`.
+- Exportar os logs da sessão (`adb logcat`) contendo eventos de `initializeIAP`, `purchase`, `checkSubscriptionFromDatabase` e `validateSubscription`.
 - Anexar as evidências no relatório de QA antes da submissão à loja.
 
 

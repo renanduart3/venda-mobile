@@ -155,35 +155,41 @@ Este guia explica como conceder acesso Premium de forma vitalícia para usuário
 3. Cole e execute o seguinte comando SQL, substituindo `'ID_DO_USUARIO_AQUI'` pelo ID que você copiou:
 
 ```sql
--- Verificar se o usuário já tem uma entrada na tabela iap_status
--- Se já tiver, atualizamos. Se não tiver, inserimos uma nova.
+-- 1) Atualizar grant existente do usuário (se já houver registro)
+UPDATE iap_status
+SET
+  is_premium = true,
+  has_lifetime_access = true,
+  platform = 'android',
+  product_id = 'venda_mobile_lifetime',
+  purchase_token = COALESCE(NULLIF(purchase_token, ''), 'manual_grant_' || now()::text),
+  updated_at = now()
+WHERE user_id = 'ID_DO_USUARIO_AQUI';
+
+-- 2) Inserir grant se ainda não existir linha Android para esse usuário
 INSERT INTO iap_status (user_id, platform, product_id, purchase_token, is_premium, has_lifetime_access)
-VALUES (
+SELECT
   'ID_DO_USUARIO_AQUI',
-  'admin',
-  'lifetime_grant',
+  'android',
+  'venda_mobile_lifetime',
   'manual_grant_' || now()::text,
   true,
   true
-)
-ON CONFLICT (id) DO UPDATE SET
-  is_premium = true,
-  has_lifetime_access = true,
-  updated_at = now();
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM iap_status
+  WHERE user_id = 'ID_DO_USUARIO_AQUI'
+    AND platform = 'android'
+);
 
--- NOTA: Se o usuário já tiver uma linha mas você não sabe o ID da linha,
--- use esta alternativa baseada no user_id:
-UPDATE iap_status
-SET is_premium = true, has_lifetime_access = true, updated_at = now()
-WHERE user_id = 'ID_DO_USUARIO_AQUI';
-
--- Se o UPDATE acima não alterar nenhuma linha (0 rows affected),
--- rode apenas o INSERT acima sem o ON CONFLICT.
+-- Observação:
+-- O campo determinante para grant manual é has_lifetime_access = true.
+-- O product_id 'venda_mobile_lifetime' é mantido para rastreabilidade.
 ```
 
 ## Como funciona no App
 
-- Quando o usuário abrir o app ou clicar em "Restaurar Compras", o sistema verificará o campo `has_lifetime_access` no banco de dados.
+- Quando o usuário abrir o app e o fluxo de assinatura sincronizar automaticamente, o sistema verificará o campo `has_lifetime_access` no banco de dados.
 - Se estiver marcado como `true`:
   1. O plano Premium será ativado localmente.
   2. Na tela de Planos, aparecerá o status **Acesso Vitalício**.

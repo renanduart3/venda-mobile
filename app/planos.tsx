@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  Modal,
   TouchableOpacity,
   Linking
 } from 'react-native';
@@ -24,10 +25,10 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { router } from 'expo-router';
 import { subscriptionManager, SUBSCRIPTION_PLANS, SubscriptionPlan } from '@/lib/subscriptions';
-import { isPremium, getPremiumStatus } from '@/lib/premium';
+import { checkSubscriptionFromDatabase, getPremiumStatus } from '@/lib/premium';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   checkEarlyAdopterAvailability,
   EarlyAdopterStatus,
@@ -47,6 +48,8 @@ export default function Planos() {
   const [earlyAdopterStatus, setEarlyAdopterStatus] = useState<EarlyAdopterStatus | null>(null);
   const [monthlyPricing, setMonthlyPricing] = useState<PricingDisplayInfo | null>(null);
   const [yearlyPricing, setYearlyPricing] = useState<PricingDisplayInfo | null>(null);
+  const [purchaseDialogVisible, setPurchaseDialogVisible] = useState(false);
+  const [purchaseDialogMessage, setPurchaseDialogMessage] = useState('Processando sua assinatura...');
 
   const bottomSpacer = Math.max(32, (insets.bottom || 0) + 24);
 
@@ -56,6 +59,12 @@ export default function Planos() {
     loadActiveSubscription();
     loadEarlyAdopterStatus();
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadActiveSubscription();
+    }, [])
+  );
 
   const loadEarlyAdopterStatus = async () => {
     try {
@@ -74,21 +83,42 @@ export default function Planos() {
 
   const loadActiveSubscription = async () => {
     try {
-      const subscription = await subscriptionManager.getActiveSubscription();
-      const premiumStatus = await getPremiumStatus();
+      const dbSync = await checkSubscriptionFromDatabase();
+      if (!dbSync.success) {
+        console.warn('[Planos] Falha ao sincronizar assinatura no banco; usando cache local premium.');
+      }
+
+      const premiumStatus = dbSync.success && dbSync.status
+        ? dbSync.status
+        : await getPremiumStatus();
 
       if (premiumStatus.isPremium) {
+        const normalizedProductId = premiumStatus.productId?.toLowerCase() || '';
+        const planId = normalizedProductId.includes('month')
+          ? 'monthly'
+          : (normalizedProductId.includes('year') || normalizedProductId.includes('annual'))
+            ? 'yearly'
+            : 'yearly';
+
         setActiveSubscription({
           isActive: true,
-          planId: premiumStatus.productId?.includes('monthly') ? 'monthly' : 'yearly',
+          planId,
           hasLifetimeAccess: premiumStatus.hasLifetimeAccess
         });
       } else {
-        setActiveSubscription(subscription);
+        setActiveSubscription(null);
       }
     } catch (error) {
       console.error('Erro ao carregar assinatura:', error);
+      setActiveSubscription(null);
     }
+  };
+
+  const getPlanIdFromProductId = (productId?: string) => {
+    const normalizedProductId = productId?.toLowerCase() || '';
+    if (normalizedProductId.includes('month')) return 'monthly';
+    if (normalizedProductId.includes('year') || normalizedProductId.includes('annual')) return 'yearly';
+    return 'yearly';
   };
 
   const handleSubscribe = async () => {
@@ -103,24 +133,49 @@ export default function Planos() {
       return;
     }
 
+    let shouldHideDialog = true;
     setIsLoading(true);
+    setPurchaseDialogMessage('Aguardando confirmação da compra no Google Play...');
+    setPurchaseDialogVisible(true);
+
     try {
       const result = await subscriptionManager.purchaseSubscription(currentPlan);
 
       if (result.success) {
-        Alert.alert(
-          'Sucesso!', 
-          'Assinatura ativada com sucesso! Bem-vindo(a) ao Premium.',
-          [
-            { 
-               text: 'Começar',
-               onPress: async () => {
-                 await loadActiveSubscription();
-                 router.replace('/(tabs)');
-               }
-            }
-          ]
-        );
+        setPurchaseDialogMessage('Validando assinatura e sincronizando acesso premium...');
+
+        const dbSync = await checkSubscriptionFromDatabase({ skipStoreRevalidation: true });
+        const premiumStatus = dbSync.success && dbSync.status
+          ? dbSync.status
+          : await getPremiumStatus();
+
+        if (!premiumStatus.isPremium) {
+          Alert.alert(
+            'Assinatura em processamento',
+            'A compra foi concluída, mas a ativação ainda está sincronizando. Aguarde alguns segundos e tente novamente.'
+          );
+          return;
+        }
+
+        setActiveSubscription({
+          isActive: true,
+          planId: getPlanIdFromProductId(premiumStatus.productId),
+          hasLifetimeAccess: premiumStatus.hasLifetimeAccess
+        });
+
+        setPurchaseDialogMessage('Assinatura ativa! Redirecionando para o dashboard...');
+        shouldHideDialog = false;
+        await new Promise(resolve => setTimeout(resolve, 700));
+        router.replace('/(tabs)');
+        return;
+      } else if (result.cancelled) {
+        return;
+      } else if (result.reason === 'auth') {
+        Alert.alert('Sessão expirada', 'Faça login novamente antes de assinar.');
+      } else if (result.reason === 'config') {
+        Alert.alert('Pagamento indisponível', 'A Play Store ou a configuração da assinatura não está pronta neste dispositivo.');
+      } else if (result.reason === 'validation') {
+        Alert.alert('Assinatura não ativada', result.error || 'A compra não foi validada como assinatura ativa.');
       } else {
         Alert.alert('Erro', result.error || 'Não foi possível processar a assinatura.');
       }
@@ -129,6 +184,9 @@ export default function Planos() {
       Alert.alert('Erro', 'Ocorreu um erro inesperado. Tente novamente.');
     } finally {
       setIsLoading(false);
+      if (shouldHideDialog) {
+        setPurchaseDialogVisible(false);
+      }
     }
   };
 
@@ -400,6 +458,39 @@ export default function Planos() {
       textAlign: 'center',
       lineHeight: 18,
     },
+    purchaseDialogOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.35)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 24,
+    },
+    purchaseDialogCard: {
+      width: '100%',
+      maxWidth: 360,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 18,
+      paddingVertical: 20,
+      alignItems: 'center',
+    },
+    purchaseDialogTitle: {
+      marginTop: 14,
+      fontSize: 17,
+      fontFamily: 'Inter-Bold',
+      color: colors.text,
+      textAlign: 'center',
+    },
+    purchaseDialogMessage: {
+      marginTop: 8,
+      fontSize: 14,
+      fontFamily: 'Inter-Regular',
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 20,
+    },
   });
 
   const getFeatureIcon = (index: number) => {
@@ -631,6 +722,21 @@ export default function Planos() {
           </Text>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={purchaseDialogVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View style={styles.purchaseDialogOverlay}>
+          <View style={styles.purchaseDialogCard}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.purchaseDialogTitle}>Processando assinatura</Text>
+            <Text style={styles.purchaseDialogMessage}>{purchaseDialogMessage}</Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

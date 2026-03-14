@@ -19,7 +19,7 @@
 CREATE TABLE IF NOT EXISTS iap_status (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  platform text NOT NULL CHECK (platform IN ('android', 'ios')),
+  platform text NOT NULL CHECK (platform IN ('android')),
   product_id text NOT NULL,
   purchase_token text NOT NULL,
   expiry_date timestamptz,
@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_iap_status_platform ON iap_status(platform);
 CREATE INDEX IF NOT EXISTS idx_iap_status_early_adopter ON iap_status(is_early_adopter);
 CREATE INDEX IF NOT EXISTS idx_iap_status_lifetime ON iap_status(has_lifetime_access);
 
-COMMENT ON TABLE iap_status IS 'Status de assinaturas IAP validadas do Google Play e App Store';
+COMMENT ON TABLE iap_status IS 'Status de assinaturas IAP validadas do Google Play (Android)';
 COMMENT ON COLUMN iap_status.is_early_adopter IS 'Se o usuário é um early adopter (primeiros 300) com preço de lançamento vitalicio';
 COMMENT ON COLUMN iap_status.has_lifetime_access IS 'Acesso premium vitalício concedido manualmente via banco de dados';
 COMMENT ON COLUMN iap_status.discount_percentage IS 'Percentual de desconto aplicado (0 para early adopters, pagam preço normal de lançamento)';

@@ -2,6 +2,8 @@
 
 Aplicativo mobile de gestão de vendas desenvolvido com React Native e Expo.
 
+Plataforma suportada atualmente: **Android**.
+
 ## 📋 Pré-requisitos
 
 Antes de começar, certifique-se de ter instalado em sua máquina:
@@ -51,7 +53,6 @@ Após iniciar o servidor de desenvolvimento, você pode:
 
 - **Escanear o QR Code** com o aplicativo Expo Go no seu celular
 - **Pressionar 'a'** no terminal para abrir no emulador Android
-- **Pressionar 'i'** no terminal para abrir no simulador iOS (apenas macOS)
 
 ## 📱 Executar no Android (Modo Desenvolvimento)
 
@@ -163,7 +164,6 @@ SELECT * FROM early_adopter_config;
 
 - `yarn dev` - Inicia o servidor de desenvolvimento
 - `yarn android` - Executa no Android
-- `yarn ios` - Executa no iOS (apenas macOS)
 - `yarn build:android:release` - Gera build de produção Android
 - `yarn lint` - Executa o linter
 
