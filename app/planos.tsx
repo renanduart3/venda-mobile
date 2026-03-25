@@ -27,6 +27,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { subscriptionManager, SUBSCRIPTION_PLANS, SubscriptionPlan } from '@/lib/subscriptions';
 import { checkSubscriptionFromDatabase, getPremiumStatus } from '@/lib/premium';
+import { restorePurchases as iapRestorePurchases } from '@/lib/iap';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import {
@@ -121,25 +122,14 @@ export default function Planos() {
     return 'yearly';
   };
 
-  const handleSubscribe = async () => {
-    if (!currentPlan) return;
-
-    if (Platform.OS !== 'android') {
-      Alert.alert(
-        'Disponível no Android',
-        'As assinaturas estão disponíveis apenas no Android através do Google Play Store.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
+  const doSubscribe = async () => {
     let shouldHideDialog = true;
     setIsLoading(true);
     setPurchaseDialogMessage('Aguardando confirmação da compra no Google Play...');
     setPurchaseDialogVisible(true);
 
     try {
-      const result = await subscriptionManager.purchaseSubscription(currentPlan);
+      const result = await subscriptionManager.purchaseSubscription(currentPlan!);
 
       if (result.success) {
         setPurchaseDialogMessage('Validando assinatura e sincronizando acesso premium...');
@@ -167,9 +157,8 @@ export default function Planos() {
         shouldHideDialog = false;
         await new Promise(resolve => setTimeout(resolve, 700));
         router.replace('/(tabs)');
-        return;
       } else if (result.cancelled) {
-        return;
+        // noop — usuário cancelou voluntariamente
       } else if (result.reason === 'auth') {
         Alert.alert('Sessão expirada', 'Faça login novamente antes de assinar.');
       } else if (result.reason === 'config') {
@@ -182,6 +171,96 @@ export default function Planos() {
     } catch (error) {
       console.error('Erro na assinatura:', error);
       Alert.alert('Erro', 'Ocorreu um erro inesperado. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+      if (shouldHideDialog) {
+        setPurchaseDialogVisible(false);
+      }
+    }
+  };
+
+  const handleSubscribe = () => {
+    if (!currentPlan) return;
+
+    if (Platform.OS !== 'android') {
+      Alert.alert(
+        'Disponível no Android',
+        'As assinaturas estão disponíveis apenas no Android através do Google Play Store.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Aviso de upgrade: assinatura mensal ativa tentando ir para anual
+    if (activeSubscription?.planId === 'monthly' && selectedPlan === 'yearly') {
+      Alert.alert(
+        'Atenção: Upgrade para Plano Anual',
+        'O plano anual é uma nova assinatura independente no Google Play.\n\nSe você não cancelar o plano mensal antes, será cobrado pelos dois planos simultaneamente.\n\nRecomendamos cancelar o plano mensal em Assinaturas do Google Play antes de continuar.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Entendi, continuar', onPress: doSubscribe },
+        ]
+      );
+      return;
+    }
+
+    doSubscribe();
+  };
+
+  const handleVerifyAccess = async () => {
+    let shouldHideDialog = true;
+    setIsLoading(true);
+    setPurchaseDialogMessage('Verificando acesso premium...');
+    setPurchaseDialogVisible(true);
+
+    try {
+      const dbSync = await checkSubscriptionFromDatabase();
+
+      if (dbSync.success && dbSync.status?.isPremium) {
+        const premiumStatus = dbSync.status;
+        setActiveSubscription({
+          isActive: true,
+          planId: getPlanIdFromProductId(premiumStatus.productId),
+          hasLifetimeAccess: premiumStatus.hasLifetimeAccess
+        });
+        setPurchaseDialogMessage('Acesso premium confirmado!');
+        shouldHideDialog = false;
+        await new Promise(resolve => setTimeout(resolve, 600));
+        setPurchaseDialogVisible(false);
+        return;
+      }
+
+      // DB não confirmou premium; tenta recuperar compras diretamente do Google Play
+      setPurchaseDialogMessage('Consultando compras no Google Play...');
+      const restoreResult = await iapRestorePurchases();
+
+      if (restoreResult.success && restoreResult.restored > 0) {
+        const updatedSync = await checkSubscriptionFromDatabase({ skipStoreRevalidation: true });
+        const premiumStatus = updatedSync.success && updatedSync.status
+          ? updatedSync.status
+          : await getPremiumStatus();
+
+        if (premiumStatus.isPremium) {
+          setActiveSubscription({
+            isActive: true,
+            planId: getPlanIdFromProductId(premiumStatus.productId),
+            hasLifetimeAccess: premiumStatus.hasLifetimeAccess
+          });
+          setPurchaseDialogMessage('Acesso premium recuperado!');
+          shouldHideDialog = false;
+          await new Promise(resolve => setTimeout(resolve, 600));
+          setPurchaseDialogVisible(false);
+          return;
+        }
+      }
+
+      Alert.alert(
+        'Nenhuma assinatura ativa',
+        'Não foi encontrada nenhuma assinatura ativa associada a esta conta no Google Play.\n\nSe você realizou uma compra recentemente e não foi ativada, aguarde alguns minutos e tente novamente.'
+      );
+    } catch (error) {
+      console.error('[Planos] Erro ao verificar acesso:', error);
+      Alert.alert('Erro', 'Não foi possível verificar o acesso. Tente novamente.');
     } finally {
       setIsLoading(false);
       if (shouldHideDialog) {
@@ -711,6 +790,15 @@ export default function Planos() {
             <Text style={{ fontWeight: 'bold' }}>Plano Gratuito:</Text> Gestão comercial básica com operações fundamentais{'\n'}
             <Text style={{ fontWeight: 'bold' }}>Plano Premium:</Text> Serviço estendido com backups na nuvem, análises e relatórios{'\n\n'}
           </Text>
+          {!activeSubscription && (
+            <Button
+              title="Verificar Acesso Premium"
+              variant="outline"
+              onPress={handleVerifyAccess}
+              disabled={isLoading}
+              style={{ marginBottom: 12 }}
+            />
+          )}
           <Button
             title="Cancelar ou Gerenciar Assinaturas"
             variant="outline"

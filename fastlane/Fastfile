@@ -3,13 +3,13 @@ default_platform(:android)
 platform :android do
   desc "Send an internal test build to Google Play"
   lane :internal_test do
-    gradle(task: "clean bundleRelease")
-    upload_to_play_store(track: 'internal')
+    gradle(task: "clean bundleRelease", project_dir: "android/")
+    upload_to_play_store(track: 'internal', release_status: 'draft')
   end
 
   desc "Deploy a new version to the Google Play"
   lane :deploy_production do
-    gradle(task: "clean bundleRelease")
+    gradle(task: "clean bundleRelease", project_dir: "android/")
     # upload_to_play_store will automatically upload metadata from the metadata directory
     upload_to_play_store(track: 'production')
   end

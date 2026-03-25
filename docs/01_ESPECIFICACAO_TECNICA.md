@@ -766,3 +766,126 @@ interface Expense {
    - Confirmar funcionamento em dispositivos reais
 
 
+---
+
+# Sistema IAP e Premium — Arquitetura e Fluxos
+
+## Visão Geral
+
+O sistema de assinaturas usa **react-native-iap v14** (Android/Google Play Billing) integrado ao **Supabase** por meio de uma edge function (`validate-iap`). A fonte da verdade é sempre o banco de dados Supabase (`iap_status`). O cache local no AsyncStorage é usado apenas para reduzir latência entre sessões; qualquer decisão de acesso é confirmada contra o banco.
+
+---
+
+## Arquitetura dos Arquivos
+
+```
+lib/
+├── iap.ts            # Ciclo de vida IAP: init, listeners, processPurchase, restorePurchases
+├── premium.ts        # Estado premium: isPremium, checkSubscriptionFromDatabase,
+│                     # validateSubscription, enablePremium/disablePremium,
+│                     # cache de modo de autenticação preferido
+├── subscriptions.ts  # SubscriptionManager: wrapper de alto nível sobre iap.ts e premium.ts
+
+app/
+├── planos.tsx        # Tela de planos: UI de compra, progresso, recuperação manual
+├── premium.tsx       # Tela de upsell premium
+```
+
+---
+
+## Chaves do AsyncStorage
+
+| Chave | Arquivo | Descrição |
+|---|---|---|
+| `is_premium_v1` | `premium.ts` | Cache booleano do estado premium |
+| `premium_expiry_date` | `premium.ts` | Data de expiração da assinatura (ISO string) |
+| `premium_db_check_ms` | `premium.ts` | Timestamp (ms) da última verificação no banco |
+| `validate_iap_auth_mode_v1` | `premium.ts` | Modo de autenticação preferido para a edge function |
+| `pending_iap_validation_v1` | `iap.ts` | Compra aguardando reenvio para validação (falha de infra) |
+
+> **Nota:** A chave legada `active_subscription` foi removida. Não persistir nem ler mais esse campo.
+
+---
+
+## Fluxo de Compra (`planos.tsx` → `doSubscribe`)
+
+```
+1. Usuário seleciona plano e pressiona o botão
+2. [aviso de upgrade] → se já tem mensal e selecionou anual, Alert de confirmação
+3. Modal de progresso abre e bloqueia a UI
+4. requestSubscription() via react-native-iap
+5. purchaseUpdatedListener dispara → processPurchase(purchase, 'buy')
+6. processPurchase() chama postValidateIapWithAccessToken() → edge function validate-iap
+7. edge function valida token Google Play via API v2 + atualiza iap_status no Supabase
+8. enablePremium() salva cache local (is_premium_v1, premium_expiry_date)
+9. checkSubscriptionFromDatabase({ skipStoreRevalidation: true }) confirma estado
+10. Mensagem de sucesso no modal → redirect automático para /(tabs) após 2 s
+```
+
+**Falha de infra no step 6:** `processPurchase()` ativa premium localmente e salva `pending_iap_validation_v1` para reenvio posterior.
+
+---
+
+## Autenticação da Edge Function (`premium.ts` → `postValidateIapWithAccessToken`)
+
+Para evitar a sequência 401 → retry 200 na primeira chamada após compra, o sistema armazena o modo de transporte JWT que funcionou por último:
+
+- **Modo padrão** (cached): `authorization-anon-with-x-user-jwt` — header `Authorization: Bearer <anon-key>` + `X-User-JWT: <user-token>`
+- **Modo alternativo**: `authorization-user-jwt` — header `Authorization: Bearer <user-token>`
+- Se o modo salvo falhar com 401, tenta o alternativo; o vencedor é salvo em `validate_iap_auth_mode_v1` para a próxima chamada.
+
+`getFreshAccessContext()` efetua refresh automático da sessão Supabase quando o token ou o userId estão ausentes, mitigando a race condition entre o final da compra e a disponibilidade da sessão.
+
+---
+
+## Sincronização de Estado (`premium.ts` → `checkSubscriptionFromDatabase`)
+
+| Parâmetro | Comportamento |
+|---|---|
+| *(sem opções)* | Busca `iap_status` no Supabase; se ativo, também valida token no Google Play (revalidação) |
+| `{ skipStoreRevalidation: true }` | Busca somente o banco; pula chamada ao Google Play. Usado logo após compra para não revalidar duas vezes |
+
+O resultado (`dbSync.status`) é a única fonte de verdade para exibir/ocultar o estado premium na tela de Planos.
+
+---
+
+## Compras Pendentes no Startup (`lib/iap.ts`)
+
+Logo após `initConnection()` confirmar disponibilidade do IAP, o app:
+
+1. Chama `getAvailablePurchases()` para listar compras não finalizadas (ex.: app fechado antes de `finishTransaction`).
+2. Para cada compra não duplicada (verificado via `shouldSkipDuplicatePurchaseEvent`), chama `processPurchase(purchase, 'restore')`.
+3. Isso garante que compras feitas enquanto o app estava offline ou travado sejam validadas e o premium ativado na próxima abertura.
+
+---
+
+## Recuperação Manual (`planos.tsx` → `handleVerifyAccess`)
+
+O botão **"Verificar Acesso Premium"** (visível apenas quando não há assinatura ativa) executa:
+
+1. `checkSubscriptionFromDatabase()` — sincroniza estado com Supabase + Google Play.
+2. Se ainda não premium → `restorePurchases()` via `iap.ts` — percorre compras no Google Play e as reprocessa.
+3. Atualiza o modal de progresso com feedback visual e checa o resultado final.
+4. Em caso de sucesso, fecha o modal; em caso de falha, exibe mensagem de suporte.
+
+---
+
+## Aviso de Upgrade Mensal → Anual
+
+Antes de iniciar a compra do plano anual, `handleSubscribe()` verifica se o usuário já possui um plano mensal ativo. Se verdadeiro, exibe um `Alert` explicativo informando que a cobrança anual ocorrerá imediatamente e que o mensal deve ser cancelado manualmente no Google Play para evitar dupla cobrança. O usuário confirma ou cancela a operação.
+
+---
+
+## Tabela `iap_status` (Supabase)
+
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `user_id` | uuid | FK → auth.users |
+| `platform` | text | `'android'` |
+| `product_id` | text | `premium_monthly_plan` \| `premium_yearly_plan` \| `venda_mobile_lifetime` |
+| `purchase_token` | text | Token do Google Play |
+| `is_premium` | boolean | Estado atual |
+| `has_lifetime_access` | boolean | Grant vitalício manual |
+| `updated_at` | timestamptz | Última atualização |
+
+

@@ -334,6 +334,25 @@ export async function initializeIAP(): Promise<boolean> {
     iapAvailable = true;
     logIap('log', 'lifecycle', 'IAP inicializado com sucesso.');
 
+    // Verificar compras pendentes que possam ter sido perdidas no ciclo anterior
+    // (ex: app fechado durante a compra antes da validação ser concluída)
+    try {
+      const getAvailable = iap.getAvailablePurchases;
+      if (getAvailable) {
+        const pending = await getAvailable();
+        if (pending?.length > 0) {
+          logIap('log', 'lifecycle', `${pending.length} compra(s) pendente(s) encontrada(s) no startup; processando silenciosamente.`);
+          for (const purchase of pending) {
+            if (shouldSkipDuplicatePurchaseEvent(purchase)) continue;
+            logIap('log', 'lifecycle', 'Processando compra pendente no startup.', { productId: purchase?.productId });
+            await processPurchase(purchase, 'restore');
+          }
+        }
+      }
+    } catch (pendingError) {
+      logIap('warn', 'infra', 'Erro ao verificar compras pendentes no startup (nao critico).', pendingError);
+    }
+
     // Pre-fetch dos produtos para cachear offerTokens (Play Billing v5+)
     // No rn-iap v14 Nitro: campo 'id' (nao 'productId'), 'subscriptionOfferDetailsAndroid'
     try {

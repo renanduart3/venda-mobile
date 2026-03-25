@@ -964,16 +964,42 @@ Política de Privacidade: [URL da política hospedada]
 - No Google Play, cancelar a assinatura da conta de teste.
 - Aguardar sincronização do backend (até 15 minutos) ou disparar manualmente a validação via edge function.
 - No app, fechar e abrir novamente para sincronizar o estado automaticamente.
-- Verificar que o status Premium foi desativado e que o alerta informa ausência de assinatura ativa.
+- Verificar que o status Premium foi desativado e que a tela de Planos não exibe mais "Assinatura Ativa".
+- Confirmar que o botão **"Verificar Acesso Premium"** fica visível.
+
+### 4. Recuperação de compra pendente (app fechado antes de finalizar)
+- Iniciar uma compra no Google Play, mas forçar o fechamento do app antes de `finishTransaction` ser chamado.
+- Reabrir o app. O fluxo de pendências em `getAvailablePurchases()` deve detectar e processar a compra automaticamente.
+- Verificar que o Premium é ativado sem qualquer ação manual do usuário.
+- Confirmar via logs `[IAP][LIFECYCLE]` que a compra pendente foi processada no startup.
+
+### 5. Recuperação manual via "Verificar Acesso Premium"
+- Com uma conta que possui compra válida no Google Play mas premium inativo no app (ex.: após reinstalação), abrir a tela de Planos.
+- Confirmar que o botão **"Verificar Acesso Premium"** está visível.
+- Pressionar o botão e aguardar o modal de progresso.
+- Verificar que o Premium é ativado ao final do fluxo e o modal fecha com sucesso.
+
+### 6. Aviso de upgrade mensal → anual
+- Com uma conta que possui plano mensal ativo, abrir a tela de Planos e selecionar o plano anual.
+- Confirmar que um Alert de aviso é exibido antes da confirmação da compra, explicando sobre dupla cobrança potencial.
+- Verificar que o fluxo de compra só prossegue após o usuário confirmar o Alert.
+
+### 7. Diálogo de progresso da compra
+- Iniciar qualquer compra via a tela de Planos.
+- Verificar que um modal bloqueante "Processando..." é exibido imediatamente após a confirmação no Google Play.
+- Verificar que o modal atualiza a mensagem conforme o progresso (validando → ativando → sucesso).
+- Verificar que, em caso de sucesso, o app redireciona automaticamente para a aba principal após ~2 segundos.
 
 ## ✅ Critérios de aprovação
 - Todos os casos retornam a mensagem esperada para o usuário.
 - `checkSubscriptionFromDatabase()` reflete o estado atualizado após cada fluxo.
 - Não existem transações pendentes em `getAvailablePurchases()` depois da finalização (confirmar via logs).
+- Não ocorrem chamadas 401 repetidas para a edge function `validate-iap` (verificar no Supabase Logs; máximo 1 tentativa alternativa por compra).
+- O botão "Verificar Acesso Premium" aparece somente quando não há assinatura ativa.
 
 ## 📝 Registro de evidências
 - Capturar screenshots ou gravações das telas de confirmação do Google Play e do app.
-- Exportar os logs da sessão (`adb logcat`) contendo eventos de `initializeIAP`, `purchase`, `checkSubscriptionFromDatabase` e `validateSubscription`.
+- Exportar os logs da sessão (`adb logcat`) contendo eventos de `initializeIAP`, `purchase`, `checkSubscriptionFromDatabase`, `validateSubscription` e `[IAP][LIFECYCLE]`.
 - Anexar as evidências no relatório de QA antes da submissão à loja.
 
 
