@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vendas, Estoque e Fiado (PDV)",
     "slug": "venda-mobile",
-    "version": "1.0.0",
+    "version": "1.0.15",
     "sdkVersion": "54.0.0",
     "icon": "./assets/images/icon.png",
     "scheme": "lojaapp",
@@ -42,7 +42,7 @@
         "BILLING"
       ],
       "package": "com.renanduart3.vendamobile",
-      "versionCode": 13,
+      "versionCode": 15,
       "adaptiveIcon": {
         "foregroundImage": "./assets/playstore-icon.png",
         "backgroundColor": "#4A90E2"
@@ -58,9 +58,9 @@
       }
     },
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/images/logo-nova-spl.png",
       "resizeMode": "contain",
-      "backgroundColor": "#2E8B57"
+      "backgroundColor": "#0F172A"
     }
   }
 }

@@ -1,16 +1,53 @@
+require 'json'
+require 'fileutils'
+
 default_platform(:android)
 
 platform :android do
+  desc "Increment versionCode and versionName in app.json and build.gradle"
+  private_lane :bump_version do
+    app_json_path = File.expand_path('../../app.json', __FILE__)
+    app_json = JSON.parse(File.read(app_json_path))
+
+    current_code = app_json["expo"]["android"]["versionCode"].to_i
+    new_code = current_code + 1
+    new_name = "1.0.#{new_code}"
+
+    app_json["expo"]["version"] = new_name
+    app_json["expo"]["android"]["versionCode"] = new_code
+    File.write(app_json_path, JSON.pretty_generate(app_json) + "\n")
+
+    gradle_path = File.expand_path('../../android/app/build.gradle', __FILE__)
+    gradle_content = File.read(gradle_path)
+    gradle_content = gradle_content.gsub(/versionCode \d+/, "versionCode #{new_code}")
+    gradle_content = gradle_content.gsub(/versionName "[\d.]+"/, "versionName \"#{new_name}\"")
+    File.write(gradle_path, gradle_content)
+
+    UI.success "✅ Versão atualizada para #{new_name} (versionCode: #{new_code})"
+  end
+
+  desc "Remove stale CMake cache to prevent native build errors"
+  private_lane :clean_cmake_cache do
+    cxx_path = File.expand_path('../../android/app/.cxx', __FILE__)
+    if Dir.exist?(cxx_path)
+      FileUtils.rm_rf(cxx_path)
+      UI.success "🧹 Cache CMake removido: #{cxx_path}"
+    end
+  end
+
   desc "Send an internal test build to Google Play"
   lane :internal_test do
-    gradle(task: "clean bundleRelease", project_dir: "android/")
+    bump_version
+    clean_cmake_cache
+    gradle(task: "bundleRelease", project_dir: "android/")
     upload_to_play_store(track: 'internal', release_status: 'draft')
   end
 
   desc "Deploy a new version to the Google Play"
   lane :deploy_production do
-    gradle(task: "clean bundleRelease", project_dir: "android/")
-    # upload_to_play_store will automatically upload metadata from the metadata directory
+    bump_version
+    clean_cmake_cache
+    gradle(task: "bundleRelease", project_dir: "android/")
     upload_to_play_store(track: 'production')
   end
 end

@@ -1,9 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { View, ActivityIndicator, LogBox } from 'react-native';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+
+// ─── Silencia todos os logs em produção ───────────────────────────────────────
+// Em desenvolvimento (__DEV__ === true) tudo funciona normalmente.
+// Em produção (APK/AAB) console.log/warn/info/debug viram no-ops automaticamente.
+// console.error é mantido silencioso também — erros reais devem usar um serviço
+// de crash reporting (ex: Sentry) se necessário no futuro.
+if (!__DEV__) {
+  console.log   = () => {};
+  console.warn  = () => {};
+  console.error = () => {};
+  console.info  = () => {};
+  console.debug = () => {};
+}
 
 LogBox.ignoreLogs(['Unable to activate keep awake']);
 import { useFonts } from 'expo-font';
@@ -37,20 +50,44 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
   const [isReady, setIsReady] = useState(false);
+  const hasShownLoading = useRef(false);
 
   useEffect(() => {
     if (loading) return;
 
     const inLogin = segments[0] === 'login';
 
+    console.log('[AuthGate] Estado atualizado.', {
+      isAuthenticated,
+      inLogin,
+      segment: segments[0],
+      hasShownLoading: hasShownLoading.current,
+    });
+
     if (!isAuthenticated && !inLogin) {
+      hasShownLoading.current = false; // reset para próximo login
+      console.log('[AuthGate] Não autenticado fora do login → router.replace(/login)');
       router.replace('/login');
-      // Espera um pouco para garantir que a rota de navegação mudou e não piscar a interface
       setTimeout(() => setIsReady(true), 150);
     } else if (isAuthenticated && inLogin) {
-      router.replace('/');
+      if (!hasShownLoading.current) {
+        // Primeiro login da sessão: passa pela tela de loading para inicializar dados
+        hasShownLoading.current = true;
+        console.log('[AuthGate] Autenticado na tela de login (1ª vez) → router.replace(/loading)');
+        router.replace('/loading');
+      } else {
+        // Reload em dev ou retorno à tela de login após já ter carregado:
+        // pula o loading, vai direto para home
+        console.log('[AuthGate] Autenticado na tela de login (reload/retorno) → router.replace(/)');
+        router.replace('/');
+      }
       setTimeout(() => setIsReady(true), 150);
     } else {
+      // Sessão restaurada do storage (INITIAL_SESSION) enquanto já estava em outra rota:
+      // SubscriptionBootstrapper + telas individuais cuidam dos dados — não precisa de /loading
+      if (isAuthenticated) {
+        console.log('[AuthGate] Sessão restaurada, já em rota autenticada → sem redirect.');
+      }
       setIsReady(true);
     }
   }, [isAuthenticated, loading, segments]);
@@ -153,6 +190,7 @@ export default function RootLayout() {
               <AuthGate>
                 <Stack screenOptions={{ headerShown: false }}>
                   <Stack.Screen name="login" />
+                  <Stack.Screen name="loading" />
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen name="settings" />
                   <Stack.Screen name="relatorios" />

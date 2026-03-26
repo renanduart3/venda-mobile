@@ -22,21 +22,43 @@ export default function LoginScreen() {
   const appVersion = Constants?.expoConfig?.version || '1.0.0';
 
   const handleLogin = async () => {
+    console.log('[Login] Botão de login pressionado. Iniciando fluxo Google...');
     setLoading(true);
+    let browserClosed = false;
     try {
-      const { error } = await signInWithGoogle();
-      if (error) {
-        Alert.alert('Erro ao entrar', error);
-        setLoading(false);
-      } else {
-        // WebBrowser fechou com sucesso — aguarda o onAuthStateChange redirecionar
-        // Mantemos uma tela de loading para nao deixar o usuario sem feedback
+      const { error } = await signInWithGoogle(() => {
+        // Chamado imediatamente quando o browser fecha com sucesso,
+        // antes do exchangeCodeForSession — mostra overlay sem esperar rede
+        browserClosed = true;
         setLoading(false);
         setWaitingAuth(true);
-        // Timeout de seguranca: se em 15s nao navegar, libera o botao novamente
-        setTimeout(() => setWaitingAuth(false), 15000);
+        console.log('[Login] Browser fechou com sucesso — overlay "Entrando..." exibido. Aguardando exchangeCodeForSession...');
+      });
+
+      console.log('[Login] signInWithGoogle resolveu.', { browserClosed, hasError: !!error });
+
+      if (error) {
+        // Erro na troca de código ou na sessão — remove overlay e alerta
+        console.warn('[Login] Erro retornado pelo signInWithGoogle:', error);
+        setWaitingAuth(false);
+        setLoading(false);
+        Alert.alert('Erro ao entrar', error);
+      } else if (!browserClosed) {
+        // Usuário cancelou o browser (type === 'cancel') — apenas remove loading
+        console.log('[Login] Browser cancelado pelo usuário. Nenhuma ação necessária.');
+        setLoading(false);
+      } else {
+        // Sucesso: overlay já está visível, onAuthStateChange vai acionar o redirect.
+        // Timeout de segurança caso o AuthGate demore (ex: sessão lenta no Supabase).
+        console.log('[Login] Aguardando onAuthStateChange → AuthGate → /loading...');
+        setTimeout(() => {
+          console.warn('[Login] Timeout de segurança atingido (15s). Limpando overlay.');
+          setWaitingAuth(false);
+        }, 15000);
       }
-    } catch {
+    } catch (e: any) {
+      console.error('[Login] Erro inesperado no handleLogin:', e?.message ?? e);
+      setWaitingAuth(false);
       setLoading(false);
     }
   };
@@ -69,6 +91,7 @@ export default function LoginScreen() {
       fontFamily: 'Inter-Bold',
       color: '#F1F5F9',
       marginBottom: 6,
+      textAlign: 'center',
     },
     tagline: {
       fontSize: 14,
@@ -145,7 +168,7 @@ export default function LoginScreen() {
     version: {
       fontSize: 11,
       fontFamily: 'Inter-Regular',
-      color: '#334155',
+      color: '#64748B',
       textAlign: 'center',
       marginTop: 24,
     },
@@ -192,13 +215,13 @@ export default function LoginScreen() {
         {/* Header */}
         <View style={s.header}>
           <Image
-            source={require('@/assets/images/icon.png')}
+            source={require('@/assets/images/logo-nova-spl.png')}
             style={s.logo}
             resizeMode="contain"
           />
-          <Text style={s.brand}>Loja Inteligente</Text>
+          <Text style={s.brand}>Vendas, Estoque e Fiado (PDV)</Text>
           <Text style={s.tagline}>
-            Gestão de vendas e estoque{'\n'}na palma da sua mão
+            Gerencie vendas, estoque e fiados do {'\n'}seu negocio de forma super simples.
           </Text>
         </View>
 

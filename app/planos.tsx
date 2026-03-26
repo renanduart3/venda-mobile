@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   checkEarlyAdopterAvailability,
+  claimEarlyAdopterSlot,
   EarlyAdopterStatus,
   formatPrice,
   PRICING,
@@ -145,6 +146,10 @@ export default function Planos() {
             'A compra foi concluída, mas a ativação ainda está sincronizando. Aguarde alguns segundos e tente novamente.'
           );
           return;
+        }
+
+        if (isEarlyAdopter) {
+          await claimEarlyAdopterSlot();
         }
 
         setActiveSubscription({

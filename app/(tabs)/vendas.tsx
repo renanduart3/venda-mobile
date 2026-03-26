@@ -80,7 +80,7 @@ export default function Vendas() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState('all');
-  const [premium, setPremium] = useState(false);
+  const [premium, setPremium] = useState<boolean | null>(null);
   const [productSearch, setProductSearch] = useState('');
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
 
@@ -943,7 +943,7 @@ export default function Vendas() {
                       style={{ padding: 4, flexDirection: 'row', gap: 6, alignItems: 'center' }}
                     >
                       <Edit size={16} color={colors.primary} />
-                      {!premium && <Crown size={12} color={colors.warning} />}
+                      {premium === false && <Crown size={12} color={colors.warning} />}
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleDeleteSale(sale)}
@@ -956,7 +956,7 @@ export default function Vendas() {
                       style={{ padding: 4, flexDirection: 'row', alignItems: 'center', gap: 4 }}
                     >
                       <Share2 size={16} color={colors.secondary} />
-                      {!premium && <Crown size={12} color={colors.warning} />}
+                      {premium === false && <Crown size={12} color={colors.warning} />}
                     </TouchableOpacity>
                   </View>
                 </View>

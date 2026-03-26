@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/renan/Desktop/projetos-git/venda-mobile/app -type d -name \"\\(tabs\\)\")",
+      "Bash(ls -la /c/Users/renan/Desktop/projetos-git/venda-mobile/app/\\\\\\(tabs\\\\\\)/)"
+    ]
+  }
+}

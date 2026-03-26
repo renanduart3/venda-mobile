@@ -35,6 +35,7 @@ export interface PurchaseResult {
 }
 
 let iapAvailable = false;
+let iapInitialized = false;
 let purchaseUpdateSubscription: { remove?: () => void } | null = null;
 let purchaseErrorSubscription: { remove?: () => void } | null = null;
 const purchaseResultQueue: Array<(result: PurchaseResult) => void> = [];
@@ -279,6 +280,11 @@ async function processPurchase(purchase: any, source: 'purchase' | 'restore'): P
 
 export async function initializeIAP(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
+
+  if (iapInitialized) {
+    return iapAvailable;
+  }
+  iapInitialized = true;
 
   try {
     iap = tryLoadIap();
@@ -560,5 +566,6 @@ export async function endConnection(): Promise<void> {
     logIap('warn', 'infra', 'Erro ao encerrar conexao IAP.', error);
   } finally {
     iapAvailable = false;
+    iapInitialized = false; // permite re-inicializar após desconexão explícita
   }
 }

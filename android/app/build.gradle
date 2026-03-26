@@ -92,8 +92,8 @@ android {
         applicationId 'com.renanduart3.vendamobile'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 13
-        versionName "1.0.0"
+        versionCode 15
+        versionName "1.0.15"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
@@ -104,21 +104,15 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        release {
-            if (project.hasProperty('VENDA_MOBILE_UPLOAD_STORE_FILE')) {
-                storeFile file(VENDA_MOBILE_UPLOAD_STORE_FILE)
-                storePassword VENDA_MOBILE_UPLOAD_STORE_PASSWORD
-                keyAlias VENDA_MOBILE_UPLOAD_KEY_ALIAS
-                keyPassword VENDA_MOBILE_UPLOAD_KEY_PASSWORD
-            }
-        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.release
+            // Caution! In production, you need to generate your own keystore file.
+            // see https://reactnative.dev/docs/signed-apk-android.
+            signingConfig signingConfigs.debug
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Constants from 'expo-constants';
 import {
   View,
   Text,
@@ -54,6 +55,7 @@ export default function Settings() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [premium, setPremium] = useState(false);
   const [premiumDetails, setPremiumDetails] = useState<PremiumStatus | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -416,6 +418,23 @@ export default function Settings() {
 
   return (
     <View style={styles.container}>
+
+      {/* Overlay de loading durante o signOut */}
+      {isSigningOut && (
+        <View style={{
+          ...StyleSheet.absoluteFillObject,
+          backgroundColor: 'rgba(0,0,0,0.55)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 999,
+        }}>
+          <ActivityIndicator size="large" color="#ffffff" />
+          <Text style={{ color: '#F8FAFC', marginTop: 16, fontFamily: 'Inter-Regular', fontSize: 15 }}>
+            Desconectando...
+          </Text>
+        </View>
+      )}
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -767,7 +786,7 @@ export default function Settings() {
 
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Versão do App</Text>
-              <Text style={styles.infoValue}>1.0.0</Text>
+              <Text style={styles.infoValue}>{Constants?.expoConfig?.version || '1.0.0'}</Text>
             </View>
 
             <View style={styles.infoRow}>
@@ -814,6 +833,7 @@ export default function Settings() {
 
             <TouchableOpacity
               style={[styles.resetButton, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }]}
+              disabled={isSigningOut}
               onPress={() =>
                 Alert.alert(
                   'Sair da conta',
@@ -824,16 +844,32 @@ export default function Settings() {
                       text: 'Sair e Voltar para Login',
                       style: 'destructive',
                       onPress: async () => {
-                        await signOut();
-                        router.replace('/login');
+                        console.log('[Settings][SIGNOUT] Usuário confirmou desconectar conta.');
+                        setIsSigningOut(true);
+                        try {
+                          await signOut();
+                          console.log('[Settings][SIGNOUT] signOut concluído — AuthGate vai redirecionar para /login automaticamente.');
+                          // NÃO chama router.replace('/login') aqui:
+                          // AuthGate detecta isAuthenticated=false e já navega,
+                          // chamar de novo causaria o erro REPLACE unhandled.
+                        } catch (e) {
+                          console.error('[Settings][SIGNOUT] Erro inesperado no signOut:', e);
+                          setIsSigningOut(false);
+                        }
                       },
                     },
                   ]
                 )
               }
             >
-              <LogOut size={20} color={colors.error} />
-              <Text style={[styles.resetButtonText, { color: colors.error }]}>Desconectar Conta</Text>
+              {isSigningOut ? (
+                <ActivityIndicator size="small" color={colors.error} />
+              ) : (
+                <LogOut size={20} color={colors.error} />
+              )}
+              <Text style={[styles.resetButtonText, { color: colors.error }]}>
+                {isSigningOut ? 'Desconectando...' : 'Desconectar Conta'}
+              </Text>
             </TouchableOpacity>
           </Card>
         </View>

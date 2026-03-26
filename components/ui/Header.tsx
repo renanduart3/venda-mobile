@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Bell, Settings, Crown, ArrowLeft } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
@@ -51,9 +51,9 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
   const styles = StyleSheet.create({
     header: {
       backgroundColor: colors.topbar,
-      paddingHorizontal: 20,
-      paddingTop: 50,
-      paddingBottom: 16,
+      paddingHorizontal: 15,
+      paddingTop: 45,
+      paddingBottom: 5,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
       flexDirection: 'row',
@@ -66,8 +66,20 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
       shadowRadius: 6,
       elevation: 2,
     },
+    leftSection: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      flex: 1,
+      marginRight: 12,
+    },
+    logo: {
+      width: 68,
+      height: 68,
+      borderRadius: 5,
+    },
     title: {
-      fontSize: 24,
+      fontSize: 22,
       fontFamily: 'Inter-Bold',
       color: colors.onTopbar,
     },
@@ -123,15 +135,24 @@ export function Header({ title, showSettings = false, showBack = false, onBackPr
 
   return (
     <View style={styles.header}>
-      {showBack && (
-        <TouchableOpacity
-          onPress={onBackPress || (() => router.back())}
-          style={{ padding: 8, marginRight: 8 }}
-        >
-          <ArrowLeft size={24} color={colors.onTopbar} />
-        </TouchableOpacity>
-      )}
-      <Text style={[styles.title, showBack && { flex: 1, textAlign: 'center' }]}>{title}</Text>
+      <View style={styles.leftSection}>
+        {showBack && (
+          <TouchableOpacity
+            onPress={onBackPress || (() => router.back())}
+            style={{ padding: 4, marginRight: 4 }}
+          >
+            <ArrowLeft size={24} color={colors.onTopbar} />
+          </TouchableOpacity>
+        )}
+        <Image
+          source={require('@/assets/images/logo-nova-spl.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
+        <Text style={[styles.title, { flexShrink: 1 }]} numberOfLines={1}>
+          {title}
+        </Text>
+      </View>
 
       <View style={styles.rightSection}>
         {!premium && (

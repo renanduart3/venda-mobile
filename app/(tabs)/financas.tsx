@@ -42,7 +42,7 @@ export default function Financas() {
   const itemsPerPage = 10;
 
   // Premium state
-  const [userIsPremium, setUserIsPremium] = useState(false);
+  const [userIsPremium, setUserIsPremium] = useState<boolean | null>(null);
   // Customers, Expenses, Sales state
   const [customers, setCustomers] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -1193,17 +1193,17 @@ export default function Financas() {
                           +R$ {sale.total.toFixed(2)}
                         </Text>
                         <Text style={styles.statusText}>Pago ({getPaymentMethodDisplay(sale.payment_method)})</Text>
-                        {userIsPremium ? (
-                          <Pressable style={styles.detailsButton} onPress={() => openSaleDetails(sale)}>
-                            <List size={14} color={colors.white} />
-                            <Text style={styles.detailsButtonText}>Detalhes</Text>
-                          </Pressable>
-                        ) : (
+                        {userIsPremium === false ? (
                           <Pressable style={styles.detailsButton} onPress={() => router.push('/planos')}>
                             <Crown size={14} color={colors.white} />
                             <Text style={styles.detailsButtonText}>Detalhes</Text>
                           </Pressable>
-                        )}
+                        ) : userIsPremium === true ? (
+                          <Pressable style={styles.detailsButton} onPress={() => openSaleDetails(sale)}>
+                            <List size={14} color={colors.white} />
+                            <Text style={styles.detailsButtonText}>Detalhes</Text>
+                          </Pressable>
+                        ) : null}
                       </View>
                     </View>
                   </Card>
