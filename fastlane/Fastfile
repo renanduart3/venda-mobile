@@ -1,5 +1,23 @@
 require 'json'
 require 'fileutils'
+require 'socket'
+require 'resolv'
+
+# Force IPv4 - Ruby 3.4 on Windows tries IPv6 first, causing 2min timeouts
+# Patches TCPSocket directly since Faraday/Net::HTTP bypass Socket.getaddrinfo
+module ForceIPv4Connection
+  def initialize(host, port, *args)
+    begin
+      addrs = Resolv::DNS.new.getaddresses(host)
+      ipv4 = addrs.find { |a| a.is_a?(Resolv::IPv4) }&.to_s
+      host = ipv4 if ipv4
+    rescue StandardError
+      # keep original host on error
+    end
+    super(host, port, *args)
+  end
+end
+TCPSocket.prepend(ForceIPv4Connection)
 
 default_platform(:android)
 
@@ -28,10 +46,18 @@ platform :android do
 
   desc "Remove stale CMake cache to prevent native build errors"
   private_lane :clean_cmake_cache do
-    cxx_path = File.expand_path('../../android/app/.cxx', __FILE__)
-    if Dir.exist?(cxx_path)
-      FileUtils.rm_rf(cxx_path)
-      UI.success "🧹 Cache CMake removido: #{cxx_path}"
+    paths_to_clean = [
+      File.expand_path('../../android/app/.cxx', __FILE__),
+      File.expand_path('../../android/.cxx', __FILE__),
+      File.expand_path('../../node_modules/react-native-iap/android/.cxx', __FILE__),
+      'C:/cx/iap/react-native-iap'
+    ]
+
+    paths_to_clean.each do |path|
+      next unless Dir.exist?(path)
+
+      FileUtils.rm_rf(path)
+      UI.success "🧹 Cache CMake removido: #{path}"
     end
   end
 
@@ -40,7 +66,11 @@ platform :android do
     bump_version
     clean_cmake_cache
     gradle(task: "bundleRelease", project_dir: "android/")
-    upload_to_play_store(track: 'internal', release_status: 'draft')
+    upload_to_play_store(
+      track: 'internal',
+      release_status: 'draft',
+      skip_upload_apk: true
+    )
   end
 
   desc "Deploy a new version to the Google Play"
@@ -48,6 +78,9 @@ platform :android do
     bump_version
     clean_cmake_cache
     gradle(task: "bundleRelease", project_dir: "android/")
-    upload_to_play_store(track: 'production')
+    upload_to_play_store(
+      track: 'production',
+      skip_upload_apk: true
+    )
   end
 end

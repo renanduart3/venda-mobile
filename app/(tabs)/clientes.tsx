@@ -139,6 +139,27 @@ export default function Clientes() {
       return;
     }
 
+    const phoneValue = formData.phone.trim();
+    if (phoneValue) {
+      const cleanPhone = phoneValue.replace(/\D/g, '');
+      if (cleanPhone) {
+        try {
+          const allCustomers = await db.all('customers', '');
+          const duplicate = allCustomers.find((c: any) => {
+            if (editingCustomer && c.id === editingCustomer.id) return false;
+            if (!c.phone) return false;
+            return c.phone.replace(/\D/g, '') === cleanPhone;
+          });
+          if (duplicate) {
+            Alert.alert('Telefone já cadastrado', `O número ${phoneValue} já pertence ao cliente "${duplicate.name}".`);
+            return;
+          }
+        } catch (e) {
+          console.warn('Erro ao verificar telefone duplicado:', e);
+        }
+      }
+    }
+
     try {
       const now = new Date().toISOString();
       const name = toTitleCase(formData.name.trim());

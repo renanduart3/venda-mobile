@@ -20,5 +20,18 @@ allprojects {
   }
 }
 
+// Fix for Windows MAX_PATH issue with react-native-iap Nitro C++ build.
+// The deeply nested nitrogen-generated sources cause Ninja to create paths
+// exceeding 260 chars even with LongPathsEnabled=1.
+subprojects { subproject ->
+  if (subproject.name == "react-native-iap") {
+    subproject.plugins.withId("com.android.library") {
+      subproject.android {
+        buildDir = new File("C:/cx/iap/${subproject.name}")
+      }
+    }
+  }
+}
+
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"

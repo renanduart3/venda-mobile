@@ -5,12 +5,15 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Dimensions
+  Dimensions,
+  TouchableOpacity,
 } from 'react-native';
 import {
   TrendingUp,
   DollarSign,
-  Package
+  Package,
+  Eye,
+  EyeOff,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
@@ -48,6 +51,7 @@ interface DashboardStats {
 
 export default function Dashboard() {
   const { colors } = useTheme();
+  const [valuesVisible, setValuesVisible] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     dailySales: 0,
     dailyRevenue: 0,
@@ -323,6 +327,20 @@ export default function Dashboard() {
       margin: 20,
       marginTop: 0,
     },
+    visibilityRow: {
+      paddingHorizontal: 20,
+      paddingTop: 10,
+      paddingBottom: 4,
+      alignItems: 'flex-end',
+    },
+    visibilityToggle: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+    },
   });
 
   const toCurrency = (value: number) =>
@@ -352,6 +370,12 @@ export default function Dashboard() {
       maximumFractionDigits: 1,
     })}% vs ontem`;
   };
+
+  const maskCurrency = (value: number) =>
+    valuesVisible ? toCurrency(value) : 'R$ ••••';
+
+  const maskCompactCurrency = (value: number) =>
+    valuesVisible ? toCompactCurrency(value) : 'R$ ••';
 
   const getChangeColor = (value: number, inverse = false) => {
     if (value === 0) {
@@ -429,7 +453,7 @@ export default function Dashboard() {
       <View style={styles.kpiHeader}>
         <View>
           <Text style={styles.kpiTitle}>{title}</Text>
-          <Text style={styles.kpiValue}>{toCurrency(value)}</Text>
+          <Text style={styles.kpiValue}>{maskCurrency(value)}</Text>
         </View>
         <View style={[styles.kpiIcon, { backgroundColor: accentColor + '20' }]}>{icon}</View>
       </View>
@@ -447,6 +471,20 @@ export default function Dashboard() {
       <Header title="Dashboard" showSettings />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+
+        {/* Toggle visibilidade dos valores */}
+        <View style={styles.visibilityRow}>
+          <TouchableOpacity
+            style={styles.visibilityToggle}
+            onPress={() => setValuesVisible(v => !v)}
+            activeOpacity={0.7}
+          >
+            {valuesVisible
+              ? <Eye size={18} color={colors.textSecondary} />
+              : <EyeOff size={18} color={colors.textSecondary} />
+            }
+          </TouchableOpacity>
+        </View>
 
         {/* KPIs Financeiros */}
         <View style={styles.kpiSection}>
@@ -491,7 +529,7 @@ export default function Dashboard() {
               <Text style={styles.miniStatLabel}>Clientes cadastrados</Text>
             </Card>
             <Card style={styles.miniStatCard}>
-              <Text style={styles.miniStatValue}>{toCompactCurrency(stats.monthlyExpenses)}</Text>
+              <Text style={styles.miniStatValue}>{maskCompactCurrency(stats.monthlyExpenses)}</Text>
               <Text style={styles.miniStatLabel}>Despesas do mes</Text>
             </Card>
           </View>
@@ -510,12 +548,12 @@ export default function Dashboard() {
                   labels: trendData.map((point) => point.label),
                   datasets: [
                     {
-                      data: trendData.map((point) => Number(point.revenue || 0)),
+                      data: trendData.map((point) => valuesVisible ? Number(point.revenue || 0) : 0),
                       color: (opacity = 1) => hexToRgba('#f97316', opacity),
                       strokeWidth: 3,
                     },
                     {
-                      data: trendData.map((point) => Number(point.profit || 0)),
+                      data: trendData.map((point) => valuesVisible ? Number(point.profit || 0) : 0),
                       color: (opacity = 1) => hexToRgba(colors.success, opacity),
                       strokeWidth: 3,
                     },
@@ -558,7 +596,7 @@ export default function Dashboard() {
           <Card>
             <Text style={styles.sectionTitle}>Como o faturamento bruto se dividiu hoje</Text>
             <Text style={styles.sectionCaption}>
-              Custos, descontos e lucro sobre {toCurrency(todayGrossRevenue)}
+              Custos, descontos e lucro sobre {maskCurrency(todayGrossRevenue)}
             </Text>
 
             {breakdownTotal > 0 ? (
@@ -587,7 +625,7 @@ export default function Dashboard() {
                         <Text style={styles.breakdownLabel}>{segment.label}</Text>
                       </View>
                       <Text style={styles.breakdownValue}>
-                        {toCurrency(Math.max(segment.value, 0))} ({formatPercent(share)})
+                        {maskCurrency(Math.max(segment.value, 0))} ({formatPercent(share)})
                       </Text>
                     </View>
                   );
@@ -599,7 +637,7 @@ export default function Dashboard() {
 
                 {todayProfit < 0 && (
                   <Text style={styles.breakdownWarning}>
-                    Hoje houve prejuizo de {toCurrency(Math.abs(todayProfit))}. O bloco de lucro fica zerado para manter a leitura simples.
+                    Hoje houve prejuizo de {maskCurrency(Math.abs(todayProfit))}. O bloco de lucro fica zerado para manter a leitura simples.
                   </Text>
                 )}
               </>

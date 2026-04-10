@@ -12,6 +12,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AntDesign } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import Svg, { Defs, LinearGradient, Stop, Circle, Rect } from 'react-native-svg';
+//review
+import { TextInput, Modal } from 'react-native';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginScreen() {
   const { signInWithGoogle } = useAuth();
@@ -21,45 +24,68 @@ export default function LoginScreen() {
 
   const appVersion = Constants?.expoConfig?.version || '1.0.0';
 
+  // review
+  const [tapCount, setTapCount] = useState(0);
+  const [lastTapTime, setLastTapTime] = useState(0);
+  const [reviewerModalVisible, setReviewerModalVisible] = useState(false);
+  const [reviewerEmail, setReviewerEmail] = useState('');
+  const [reviewerLoading, setReviewerLoading] = useState(false);
+
+
   const handleLogin = async () => {
-    console.log('[Login] Botão de login pressionado. Iniciando fluxo Google...');
     setLoading(true);
-    let browserClosed = false;
     try {
-      const { error } = await signInWithGoogle(() => {
-        // Chamado imediatamente quando o browser fecha com sucesso,
-        // antes do exchangeCodeForSession — mostra overlay sem esperar rede
-        browserClosed = true;
+      const { error, cancelled } = await signInWithGoogle();
+      if (cancelled) {
+        // Usuário fechou o seletor de conta do Google — não é erro
         setLoading(false);
-        setWaitingAuth(true);
-        console.log('[Login] Browser fechou com sucesso — overlay "Entrando..." exibido. Aguardando exchangeCodeForSession...');
-      });
-
-      console.log('[Login] signInWithGoogle resolveu.', { browserClosed, hasError: !!error });
-
-      if (error) {
-        // Erro na troca de código ou na sessão — remove overlay e alerta
-        console.warn('[Login] Erro retornado pelo signInWithGoogle:', error);
-        setWaitingAuth(false);
-        setLoading(false);
+      } else if (error) {
         Alert.alert('Erro ao entrar', error);
-      } else if (!browserClosed) {
-        // Usuário cancelou o browser (type === 'cancel') — apenas remove loading
-        console.log('[Login] Browser cancelado pelo usuário. Nenhuma ação necessária.');
         setLoading(false);
       } else {
-        // Sucesso: overlay já está visível, onAuthStateChange vai acionar o redirect.
-        // Timeout de segurança caso o AuthGate demore (ex: sessão lenta no Supabase).
-        console.log('[Login] Aguardando onAuthStateChange → AuthGate → /loading...');
-        setTimeout(() => {
-          console.warn('[Login] Timeout de segurança atingido (15s). Limpando overlay.');
-          setWaitingAuth(false);
-        }, 15000);
+        // Login concluído — aguarda o onAuthStateChange redirecionar via AuthGate
+        // Mantemos overlay de loading para não deixar o usuário sem feedback
+        setLoading(false);
+        setWaitingAuth(true);
+        // Timeout de segurança: se em 15s não navegar, libera o botão novamente
+        setTimeout(() => setWaitingAuth(false), 15000);
       }
-    } catch (e: any) {
-      console.error('[Login] Erro inesperado no handleLogin:', e?.message ?? e);
-      setWaitingAuth(false);
+    } catch {
       setLoading(false);
+    }
+  };
+  // 3. Adiciona essa função (junto com o handleLogin)
+  const handleLogoTap = () => {
+    const now = Date.now();
+    // reseta se demorou mais de 2s entre taps
+    const newCount = now - lastTapTime < 2000 ? tapCount + 1 : 1;
+    setTapCount(newCount);
+    setLastTapTime(now);
+    if (newCount >= 7) {
+      setTapCount(0);
+      setReviewerModalVisible(true);
+    }
+  };
+
+  const handleReviewerLogin = async () => {
+    if (reviewerEmail.trim() !== 'google_reviewer_001@gmail.com') {
+      Alert.alert('Usuário não reconhecido');
+      return;
+    }
+    setReviewerLoading(true);
+    try {
+      // injeta sessão fake direto no AuthContext via signInWithPassword
+      // o usuário reviewer tem senha vazia — autenticação bypassa o Google
+      const { error } = await supabase.auth.signInWithPassword({
+        email: 'google_reviewer_001@gmail.com',
+        password: 'reviewer_access_2026',
+      });
+      if (error) throw error;
+      setReviewerModalVisible(false);
+    } catch (e: any) {
+      Alert.alert('Erro', e.message);
+    } finally {
+      setReviewerLoading(false);
     }
   };
 
@@ -90,8 +116,8 @@ export default function LoginScreen() {
       fontSize: 28,
       fontFamily: 'Inter-Bold',
       color: '#F1F5F9',
-      marginBottom: 6,
       textAlign: 'center',
+      marginBottom: 6,
     },
     tagline: {
       fontSize: 14,
@@ -214,11 +240,13 @@ export default function LoginScreen() {
       <View style={s.inner}>
         {/* Header */}
         <View style={s.header}>
-          <Image
-            source={require('@/assets/images/logo-nova-spl.png')}
-            style={s.logo}
-            resizeMode="contain"
-          />
+          <TouchableOpacity onPress={handleLogoTap} activeOpacity={1}>
+            <Image
+              source={require('@/assets/images/logo-nova-spl.png')}
+              style={s.logo}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
           <Text style={s.brand}>Vendas, Estoque e Fiado (PDV)</Text>
           <Text style={s.tagline}>
             Gerencie vendas, estoque e fiados do {'\n'}seu negocio de forma super simples.
@@ -259,6 +287,75 @@ export default function LoginScreen() {
 
         <Text style={s.version}>Versão {appVersion} • PT-BR</Text>
       </View>
+
+      <Modal
+        visible={reviewerModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReviewerModalVisible(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24,
+        }}>
+          <View style={{
+            backgroundColor: '#1E293B',
+            borderRadius: 16,
+            padding: 24,
+            width: '100%',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.1)',
+          }}>
+            <Text style={{ color: '#F1F5F9', fontSize: 16, fontFamily: 'Inter-SemiBold', marginBottom: 16 }}>
+              Reviewer Access
+            </Text>
+            <TouchableOpacity
+              onPress={() => setReviewerModalVisible(false)}
+              style={{ alignSelf: 'flex-end', marginBottom: 8 }}
+            >
+              <Text style={{ color: '#94A3B8', fontSize: 22, lineHeight: 22 }}>✕</Text>
+            </TouchableOpacity>
+            <TextInput
+              value={reviewerEmail}
+              onChangeText={setReviewerEmail}
+              placeholder="reviewer email"
+              placeholderTextColor="#475569"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={{
+                backgroundColor: '#0F172A',
+                borderRadius: 10,
+                padding: 14,
+                color: '#F1F5F9',
+                fontFamily: 'Inter-Regular',
+                fontSize: 14,
+                marginBottom: 16,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.08)',
+              }}
+            />
+            <TouchableOpacity
+              onPress={handleReviewerLogin}
+              disabled={reviewerLoading}
+              style={{
+                backgroundColor: '#4F46E5',
+                borderRadius: 10,
+                padding: 14,
+                alignItems: 'center',
+              }}
+            >
+              {reviewerLoading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={{ color: '#fff', fontFamily: 'Inter-SemiBold', fontSize: 15 }}>Entrar</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }

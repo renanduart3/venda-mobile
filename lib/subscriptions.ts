@@ -19,6 +19,17 @@ export interface SubscriptionPlan {
   savings?: string;
 }
 
+const PREMIUM_FEATURES = [
+  'Backup manual dos dados (exportação)',
+  'Restauração de dados (importação)',
+  'Relatórios detalhados em PDF',
+  'Relatórios de inteligência de negócio',
+  'Edição de vendas realizadas',
+  'Envio de recibo via WhatsApp',
+  'Cobrança via WhatsApp para clientes em débito',
+  'PIX QR Code em vendas e cobranças',
+];
+
 export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: 'monthly',
@@ -26,13 +37,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     price: 'R$ 9,90',
     period: 'monthly',
     sku: SUBSCRIPTION_SKUS.MONTHLY,
-    description: 'Proteção total dos seus dados',
-    features: [
-      'Backup manual dos dados (exportação)',
-      'Restauração de dados (importação)',
-      'Relatórios detalhados em PDF',
-      'Relatórios de inteligência de negócio',
-    ],
+    description: 'Acesso completo a todos os recursos',
+    features: PREMIUM_FEATURES,
   },
   {
     id: 'yearly',
@@ -41,12 +47,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     period: 'yearly',
     sku: SUBSCRIPTION_SKUS.YEARLY,
     description: 'Melhor custo-benefício',
-    features: [
-      'Backup manual dos dados (exportação)',
-      'Restauração de dados (importação)',
-      'Relatórios detalhados em PDF',
-      'Relatórios de inteligência de negócio',
-    ],
+    features: PREMIUM_FEATURES,
     savings: 'Economize R$ 19,10',
   },
 ];

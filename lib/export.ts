@@ -116,11 +116,12 @@ export function generateReportChartHTML(reportId: string, reportData: any[]): st
     case '7': {
       const days = rows.map((r:any)=>{ try{ const d=new Date(r.lastPurchase); if(!isNaN(d.getTime())){ const now=new Date(); return Math.max(0, Math.round((now.getTime()-d.getTime())/(1000*60*60*24))); } }catch{} return 0; });
       const items = [
-        { label: '0-30', value: days.filter(d=> d<=30).length, color: '#16a34a' },
-        { label: '30-60', value: days.filter(d=> d>30 && d<=60).length, color: '#f59e0b' },
-        { label: '60-90', value: days.filter(d=> d>60 && d<=90).length, color: '#6b7280' },
+        { label: '0-30d', value: days.filter(d=> d<=30).length, color: '#16a34a' },
+        { label: '31-60d', value: days.filter(d=> d>30 && d<=60).length, color: '#f59e0b' },
+        { label: '61-90d', value: days.filter(d=> d>60 && d<=90).length, color: '#ef4444' },
+        { label: '90d+', value: days.filter(d=> d>90).length, color: '#6b7280' },
       ];
-      return renderHBarChart({ title: 'Inativos por Faixa (dias)', items, legend: 'Faixas: 0-30, 30-60, 60-90 dias' });
+      return renderHBarChart({ title: 'Inativos por Faixa (dias)', items, legend: 'Distribuição por dias de inatividade' });
     }
     case '8': {
       const items = rows.map((r:any)=>({ label: String(r.productName||'Produto'), value: Number(r.profitMarginPercentage||0) }))

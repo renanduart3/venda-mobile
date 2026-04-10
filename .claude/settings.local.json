@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(find /c/Users/renan/Desktop/projetos-git/venda-mobile/app -type d -name \"\\(tabs\\)\")",
-      "Bash(ls -la /c/Users/renan/Desktop/projetos-git/venda-mobile/app/\\\\\\(tabs\\\\\\)/)"
+      "Bash(ls -la /c/Users/renan/Desktop/projetos-git/venda-mobile/app/\\\\\\(tabs\\\\\\)/)",
+      "Bash(curl -v --max-time 10 https://www.googleapis.com)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|js|jsx\\)$\")",
+      "Bash(ls C:\\\\Users\\\\renan\\\\Desktop\\\\projetos-git\\\\venda-mobile\\\\.env*)",
+      "Bash(yarn add:*)",
+      "Bash(npm_config_yes=true npx yarn add @react-native-google-signin/google-signin)",
+      "Bash(npx yarn:*)",
+      "Bash(keytool -keystore /c/Users/renan/Desktop/projetos-git/venda-mobile/android/app/debug.keystore -list -v -alias androiddebugkey -storepass android -keypass android)",
+      "Bash(grep -E \"\\\\.tsx?$\")",
+      "Bash(ls -la \"C:\\\\Users\\\\renan\\\\Desktop\\\\projetos-git\\\\venda-mobile\\\\android\\\\app\\\\\"*.jks \"C:\\\\Users\\\\renan\\\\Desktop\\\\projetos-git\\\\venda-mobile\\\\android\\\\app\\\\\"*.keystore)",
+      "Bash(keytool -list -v -keystore \"C:\\\\Users\\\\renan\\\\Desktop\\\\projetos-git\\\\venda-mobile\\\\android\\\\app\\\\upload-keystore.jks\" -alias upload -storepass PubliqueiOApp@21)"
     ]
   }
 }

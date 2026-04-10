@@ -1,12 +1,12 @@
 import db from './db';
 import { isPremium } from './premium';
 
-export type Period = 'monthly' | 'yearly' | 'custom';
+export type Period = '7days' | '30days' | '6months' | 'yearly' | 'custom';
 
 export interface ReportOptions {
   period: Period;
-  start?: string; // ISO date
-  end?: string; // ISO date
+  start?: string; // ISO date (usado apenas para 'custom')
+  end?: string;   // ISO date (usado apenas para 'custom')
 }
 
 interface ProductSalesData {
@@ -39,39 +39,41 @@ interface HourlySalesData {
   transactions: number;
 }
 
-const MAX_MONTHS = 6;
-
 async function checkPremiumAccess(): Promise<void> {
   const premium = await isPremium();
   if (!premium) {
-    throw new Error('Funcionalidade premium dispon�vel apenas para usu�rios Premium.');
+    throw new Error('Funcionalidade premium disponível apenas para usuários Premium.');
   }
 }
 
 function calculatePeriod(opts: ReportOptions): { start: Date; end: Date } {
-  let start: Date;
-  let end: Date;
-
   const now = new Date();
-  if (opts.period === 'monthly') {
-    start = new Date(now.getFullYear(), now.getMonth(), 1);
-    end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  } else if (opts.period === 'yearly') {
-    start = new Date(now.getFullYear(), 0, 1);
-    end = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
-  } else {
-    if (!opts.start || !opts.end) throw new Error('Per�odo custom exige in�cio e fim');
-    start = new Date(opts.start);
-    end = new Date(opts.end);
-  }
+  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  let start: Date;
+  let end: Date = todayEnd;
 
-  // m�nimo 1 m�s e m�ximo 6 meses
-  const msInMonth = 1000 * 60 * 60 * 24 * 30;
-  if (end.getTime() - start.getTime() < msInMonth) {
-    throw new Error('Per�odo deve ter pelo menos 1 m�s.');
-  }
-  if ((end.getTime() - start.getTime()) / msInMonth > MAX_MONTHS) {
-    end = new Date(start.getTime() + MAX_MONTHS * msInMonth - 1);
+  switch (opts.period) {
+    case '7days':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+      break;
+    case '30days':
+      start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
+      break;
+    case '6months': {
+      const d = new Date(now);
+      d.setMonth(d.getMonth() - 6);
+      start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      break;
+    }
+    case 'yearly':
+      start = new Date(now.getFullYear(), 0, 1);
+      end = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+      break;
+    case 'custom':
+    default:
+      if (!opts.start || !opts.end) throw new Error('Período customizado exige início e fim.');
+      start = new Date(opts.start);
+      end = new Date(opts.end);
   }
 
   return { start, end };
@@ -103,7 +105,7 @@ export async function getTopSellingProducts(opts: ReportOptions): Promise<Produc
       LEFT JOIN sale_totals st ON st.sale_id = si.sale_id
       WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
     )
-    SELECT 
+    SELECT
       ln.product_id,
       p.name as product_name,
       SUM(ln.quantity) as total_sold,
@@ -148,13 +150,13 @@ export async function getProductABCAnalysis(opts: ReportOptions): Promise<any[]>
   });
 }
 
-// 3. Tend�ncia de Vendas por per�odo (por dia)
+// 3. Tendência de Vendas por período (por dia)
 export async function getSalesTrendAnalysis(opts: ReportOptions): Promise<any[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
 
   const query = `
-    SELECT 
+    SELECT
       DATE(s.created_at) as date,
       COUNT(*) as transactions,
       SUM(s.total) as total_sales,
@@ -175,7 +177,7 @@ export async function getPaymentMethodAnalysis(opts: ReportOptions): Promise<Pay
   const { start, end } = calculatePeriod(opts);
 
   const query = `
-    SELECT 
+    SELECT
       payment_method,
       COUNT(*) as transaction_count,
       SUM(total) as total_amount
@@ -196,13 +198,13 @@ export async function getPaymentMethodAnalysis(opts: ReportOptions): Promise<Pay
   }));
 }
 
-// 5. Hor�rios de Pico
+// 5. Horários de Pico
 export async function getPeakSalesHours(opts: ReportOptions): Promise<HourlySalesData[]> {
   await checkPremiumAccess();
   const { start, end } = calculatePeriod(opts);
 
   const query = `
-    SELECT 
+    SELECT
       CAST(strftime('%H', created_at) AS INTEGER) as hour,
       COUNT(*) as transactions,
       SUM(total) as sales
@@ -226,7 +228,7 @@ export async function getCustomerRFVAnalysis(opts: ReportOptions): Promise<Custo
   const { start, end } = calculatePeriod(opts);
 
   const query = `
-    SELECT 
+    SELECT
       s.customer_id,
       c.name as customer_name,
       COUNT(*) as total_purchases,
@@ -240,9 +242,8 @@ export async function getCustomerRFVAnalysis(opts: ReportOptions): Promise<Custo
   `;
 
   const results: any[] = await db.query(query, [start.toISOString(), end.toISOString()]);
-  // frequency approximation: purchases per month in range
   const msInMonth = 1000 * 60 * 60 * 24 * 30;
-  const months = Math.max(1, (new Date(end).getTime() - new Date(start).getTime()) / msInMonth);
+  const months = Math.max(1, (end.getTime() - start.getTime()) / msInMonth);
   return results.map((row: any) => ({
     customerId: row.customer_id,
     customerName: row.customer_name,
@@ -254,29 +255,28 @@ export async function getCustomerRFVAnalysis(opts: ReportOptions): Promise<Custo
 }
 
 // 7. Clientes Inativos
+// Mostra clientes com ao menos 1 compra cuja última compra é anterior ao início do período selecionado.
 export async function getInactiveCustomers(opts: ReportOptions): Promise<CustomerData[]> {
   await checkPremiumAccess();
-
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const { start } = calculatePeriod(opts);
 
   const query = `
-    SELECT 
+    SELECT
       c.id as customer_id,
       c.name as customer_name,
       COUNT(s.id) as total_purchases,
-      SUM(s.total) as total_spent,
+      COALESCE(SUM(s.total), 0) as total_spent,
       MAX(s.created_at) as last_purchase
     FROM customers c
     LEFT JOIN sales s ON c.id = s.customer_id
-    WHERE s.created_at IS NULL OR datetime(s.created_at) < datetime(?)
     GROUP BY c.id, c.name
     HAVING total_purchases > 0
+      AND (last_purchase IS NULL OR datetime(last_purchase) < datetime(?))
     ORDER BY last_purchase ASC
     LIMIT 500
   `;
 
-  const results: any[] = await db.query(query, [thirtyDaysAgo.toISOString()]);
+  const results: any[] = await db.query(query, [start.toISOString()]);
   return results.map((row: any) => ({
     customerId: row.customer_id,
     customerName: row.customer_name,
@@ -321,7 +321,7 @@ export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[
       FROM line_net
       GROUP BY product_id
     )
-    SELECT 
+    SELECT
       p.id as product_id,
       p.name as product_name,
       COALESCE(p.cost_price, 0) as cost_price,
@@ -386,13 +386,8 @@ export async function getReportData(reportId: string, opts: ReportOptions): Prom
       result = await getProfitMarginAnalysis(opts);
       break;
     default:
-      throw new Error('Relatrio no encontrado');
+      throw new Error('Relatório não encontrado');
   }
 
   return result;
 }
-
-
-
-
-

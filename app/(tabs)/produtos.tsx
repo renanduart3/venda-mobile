@@ -1,22 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
+import {
+  View,
+  Text,
   ScrollView,
   TouchableOpacity,
   Modal,
   Alert,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import { TextInput } from '@/components/ui/TextInput';
-import { 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
   Package,
   AlertTriangle,
   Wrench,
+  Calculator,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
@@ -43,6 +45,7 @@ interface Product {
 
 export default function Produtos() {
   const { colors } = useTheme();
+  const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -424,6 +427,13 @@ export default function Produtos() {
           </View>
 
           <TouchableOpacity
+            style={[styles.addButton, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}
+            onPress={() => router.push('/calculadora-markup' as any)}
+          >
+            <Calculator size={20} color={colors.primary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
             style={styles.addButton}
             onPress={() => openProductModal()}
           >
@@ -535,6 +545,19 @@ export default function Produtos() {
                     </View>
 
                     <View style={styles.actions}>
+                      <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => router.push({
+                          pathname: '/calculadora-markup',
+                          params: {
+                            name: product.name,
+                            cost_price: String(product.cost_price || 0),
+                            price: String(product.price || 0),
+                          },
+                        } as any)}
+                      >
+                        <Calculator size={16} color={colors.textSecondary} />
+                      </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.actionButton}
                         onPress={() => openProductModal(product)}

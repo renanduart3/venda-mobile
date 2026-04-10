@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vendas, Estoque e Fiado (PDV)",
     "slug": "venda-mobile",
-    "version": "1.0.15",
+    "version": "1.0.33",
     "sdkVersion": "54.0.0",
     "icon": "./assets/images/icon.png",
     "scheme": "lojaapp",
@@ -21,6 +21,7 @@
       "expo-router",
       "expo-font",
       "expo-web-browser",
+      "@react-native-google-signin/google-signin",
       "react-native-iap",
       [
         "expo-build-properties",
@@ -42,7 +43,7 @@
         "BILLING"
       ],
       "package": "com.renanduart3.vendamobile",
-      "versionCode": 15,
+      "versionCode": 33,
       "adaptiveIcon": {
         "foregroundImage": "./assets/playstore-icon.png",
         "backgroundColor": "#4A90E2"

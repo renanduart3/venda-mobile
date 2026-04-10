@@ -4,8 +4,11 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Alert
+  Alert,
+  Modal,
+  Clipboard,
 } from 'react-native';
+import QRCode from 'react-native-qrcode-svg';
 import { TextInput } from '@/components/ui/TextInput';
 import {
   Plus,
@@ -14,7 +17,11 @@ import {
   Trash2,
   Crown,
   Share2,
-  Calculator
+  Calculator,
+  QrCode,
+  Copy,
+  XCircle,
+  ChevronRight,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -25,6 +32,7 @@ import { Button } from '@/components/ui/Button';
 import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp, toTitleCase } from '@/lib/utils';
 import db from '@/lib/db';
 import { createVendasStyles } from './Vendas.styles';
+import { generatePixPayload, parsePixKeys } from '@/lib/pix';
 
 interface Product {
   id: string;
@@ -87,6 +95,17 @@ export default function Vendas() {
   // Mock data
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+
+  // PIX QR Code na venda
+  const [pixKeys, setPixKeys] = useState<string[]>([]);
+  const [storeName, setStoreName] = useState<string>('');
+  const [showPixKeySelector, setShowPixKeySelector] = useState(false);
+  const [showPixVendaModal, setShowPixVendaModal] = useState(false);
+  const [pixVendaString, setPixVendaString] = useState('');
+  const [activePixKey, setActivePixKey] = useState('');
+  const [pixCopied, setPixCopied] = useState(false);
+  const [pendingPixAmount, setPendingPixAmount] = useState<number | null>(null);
+  const [pixModalAmount, setPixModalAmount] = useState(0);
 
   const roundMoney = (value: number) =>
     Math.round((value + Number.EPSILON) * 100) / 100;
@@ -205,13 +224,21 @@ export default function Vendas() {
   );
 
   const loadData = async () => {
-    const { loadProducts: loadProductsData, loadCustomers: loadCustomersData, loadSales: loadSalesData } = await import('@/lib/data-loader');
+    const { loadProducts: loadProductsData, loadCustomers: loadCustomersData, loadSales: loadSalesData, loadStoreSettings } = await import('@/lib/data-loader');
 
-    const [productsData, customersData, salesData] = await Promise.all([
+    const [productsData, customersData, salesData, storeSettingsData] = await Promise.all([
       loadProductsData(),
       loadCustomersData(),
-      loadSalesData()
+      loadSalesData(),
+      loadStoreSettings().catch(() => null),
     ]);
+
+    // Configurações da loja (PIX)
+    if (storeSettingsData) {
+      const settings = storeSettingsData as any;
+      if (settings?.store_name) setStoreName(settings.store_name);
+      if (settings?.pix_key) setPixKeys(parsePixKeys(settings.pix_key));
+    }
 
     setProducts(productsData as Product[]);
     setCustomers(customersData);
@@ -307,6 +334,53 @@ export default function Vendas() {
 
   const removeItemFromSale = (productId: string) => {
     setSaleItems(items => items.filter(item => item.product.id !== productId));
+  };
+
+  // ─── PIX QR Code na venda ─────────────────────────────────────────────────
+
+  const openPixVendaWithKey = (key: string, amount?: number) => {
+    const finalAmount = amount ?? totalSale;
+    const payload = generatePixPayload(key, finalAmount, storeName || 'Loja');
+    setActivePixKey(key);
+    setPixVendaString(payload);
+    setPixModalAmount(finalAmount);
+    setPixCopied(false);
+    setShowPixVendaModal(true);
+  };
+
+  const handleShowPixQR = () => {
+    if (!premium) {
+      Alert.alert(
+        '🔒 Recurso Premium',
+        'PIX QR Code nas vendas está disponível apenas para assinantes. Faça upgrade!',
+        [
+          { text: 'Agora não', style: 'cancel' },
+          { text: 'Ver planos', onPress: () => router.push('/planos') },
+        ],
+      );
+      return;
+    }
+    if (totalSale <= 0) {
+      Alert.alert('Valor inválido', 'Adicione itens à venda antes de gerar o QR Code.');
+      return;
+    }
+    if (pixKeys.length === 0) {
+      Alert.alert(
+        'Chave PIX não configurada',
+        'Cadastre sua chave PIX nas Configurações do app.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Configurações', onPress: () => router.push('/settings' as any) },
+        ],
+      );
+      return;
+    }
+    if (pixKeys.length === 1) {
+      openPixVendaWithKey(pixKeys[0]);
+    } else {
+      setPendingPixAmount(null); // usa totalSale
+      setShowPixKeySelector(true);
+    }
   };
 
   const finalizeSale = async () => {
@@ -722,6 +796,50 @@ export default function Vendas() {
               ))}
             </View>
 
+            {paymentMethod === 'pix' && (
+              <TouchableOpacity
+                onPress={() => {
+                  const val = parseFloat(avulsaValue.replace(',', '.'));
+                  if (isNaN(val) || val <= 0) {
+                    Alert.alert('Valor inválido', 'Insira um valor antes de gerar o QR Code.');
+                    return;
+                  }
+                  if (!premium) {
+                    Alert.alert('🔒 Recurso Premium', 'PIX QR Code é exclusivo para assinantes.', [
+                      { text: 'Agora não', style: 'cancel' },
+                      { text: 'Ver planos', onPress: () => router.push('/planos') },
+                    ]);
+                    return;
+                  }
+                  if (pixKeys.length === 0) {
+                    Alert.alert('Chave PIX não configurada', 'Configure sua chave PIX nas Configurações.', [
+                      { text: 'OK' },
+                      { text: 'Configurações', onPress: () => router.push('/settings' as any) },
+                    ]);
+                    return;
+                  }
+                  if (pixKeys.length === 1) {
+                    openPixVendaWithKey(pixKeys[0], val);
+                  } else {
+                    setPendingPixAmount(val);
+                    setShowPixKeySelector(true);
+                  }
+                }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+                  gap: 8, paddingVertical: 12, borderRadius: 10, marginBottom: 12,
+                  backgroundColor: premium ? colors.primary + '15' : colors.card,
+                  borderWidth: 1,
+                  borderColor: premium ? colors.primary + '50' : colors.border,
+                }}
+              >
+                <QrCode size={18} color={premium ? colors.primary : colors.textSecondary} />
+                <Text style={{ fontSize: 14, fontFamily: 'Inter-SemiBold', color: premium ? colors.primary : colors.textSecondary }}>
+                  {premium ? 'Gerar QR Code PIX' : '🔒 Gerar QR Code PIX'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <Button
               title="Vender Agora"
               onPress={finalizeAvulsa}
@@ -880,6 +998,30 @@ export default function Vendas() {
               onChangeText={setObservation}
               multiline
             />
+
+            {/* Botão PIX QR Code — aparece quando PIX está selecionado */}
+            {paymentMethod === 'pix' && (
+              <TouchableOpacity
+                onPress={handleShowPixQR}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  marginTop: 4,
+                  backgroundColor: premium ? colors.primary + '15' : colors.card,
+                  borderWidth: 1,
+                  borderColor: premium ? colors.primary + '50' : colors.border,
+                }}
+              >
+                <QrCode size={18} color={premium ? colors.primary : colors.textSecondary} />
+                <Text style={{ fontSize: 14, fontFamily: 'Inter-SemiBold', color: premium ? colors.primary : colors.textSecondary }}>
+                  {premium ? 'Gerar QR Code PIX' : '🔒 Gerar QR Code PIX'}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -1005,6 +1147,99 @@ export default function Vendas() {
           )}
         </ScrollView>
       )}
+
+      {/* ─── Seletor de chave PIX ────────────────────────────────────────── */}
+      <Modal
+        visible={showPixKeySelector}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPixKeySelector(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: styles.container.backgroundColor, borderRadius: 16, width: '100%', maxWidth: 400, overflow: 'hidden' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Inter-Bold', color: colors.text }}>Selecionar Chave PIX</Text>
+              <TouchableOpacity onPress={() => setShowPixKeySelector(false)} style={{ padding: 6 }}>
+                <XCircle size={22} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            {pixKeys.map((key, i) => (
+              <TouchableOpacity
+                key={i}
+                onPress={() => {
+                  setShowPixKeySelector(false);
+                  openPixVendaWithKey(key, pendingPixAmount ?? undefined);
+                  setPendingPixAmount(null);
+                }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                  paddingHorizontal: 20, paddingVertical: 16,
+                  borderBottomWidth: i < pixKeys.length - 1 ? 1 : 0,
+                  borderBottomColor: colors.border,
+                }}
+              >
+                <Text style={{ fontSize: 15, fontFamily: 'Inter-Medium', color: colors.text, flex: 1 }} numberOfLines={1}>{key}</Text>
+                <ChevronRight size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Modal PIX QR Code ───────────────────────────────────────────── */}
+      <Modal
+        visible={showPixVendaModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPixVendaModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: colors.background, borderRadius: 20, width: '100%', maxWidth: 360, overflow: 'hidden', alignItems: 'center' }}>
+            {/* Header */}
+            <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ fontSize: 20, fontFamily: 'Inter-Bold', color: colors.text }}>PIX — Aguardando pagamento</Text>
+              <TouchableOpacity onPress={() => setShowPixVendaModal(false)} style={{ padding: 6, borderRadius: 8, backgroundColor: colors.card }}>
+                <XCircle size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Valor */}
+            <Text style={{ fontSize: 28, fontFamily: 'Inter-Black', color: colors.text, marginTop: 24 }}>
+              {pixModalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </Text>
+            <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 4 }}>a receber</Text>
+
+            {/* QR Code */}
+            {pixVendaString ? (
+              <View style={{ backgroundColor: '#ffffff', borderRadius: 16, padding: 16, marginVertical: 20, alignItems: 'center', justifyContent: 'center' }}>
+                <QRCode value={pixVendaString} size={210} backgroundColor="#ffffff" color="#000000" />
+              </View>
+            ) : null}
+
+            {/* Chave usada */}
+            <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 4 }}>Chave PIX</Text>
+            <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: colors.text, textAlign: 'center', marginBottom: 16, paddingHorizontal: 16 }} numberOfLines={2}>
+              {activePixKey}
+            </Text>
+
+            {/* Copiar */}
+            <TouchableOpacity
+              onPress={() => { Clipboard.setString(pixVendaString); setPixCopied(true); setTimeout(() => setPixCopied(false), 3000); }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, marginBottom: 20, backgroundColor: pixCopied ? colors.success : colors.primary }}
+              activeOpacity={0.82}
+            >
+              <Copy size={18} color="#fff" />
+              <Text style={{ fontSize: 15, fontFamily: 'Inter-SemiBold', color: '#fff' }}>
+                {pixCopied ? 'Código copiado! ✓' : 'Copiar Pix Copia e Cola'}
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 24, paddingBottom: 20 }}>
+              O cliente escaneia o QR Code ou cola o código no app do banco para pagar.
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
     </View>
   );

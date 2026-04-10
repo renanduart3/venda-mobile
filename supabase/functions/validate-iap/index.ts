@@ -263,12 +263,19 @@ async function persistIapStatus(
     purchase_token: string;
     expiry_date: string | null;
     is_premium: boolean;
+    is_early_adopter?: boolean; // undefined = não sobrescrever o valor existente
     updated_at: string;
   }
 ): Promise<{ error: any }> {
+  // Remove is_early_adopter do payload de update se for undefined (preserva o valor do banco)
+  const updatePayload: Record<string, any> = { ...row };
+  if (updatePayload.is_early_adopter === undefined) {
+    delete updatePayload.is_early_adopter;
+  }
+
   const { data: updatedRows, error: updateError } = await supabase
     .from("iap_status")
-    .update(row)
+    .update(updatePayload)
     .eq("user_id", row.user_id)
     .eq("platform", row.platform)
     .select("id");
@@ -276,8 +283,45 @@ async function persistIapStatus(
   if (updateError) return { error: updateError };
   if (Array.isArray(updatedRows) && updatedRows.length > 0) return { error: null };
 
-  const { error: insertError } = await supabase.from("iap_status").insert(row);
+  // No insert, is_early_adopter: undefined vira false por padrão
+  const insertRow = { ...row, is_early_adopter: row.is_early_adopter ?? false };
+  const { error: insertError } = await supabase.from("iap_status").insert(insertRow);
   return { error: insertError };
+}
+
+async function claimEarlyAdopterSlotIfAvailable(
+  supabase: any,
+  userId: string
+): Promise<boolean> {
+  // maybeSingle: retorna { data: null, error: null } quando não há linha (sem lançar erro)
+  const { data: existing, error: checkError } = await supabase
+    .from("iap_status")
+    .select("is_early_adopter")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (checkError) {
+    console.warn("[EarlyAdopter] Erro ao verificar status existente:", checkError.message);
+    return false;
+  }
+
+  // Usuário já tem registro: devolve o status atual sem reivindicar novo slot.
+  // Isso evita double-count em revalidações periódicas.
+  if (existing !== null) {
+    const alreadyEA = existing.is_early_adopter === true;
+    console.log(`[EarlyAdopter] Registro existente para userId=${userId} is_early_adopter=${alreadyEA}`);
+    return alreadyEA;
+  }
+
+  // Novo usuário (sem registro): tenta reivindicar uma vaga de early adopter
+  const { data, error } = await supabase.rpc("claim_early_adopter_slot");
+  if (error) {
+    console.warn("[EarlyAdopter] Falha ao chamar claim_early_adopter_slot:", error.message);
+    return false;
+  }
+  const claimed = data === true;
+  console.log(`[EarlyAdopter] Slot reivindicado para novo usuário userId=${userId} claimed=${claimed}`);
+  return claimed;
 }
 
 async function validateAppleReceipt(
@@ -535,6 +579,15 @@ Deno.serve(async (req: Request) => {
     // -----------------------------------------------------------------------
     // Persist result to iap_status table
     // -----------------------------------------------------------------------
+    // is_early_adopter só é definido quando is_premium = true.
+    // Quando is_premium = false (cancelamento), passa undefined para NÃO sobrescrever
+    // o valor histórico no banco — o slot já foi contado e não deve ser devolvido.
+    let isEarlyAdopter: boolean | undefined = undefined;
+    if (validation.is_premium) {
+      isEarlyAdopter = await claimEarlyAdopterSlotIfAvailable(serviceClient, authenticatedUserId);
+      console.log(`[EarlyAdopter] userId=${authenticatedUserId} isEarlyAdopter=${isEarlyAdopter}`);
+    }
+
     const { error: dbError } = await persistIapStatus(serviceClient, {
       user_id: authenticatedUserId,
       platform,
@@ -542,6 +595,7 @@ Deno.serve(async (req: Request) => {
       purchase_token: purchaseToken,
       expiry_date: validation.expiry_date ?? null,
       is_premium: validation.is_premium,
+      is_early_adopter: isEarlyAdopter,
       updated_at: new Date().toISOString(),
     });
 

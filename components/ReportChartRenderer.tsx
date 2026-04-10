@@ -73,11 +73,15 @@ function mapData(reportId: string, data: any[]): ChartData {
     case '7': {
       const daysSinceLast = data.map((r: any) => daysFromNow(r.lastPurchase));
       const items: ChartItem[] = [
-        { label: '0-30', value: daysSinceLast.filter((d) => d >= 0 && d <= 30).length, color: '#16a34a' },
-        { label: '30-60', value: daysSinceLast.filter((d) => d > 30 && d <= 60).length, color: '#f59e0b' },
-        { label: '60-90', value: daysSinceLast.filter((d) => d > 60 && d <= 90).length, color: '#6b7280' },
+        { label: '0-30d', value: daysSinceLast.filter((d) => d >= 0 && d <= 30).length, color: '#16a34a' },
+        { label: '31-60d', value: daysSinceLast.filter((d) => d > 30 && d <= 60).length, color: '#f59e0b' },
+        { label: '61-90d', value: daysSinceLast.filter((d) => d > 60 && d <= 90).length, color: '#ef4444' },
+        { label: '90d+', value: daysSinceLast.filter((d) => d > 90).length, color: '#6b7280' },
       ];
-      return { title: 'Inativos por Faixa (dias)', items, orientation: 'horizontal', hint: 'Faixas: 0-30, 30-60, 60-90 dias' };
+      if (items.every((i) => i.value === 0)) {
+        return { title: 'Inativos por Faixa (dias)', items: [], orientation: 'horizontal' };
+      }
+      return { title: 'Inativos por Faixa (dias)', items, orientation: 'horizontal', hint: 'Distribuição por dias de inatividade' };
     }
     case '8': {
       const items = data

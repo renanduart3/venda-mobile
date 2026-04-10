@@ -1,0 +1,38 @@
+{
+  "project_info": {
+    "project_number": "662061043923",
+    "project_id": "loja-inteligente-489322",
+    "storage_bucket": "loja-inteligente-489322.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:662061043923:android:a0b1c2d3e4f50001",
+        "android_client_info": {
+          "package_name": "com.renanduart3.vendamobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "662061043923-j90eu93e3s7r7g8usic3lh7rll5kkf1k.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.renanduart3.vendamobile",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "662061043923-nn8rq13apq336l11scnttv3ihct8p9fs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

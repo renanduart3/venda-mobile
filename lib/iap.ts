@@ -389,6 +389,39 @@ export async function initializeIAP(): Promise<boolean> {
   }
 }
 
+/**
+ * Lê o preço localizado do cache de produtos (populado no initializeIAP).
+ * Retorna a string formatada pelo Google Play (ex: "R$\u00a09,90") ou null se
+ * o produto ainda não foi carregado.
+ *
+ * Uso: mostrar na UI o preço real configurado no Play Console, sem hardcode.
+ */
+export function getCachedProductLocalizedPrice(productId: string): string | null {
+  const product = productCache.get(productId);
+  if (!product) return null;
+
+  // Android: tenta extrair de subscriptionOfferDetailsAndroid primeiro (mais preciso)
+  const offerDetails =
+    product.subscriptionOfferDetailsAndroid ??
+    product.subscriptionOfferDetails ??
+    product.subscriptionOffers ??
+    product.offers;
+
+  if (Array.isArray(offerDetails) && offerDetails.length > 0) {
+    const phases =
+      offerDetails[0]?.pricingPhases?.pricingPhaseList ??
+      offerDetails[0]?.pricingPhases;
+    if (Array.isArray(phases) && phases.length > 0) {
+      const formatted = phases[0]?.formattedPrice;
+      if (formatted) return formatted;
+    }
+  }
+
+  // Fallback: localizedPrice ou price direto no produto
+  const price = product.localizedPrice ?? product.price;
+  return price != null ? String(price) : null;
+}
+
 export async function getProducts(): Promise<Product[]> {
   try {
     if (!iapAvailable || !iap) return [];

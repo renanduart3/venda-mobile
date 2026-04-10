@@ -27,12 +27,14 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { subscriptionManager, SUBSCRIPTION_PLANS, SubscriptionPlan } from '@/lib/subscriptions';
 import { checkSubscriptionFromDatabase, getPremiumStatus } from '@/lib/premium';
-import { restorePurchases as iapRestorePurchases } from '@/lib/iap';
+import { restorePurchases as iapRestorePurchases, getCachedProductLocalizedPrice, PRODUCT_IDS } from '@/lib/iap';
+import { supabase } from '@/lib/supabase';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   checkEarlyAdopterAvailability,
-  claimEarlyAdopterSlot,
+  checkUserIsFormerEarlyAdopter,
+  invalidateEarlyAdopterCache,
   EarlyAdopterStatus,
   formatPrice,
   PRICING,
@@ -48,10 +50,15 @@ export default function Planos() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [earlyAdopterStatus, setEarlyAdopterStatus] = useState<EarlyAdopterStatus | null>(null);
+  const [isFormerEarlyAdopter, setIsFormerEarlyAdopter] = useState(false);
   const [monthlyPricing, setMonthlyPricing] = useState<PricingDisplayInfo | null>(null);
   const [yearlyPricing, setYearlyPricing] = useState<PricingDisplayInfo | null>(null);
   const [purchaseDialogVisible, setPurchaseDialogVisible] = useState(false);
   const [purchaseDialogMessage, setPurchaseDialogMessage] = useState('Processando sua assinatura...');
+
+  // Preços reais lidos do cache do Google Play (populado no initializeIAP)
+  const [iapMonthlyPrice, setIapMonthlyPrice] = useState<string | null>(null);
+  const [iapYearlyPrice, setIapYearlyPrice] = useState<string | null>(null);
 
   const bottomSpacer = Math.max(32, (insets.bottom || 0) + 24);
 
@@ -60,22 +67,58 @@ export default function Planos() {
   useEffect(() => {
     loadActiveSubscription();
     loadEarlyAdopterStatus();
+
+    // Lê preços do cache IAP (já populado pelo initializeIAP no boot do app)
+    setIapMonthlyPrice(getCachedProductLocalizedPrice(PRODUCT_IDS.MONTHLY));
+    setIapYearlyPrice(getCachedProductLocalizedPrice(PRODUCT_IDS.ANNUAL));
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       loadActiveSubscription();
+      loadEarlyAdopterStatus();
     }, [])
   );
 
+  // ─── Realtime: atualiza o contador de early adopters em tempo real ────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('early_adopter_realtime')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'early_adopter_config' },
+        (payload) => {
+          const d = payload.new as any;
+          const totalSlots = d.total_slots ?? PRICING.TOTAL_EARLY_ADOPTER_SLOTS;
+          const currentCount = d.current_count ?? 0;
+          const slotsRemaining = totalSlots - currentCount;
+          // Invalida o cache de memória para a próxima consulta buscar dado fresh
+          invalidateEarlyAdopterCache();
+          setEarlyAdopterStatus({
+            totalSlots,
+            currentCount,
+            slotsRemaining,
+            isAvailable: slotsRemaining > 0,
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const loadEarlyAdopterStatus = async () => {
     try {
-      const status = await checkEarlyAdopterAvailability();
+      const [status, formerEA, monthlyInfo, yearlyInfo] = await Promise.all([
+        checkEarlyAdopterAvailability(),
+        checkUserIsFormerEarlyAdopter(),
+        getPricingDisplayInfo('premium_monthly_plan'),
+        getPricingDisplayInfo('premium_yearly_plan'),
+      ]);
       setEarlyAdopterStatus(status);
-
-      const monthlyInfo = await getPricingDisplayInfo('premium_monthly_plan');
-      const yearlyInfo = await getPricingDisplayInfo('premium_yearly_plan');
-
+      setIsFormerEarlyAdopter(formerEA);
       setMonthlyPricing(monthlyInfo);
       setYearlyPricing(yearlyInfo);
     } catch (error) {
@@ -146,10 +189,6 @@ export default function Planos() {
             'A compra foi concluída, mas a ativação ainda está sincronizando. Aguarde alguns segundos e tente novamente.'
           );
           return;
-        }
-
-        if (isEarlyAdopter) {
-          await claimEarlyAdopterSlot();
         }
 
         setActiveSubscription({
@@ -583,17 +622,19 @@ export default function Planos() {
     return <Icon size={16} color={colors.success} />;
   };
 
-  const isEarlyAdopter = earlyAdopterStatus?.isAvailable ?? true;
+  // Early adopter que cancelou perde o direito ao preço promocional para sempre
+  const isEarlyAdopter = !isFormerEarlyAdopter && (earlyAdopterStatus?.isAvailable ?? true);
   const pricing = selectedPlan === 'monthly' ? monthlyPricing : yearlyPricing;
 
-  // Preços reais baseados no status
-  const currentPrice = isEarlyAdopter
-    ? (selectedPlan === 'monthly' ? PRICING.MONTHLY.earlyAdopter : PRICING.YEARLY.earlyAdopter)
-    : (selectedPlan === 'monthly' ? PRICING.MONTHLY.regular : PRICING.YEARLY.regular);
+  // Preço atual: vem do Play Console via IAP cache; fallback para PRICING se ainda não carregou
+  const iapCurrentPrice = selectedPlan === 'monthly' ? iapMonthlyPrice : iapYearlyPrice;
+  const currentPriceFormatted = iapCurrentPrice
+    ?? formatPrice(selectedPlan === 'monthly' ? PRICING.MONTHLY.earlyAdopter : PRICING.YEARLY.earlyAdopter);
 
+  // Preço regular (após os 1000): hardcoded pois é o futuro preço — você altera em PRICING quando mudar no Play Console
   const regularPrice = selectedPlan === 'monthly' ? PRICING.MONTHLY.regular : PRICING.YEARLY.regular;
-  const slotsUsed = earlyAdopterStatus?.currentCount ?? 20;
-  const totalSlots = earlyAdopterStatus?.totalSlots ?? 300;
+  const slotsUsed = earlyAdopterStatus?.currentCount ?? PRICING.INITIAL_FAKE_COUNT;
+  const totalSlots = earlyAdopterStatus?.totalSlots ?? PRICING.TOTAL_EARLY_ADOPTER_SLOTS;
   const slotsRemaining = earlyAdopterStatus?.slotsRemaining ?? (totalSlots - slotsUsed);
   const isUrgent = slotsRemaining <= 50;
 
@@ -620,26 +661,17 @@ export default function Planos() {
         {isEarlyAdopter && earlyAdopterStatus !== null && (
           <View style={[styles.earlyAdopterBanner, isUrgent && styles.earlyAdopterBannerUrgent]}>
             <Text style={[styles.earlyAdopterTitle, isUrgent && styles.earlyAdopterTitleUrgent]}>
-              {slotsRemaining <= 10 ? '⚡ Últimas vagas!' : '🎉 Preço de lançamento'}
+              {slotsRemaining <= 10 ? '⚡ Últimas vagas!' : '🎉 Preço fixo para sempre'}
             </Text>
             <Text style={styles.earlyAdopterDescription}>
-              90% de desconto vitalício para os primeiros 300 clientes da plataforma.
-            </Text>
-            <Text style={styles.earlyAdopterDescription}>
-              <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
-                R$ {PRICING.MONTHLY.earlyAdopter.toFixed(2).replace('.', ',')} mensal
+              Você está entre os primeiros {PRICING.TOTAL_EARLY_ADOPTER_SLOTS} clientes.{' '}
+              <Text style={{ fontFamily: 'Inter-Bold', color: isUrgent ? colors.warning : colors.primary }}>
+                Esse preço nunca vai subir para você
               </Text>
-              {'  ou  '}
-              <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
-                R$ {PRICING.YEARLY.earlyAdopter.toFixed(2).replace('.', ',')} anual
-              </Text>
-              {' — para sempre.'}
-            </Text>
-            <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 10 }}>
-              Após os 300: R$ {PRICING.MONTHLY.regular.toFixed(2).replace('.', ',')}/mês ou R$ {PRICING.YEARLY.regular.toFixed(2).replace('.', ',')}/ano (preço normal)
+              {' '}— enquanto mantiver a assinatura ativa.
             </Text>
             <Text style={[styles.earlyAdopterCounter, isUrgent && styles.earlyAdopterCounterUrgent]}>
-              {`${slotsUsed}/${totalSlots} clientes — restam ${slotsRemaining} vagas`}
+              {`${slotsUsed}/${totalSlots} vagas ocupadas — restam ${slotsRemaining}`}
             </Text>
           </View>
         )}
@@ -657,7 +689,7 @@ export default function Planos() {
               </Text>{' '}
               ou anual por{' '}
               <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
-                R$ {PRICING.YEARLY.regular.toFixed(2).replace('.', ',')}/ano
+                R$ {PRICING.YEARLY.regular.toFixed(0)}/ano
               </Text>.
             </Text>
           </View>
@@ -711,32 +743,19 @@ export default function Planos() {
                 </View>
 
                 <View style={styles.planPrice}>
-                  {isEarlyAdopter ? (
-                    <>
-                      <View style={styles.discountBadge}>
-                        <Text style={styles.discountBadgeText}>PREÇO DE LANÇAMENTO</Text>
-                      </View>
-                      <Text style={styles.priceValue}>{formatPrice(currentPrice)}</Text>
-                      <Text style={styles.originalPriceStriked}>
-                        Depois: {formatPrice(regularPrice)}
-                      </Text>
-                    </>
-                  ) : (
-                    <>
-                      <Text style={styles.priceValue}>{formatPrice(currentPrice)}</Text>
-                    </>
+                  {isEarlyAdopter && (
+                    <View style={styles.discountBadge}>
+                      <Text style={styles.discountBadgeText}>EARLY ADOPTER</Text>
+                    </View>
                   )}
+                  <Text style={styles.priceValue}>{currentPriceFormatted}</Text>
                   <Text style={styles.pricePeriod}>
                     {currentPlan.period === 'monthly' ? '/mês' : '/ano'}
                   </Text>
                   {isEarlyAdopter && (
-                    <View style={styles.savings}>
-                      <Text style={styles.savingsText}>
-                        {selectedPlan === 'monthly'
-                          ? `Economize ${formatPrice(PRICING.MONTHLY.regular - PRICING.MONTHLY.earlyAdopter)}/mês`
-                          : `Economize ${formatPrice(PRICING.YEARLY.regular - PRICING.YEARLY.earlyAdopter)}/ano`}
-                      </Text>
-                    </View>
+                    <Text style={styles.originalPriceStriked}>
+                      Depois: {formatPrice(regularPrice)}{currentPlan.period === 'monthly' ? '/mês' : '/ano'}
+                    </Text>
                   )}
                 </View>
               </View>
@@ -792,8 +811,8 @@ export default function Planos() {
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            <Text style={{ fontWeight: 'bold' }}>Plano Gratuito:</Text> Gestão comercial básica com operações fundamentais{'\n'}
-            <Text style={{ fontWeight: 'bold' }}>Plano Premium:</Text> Serviço estendido com backups na nuvem, análises e relatórios{'\n\n'}
+            <Text style={{ fontWeight: 'bold' }}>Plano Gratuito:</Text> Cadastro de produtos, clientes, vendas e controle de caixa{'\n'}
+            <Text style={{ fontWeight: 'bold' }}>Plano Premium:</Text> Backup e restauração de dados, relatórios PDF, edição de vendas, recibo via WhatsApp, cobrança de dívidas via WhatsApp, PIX QR Code em vendas e cobranças, e relatórios de inteligência de negócio{'\n\n'}
           </Text>
           {!activeSubscription && (
             <Button

@@ -1,24 +1,29 @@
 /**
  * Early Adopter System
- * 
- * Gerencia o programa de early adopters - primeiros 300 usuários com 90% de desconto lifetime
+ *
+ * Primeiros 1000 clientes: R$9,90/mês ou R$99/ano — para sempre (desde que mantenham ativa).
+ * Após os 1000: R$15/mês ou R$120/ano.
  */
 
 import { supabase } from './supabase';
 
+// Cache em memória para evitar bater no banco toda vez que a tela de planos abre.
+// TTL de 5 minutos — suficiente para o realtime fazer o trabalho pesado.
+let _earlyAdopterCache: { status: EarlyAdopterStatus; expiresAt: number } | null = null;
+const EARLY_ADOPTER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hora
+
 // Configuração dos preços
 export const PRICING = {
   MONTHLY: {
-    earlyAdopter: 9.90,  // Primeiros 300 usuários
-    regular: 19.99,      // Após 300 usuários (aumento de 90%)
+    earlyAdopter: 9.90,  // Primeiros 1000 usuários — para sempre
+    regular: 25.00,      // Após os 1000 primeiros
   },
   YEARLY: {
-    earlyAdopter: 99.90, // Primeiros 300 usuários
-    regular: 199.99,     // Após 300 usuários (aumento de 90%)
+    earlyAdopter: 99.00, // Primeiros 1000 usuários — para sempre
+    regular: 199.00,     // Após os 1000 primeiros
   },
-  INCREASE_PERCENTAGE: 90,
-  TOTAL_EARLY_ADOPTER_SLOTS: 300,
-  INITIAL_FAKE_COUNT: 20, // Contador começa em 20 (fake)
+  TOTAL_EARLY_ADOPTER_SLOTS: 1000,
+  INITIAL_FAKE_COUNT: 20, // Contador mínimo exibido enquanto o banco carrega
 };
 
 export interface EarlyAdopterStatus {
@@ -36,15 +41,23 @@ export interface UserSubscriptionInfo {
 }
 
 /**
- * Verifica se ainda há vagas para early adopters
+ * Verifica se ainda há vagas para early adopters.
+ * Cache de memória de 5 minutos — o Realtime em planos.tsx mantém o contador
+ * atualizado em tempo real sem precisar rebater no banco a cada foco de tela.
  */
 export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatus | null> {
+  // Retorna do cache se ainda válido
+  if (_earlyAdopterCache && Date.now() < _earlyAdopterCache.expiresAt) {
+    return _earlyAdopterCache.status;
+  }
+
   try {
     // Tenta via RPC primeiro
     const { data, error } = await supabase
       .rpc('get_early_adopter_status');
 
     if (!error && data && data.length > 0) {
+      _earlyAdopterCache = { status: data[0], expiresAt: Date.now() + EARLY_ADOPTER_CACHE_TTL_MS };
       return data[0];
     }
 
@@ -62,16 +75,25 @@ export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatu
     }
 
     const slotsRemaining = configData.total_slots - configData.current_count;
-    return {
+    const status: EarlyAdopterStatus = {
       totalSlots: configData.total_slots,
       currentCount: configData.current_count,
       slotsRemaining,
       isAvailable: slotsRemaining > 0,
     };
+    _earlyAdopterCache = { status, expiresAt: Date.now() + EARLY_ADOPTER_CACHE_TTL_MS };
+    return status;
   } catch (error) {
     console.error('Erro ao verificar early adopter:', error);
     return null;
   }
+}
+
+/**
+ * Invalida o cache de early adopter (chamado pelo Realtime quando o banco atualiza).
+ */
+export function invalidateEarlyAdopterCache(): void {
+  _earlyAdopterCache = null;
 }
 
 /**
@@ -160,22 +182,44 @@ export async function isUserEarlyAdopter(userId: string): Promise<boolean> {
 }
 
 /**
+ * Verifica se o usuário foi um early adopter mas cancelou a assinatura.
+ * Nesses casos, não deve mais ter direito ao preço de lançamento.
+ */
+export async function checkUserIsFormerEarlyAdopter(): Promise<boolean> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const { data } = await supabase
+      .from('iap_status')
+      .select('is_early_adopter, is_premium')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    // Tinha vaga de early adopter mas a assinatura não está mais ativa
+    return data?.is_early_adopter === true && data?.is_premium === false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Retorna mensagem de disponibilidade para UI
  */
 export function getAvailabilityMessage(status: EarlyAdopterStatus | null): string {
   if (!status || !status.isAvailable) {
-    return 'Preço aumentou - Vagas encerradas';
+    return 'Vagas encerradas — preço regular ativo';
   }
 
   const remaining = status.slotsRemaining;
   const current = status.currentCount;
 
   if (remaining <= 10) {
-    return `⚡ ÚLTIMAS ${remaining} VAGAS com preço especial!`;
-  } else if (remaining <= 50) {
-    return `🔥 Apenas ${remaining} vagas com preço de lançamento`;
+    return `⚡ ÚLTIMAS ${remaining} VAGAS com preço de lançamento para sempre!`;
+  } else if (remaining <= 100) {
+    return `🔥 Apenas ${remaining} vagas restantes — garanta R$9,90/mês para sempre!`;
   } else {
-    return `🎉 ${current}/${status.totalSlots} usuários - Garanta o preço de lançamento!`;
+    return `🎉 ${current}/${status.totalSlots} early adopters — garanta seu preço fixo para sempre!`;
   }
 }
 

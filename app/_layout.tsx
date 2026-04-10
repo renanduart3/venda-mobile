@@ -27,8 +27,6 @@ import {
   Inter_700Bold,
 } from '@expo-google-fonts/inter';
 import { SplashScreen } from 'expo-router';
-import * as Linking from 'expo-linking';
-
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
@@ -41,7 +39,6 @@ import { OfflineProvider } from '@/contexts/OfflineContext';
 import db from '@/lib/db';
 import { initializeIAP } from '@/lib/iap';
 import { checkSubscriptionFromDatabase, isPremium } from '@/lib/premium';
-import { supabase } from '@/lib/supabase';
 
 // SplashScreen handles preventing auto hide
 // SplashScreen.preventAutoHideAsync(); is called above
@@ -140,40 +137,6 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
-
-  // ─── Deep Link Listener — captura o callback do Google OAuth ─────────────
-  useEffect(() => {
-    const handleDeepLink = async (url: string) => {
-      if (!url) return;
-      // Supabase envia o code PKCE ou access_token no deep link lojaapp://
-      if (typeof url === 'string' && (url.includes('code=') || url.includes('access_token'))) {
-        try {
-          const codeMatch = url.match(/code=([^&#]+)/);
-          if (codeMatch && codeMatch[1]) {
-            await supabase.auth.exchangeCodeForSession(codeMatch[1]);
-          } else if (url.includes('access_token=')) {
-            // Implicit flow web compat, usually not used in iOS/Android PKCE
-            console.warn('[Auth] Implicit flow access_token recebido');
-          }
-          // onAuthStateChange vai detectar SIGNED_IN → AuthGate navega para '/'
-        } catch (e) {
-          console.warn('[Auth] Falha ao processar deep link:', e);
-        }
-      }
-    };
-
-    // 1. App em background — recebe o deep link via evento
-    const subscription = Linking.addEventListener('url', (event) => {
-      handleDeepLink(event.url);
-    });
-
-    // 2. App estava fechado — foi aberto diretamente pelo deep link
-    Linking.getInitialURL().then((url) => {
-      if (url) handleDeepLink(url);
-    });
-
-    return () => subscription.remove();
-  }, []);
 
   if (!fontsLoaded && !fontError) {
     return null;

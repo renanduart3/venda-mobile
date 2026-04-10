@@ -9,7 +9,8 @@
     "lint": "expo lint",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "build:android:release": "cd android && gradlew.bat clean bundleRelease"
+    "build:android:release": "cd android && gradlew.bat clean bundleRelease",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.2.3",
@@ -17,6 +18,7 @@
     "@lucide/lab": "^0.1.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "^11.4.1",
+    "@react-native-google-signin/google-signin": "^16.1.2",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",
     "@shopify/flash-list": "^2.3.0",
@@ -48,7 +50,8 @@
     "react-native-chart-kit": "^6.12.0",
     "react-native-gesture-handler": "~2.28.0",
     "react-native-iap": "^14.4.38",
-    "react-native-nitro-modules": "^0.31.1",
+    "react-native-nitro-modules": "^0.35.0",
+    "react-native-qrcode-svg": "^6.3.21",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
@@ -64,6 +67,7 @@
     "eslint": "^9.0.0",
     "eslint-config-expo": "~10.0.0",
     "expo-build-properties": "~1.0.10",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.2"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
