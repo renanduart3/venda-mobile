@@ -7,6 +7,7 @@ import {
   Alert,
   Modal,
   Clipboard,
+  ActivityIndicator,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { TextInput } from '@/components/ui/TextInput';
@@ -22,6 +23,8 @@ import {
   Copy,
   XCircle,
   ChevronRight,
+  ShoppingCart,
+  Clock,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -32,7 +35,7 @@ import { Button } from '@/components/ui/Button';
 import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp, toTitleCase } from '@/lib/utils';
 import db from '@/lib/db';
 import { createVendasStyles } from './Vendas.styles';
-import { generatePixPayload, parsePixKeys } from '@/lib/pix';
+import { generatePixPayload, getOrGeneratePixQR, parsePixKeys } from '@/lib/pix';
 
 interface Product {
   id: string;
@@ -106,6 +109,15 @@ export default function Vendas() {
   const [pixCopied, setPixCopied] = useState(false);
   const [pendingPixAmount, setPendingPixAmount] = useState<number | null>(null);
   const [pixModalAmount, setPixModalAmount] = useState(0);
+  // QR Fixo (sem valor — botão separado da venda)
+  const [showPixFixoModal, setShowPixFixoModal] = useState(false);
+  const [showPixFixoKeySelector, setShowPixFixoKeySelector] = useState(false);
+  const [pixFixoString, setPixFixoString] = useState('');
+  const [pixFixoKey, setPixFixoKey] = useState('');
+  const [pixFixoLoading, setPixFixoLoading] = useState(false);
+  const [pixFixoCopied, setPixFixoCopied] = useState(false);
+  // Controla de qual aba o PIX venda foi aberto ('carrinho' | 'avulsa')
+  const [pixVendaSource, setPixVendaSource] = useState<'carrinho' | 'avulsa'>('carrinho');
 
   const roundMoney = (value: number) =>
     Math.round((value + Number.EPSILON) * 100) / 100;
@@ -236,8 +248,13 @@ export default function Vendas() {
     // Configurações da loja (PIX)
     if (storeSettingsData) {
       const settings = storeSettingsData as any;
-      if (settings?.store_name) setStoreName(settings.store_name);
-      if (settings?.pix_key) setPixKeys(parsePixKeys(settings.pix_key));
+      // data-loader retorna storeName (camelCase) — pix_key (snake_case) é fallback
+      setStoreName(settings.storeName || settings.store_name || '');
+      const rawKeys = settings.pixKeys ?? parsePixKeys(settings.pix_key);
+      const validKeys = Array.isArray(rawKeys)
+        ? rawKeys.filter((k: string) => typeof k === 'string' && k.trim())
+        : [];
+      setPixKeys(validKeys);
     }
 
     setProducts(productsData as Product[]);
@@ -338,14 +355,60 @@ export default function Vendas() {
 
   // ─── PIX QR Code na venda ─────────────────────────────────────────────────
 
-  const openPixVendaWithKey = (key: string, amount?: number) => {
+  // QR com valor embutido — gerado na hora para cada venda (operação síncrona, sem custo)
+  const openPixVendaWithKey = (key: string, amount?: number, source: 'carrinho' | 'avulsa' = 'carrinho') => {
     const finalAmount = amount ?? totalSale;
-    const payload = generatePixPayload(key, finalAmount, storeName || 'Loja');
+    const payload = generatePixPayload(key, storeName || 'Loja', finalAmount);
     setActivePixKey(key);
     setPixVendaString(payload);
     setPixModalAmount(finalAmount);
     setPixCopied(false);
+    setPixVendaSource(source);
     setShowPixVendaModal(true);
+  };
+
+  // QR fixo sem valor — usa cache persistente por chave, não regenera a não ser que a chave mude
+  const openPixFixoWithKey = async (key: string) => {
+    setPixFixoKey(key);
+    setPixFixoCopied(false);
+    setPixFixoLoading(true);
+    setShowPixFixoModal(true);
+    try {
+      const payload = await getOrGeneratePixQR(key, storeName || 'Loja');
+      setPixFixoString(payload);
+    } finally {
+      setPixFixoLoading(false);
+    }
+  };
+
+  const handleShowPixFixo = () => {
+    if (!premium) {
+      Alert.alert(
+        '🔒 Recurso Premium',
+        'QR Code PIX está disponível apenas para assinantes.',
+        [
+          { text: 'Agora não', style: 'cancel' },
+          { text: 'Ver planos', onPress: () => router.push('/planos') },
+        ],
+      );
+      return;
+    }
+    if (pixKeys.length === 0) {
+      Alert.alert(
+        'Chave PIX não configurada',
+        'Cadastre sua chave PIX nas Configurações do app.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Configurações', onPress: () => router.push('/settings' as any) },
+        ],
+      );
+      return;
+    }
+    if (pixKeys.length === 1) {
+      openPixFixoWithKey(pixKeys[0]);
+    } else {
+      setShowPixFixoKeySelector(true);
+    }
   };
 
   const handleShowPixQR = () => {
@@ -404,108 +467,10 @@ export default function Vendas() {
           text: 'Confirmar',
           onPress: async () => {
             try {
-              const now = new Date();
-              const isoNow = now.toISOString();
-              const brDate = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
-              const trimmedCustomer = selectedCustomer.trim();
-
-              let customerId = selectedCustomerId;
-
-              if (customerId) {
-                const existingCustomer = customers.find((c: any) => c.id === customerId);
-              } else if (trimmedCustomer) {
-                const existingCustomer = customers.find(
-                  (c: any) => c.name?.toLowerCase() === trimmedCustomer.toLowerCase()
-                );
-                if (existingCustomer) {
-                  customerId = existingCustomer.id;
-                } else {
-                  const newCustomerId = `${Date.now()}-customer`;
-                  await db.insert('customers', {
-                    id: newCustomerId,
-                    name: trimmedCustomer,
-                    phone: null,
-                    email: null,
-                    whatsapp: false,
-                    created_at: isoNow,
-                    updated_at: isoNow,
-                  });
-                  customerId = newCustomerId;
-                }
-              }
-
-              let finalSaleId = Date.now().toString();
-              let finalCreatedAt = isoNow;
-
-              if (editingSaleId) {
-                finalSaleId = editingSaleId;
-                finalCreatedAt = editingSaleDate || isoNow;
-                
-                const oldSale = sales.find(s => s.id === editingSaleId);
-                if (oldSale) {
-                  for (const item of oldSale.items) {
-                    if (item.product.type === 'service') continue;
-                    await db.query(
-                      'UPDATE products SET stock = stock + ? WHERE id = ?;',
-                      [item.quantity, item.product.id]
-                    );
-                  }
-                  await db.del('sale_items', 'sale_id = ?', [editingSaleId]);
-                  await db.del('sales', 'id = ?', [editingSaleId]);
-                }
-              }
-
-              await db.insert('sales', {
-                id: finalSaleId,
-                customer_id: customerId,
-                total: totalSale,
-                discount: parsedDiscount,
-                payment_method: paymentMethod.toUpperCase(),
-                observation: observation.trim() ? observation.trim() : null,
-                created_at: finalCreatedAt,
-              });
-
-              await Promise.all(
-                saleItems.map(async (item, index) => {
-                  const saleItemId = `${finalSaleId}-${index}`;
-                  await db.insert('sale_items', {
-                    id: saleItemId,
-                    sale_id: finalSaleId,
-                    product_id: item.product.id,
-                    quantity: item.quantity,
-                    unit_price: item.product.price,
-                    unit_cost: item.product.cost_price || 0,
-                    total: item.total,
-                  });
-
-                  if (item.product.type !== 'service') {
-                    const currentProduct = products.find(p => p.id === item.product.id);
-                    const currentStock = currentProduct ? currentProduct.stock : 0;
-                    const newStock = Math.max(0, currentStock - item.quantity);
-                    await db.update(
-                      'products',
-                      { stock: newStock, updated_at: isoNow },
-                      'id = ?',
-                      [item.product.id]
-                    );
-                  }
-                })
-              );
-
-              await loadData();
-
-              setSaleItems([]);
-              setSelectedCustomer('');
-              setSelectedCustomerId(null);
-              setCustomerSearch('');
-              setPaymentMethod('credit');
-              setObservation('');
-              setCustomerSuggestionsVisible(false);
-              setEditingSaleId(null);
-              setEditingSaleDate(null);
-              setDiscountInput('');
-
-              Alert.alert('✅ Sucesso', `Venda de R$ ${totalSale.toFixed(2)} ${editingSaleId ? 'atualizada' : 'realizada'} com sucesso!`);
+              const wasEditing = !!editingSaleId;
+              const amount = totalSale;
+              await executeFinalizeSaleCore();
+              Alert.alert('✅ Sucesso', `Venda de R$ ${amount.toFixed(2)} ${wasEditing ? 'atualizada' : 'realizada'} com sucesso!`);
             } catch (error) {
               console.error('Error finalizing sale:', error);
               Alert.alert('❌ Erro', 'Não foi possível finalizar a venda. Tente novamente.');
@@ -514,6 +479,113 @@ export default function Vendas() {
         },
       ]
     );
+  };
+
+  // ─── Lógica central de finalização (sem Alert) — usada pelo modal PIX ───────
+  const executeFinalizeSaleCore = async () => {
+    const now = new Date();
+    const isoNow = now.toISOString();
+    const trimmedCustomer = selectedCustomer.trim();
+    let customerId = selectedCustomerId;
+
+    if (!customerId && trimmedCustomer) {
+      const existingCustomer = customers.find(
+        (c: any) => c.name?.toLowerCase() === trimmedCustomer.toLowerCase()
+      );
+      if (existingCustomer) {
+        customerId = existingCustomer.id;
+      } else {
+        const newCustomerId = `${Date.now()}-customer`;
+        await db.insert('customers', {
+          id: newCustomerId, name: trimmedCustomer,
+          phone: null, email: null, whatsapp: false,
+          created_at: isoNow, updated_at: isoNow,
+        });
+        customerId = newCustomerId;
+      }
+    }
+
+    let finalSaleId = Date.now().toString();
+    let finalCreatedAt = isoNow;
+
+    if (editingSaleId) {
+      finalSaleId = editingSaleId;
+      finalCreatedAt = editingSaleDate || isoNow;
+      const oldSale = sales.find(s => s.id === editingSaleId);
+      if (oldSale) {
+        for (const item of oldSale.items) {
+          if (item.product.type === 'service') continue;
+          await db.query('UPDATE products SET stock = stock + ? WHERE id = ?;', [item.quantity, item.product.id]);
+        }
+        await db.del('sale_items', 'sale_id = ?', [editingSaleId]);
+        await db.del('sales', 'id = ?', [editingSaleId]);
+      }
+    }
+
+    await db.insert('sales', {
+      id: finalSaleId, customer_id: customerId, total: totalSale, discount: parsedDiscount,
+      payment_method: paymentMethod.toUpperCase(),
+      observation: observation.trim() ? observation.trim() : null,
+      created_at: finalCreatedAt,
+    });
+
+    await Promise.all(
+      saleItems.map(async (item, index) => {
+        await db.insert('sale_items', {
+          id: `${finalSaleId}-${index}`, sale_id: finalSaleId,
+          product_id: item.product.id, quantity: item.quantity,
+          unit_price: item.product.price, unit_cost: item.product.cost_price || 0,
+          total: item.total,
+        });
+        if (item.product.type !== 'service') {
+          const currentProduct = products.find(p => p.id === item.product.id);
+          const newStock = Math.max(0, (currentProduct ? currentProduct.stock : 0) - item.quantity);
+          await db.update('products', { stock: newStock, updated_at: isoNow }, 'id = ?', [item.product.id]);
+        }
+      })
+    );
+
+    await loadData();
+    setSaleItems([]); setSelectedCustomer(''); setSelectedCustomerId(null);
+    setCustomerSearch(''); setPaymentMethod('credit'); setObservation('');
+    setCustomerSuggestionsVisible(false); setEditingSaleId(null);
+    setEditingSaleDate(null); setDiscountInput('');
+  };
+
+  // Lógica central da avulsa (sem Alert) — usada pelo modal PIX
+  const executeFinalizeAvulsaCore = async (val: number) => {
+    const isoNow = new Date().toISOString();
+    const finalSaleId = Date.now().toString();
+    await db.insert('sales', {
+      id: finalSaleId, customer_id: null, total: val, discount: 0,
+      payment_method: 'PIX', observation: avulsaDesc.trim(), created_at: isoNow,
+    });
+    await db.insert('sale_items', {
+      id: `${finalSaleId}-0`, sale_id: finalSaleId, product_id: 'avulso',
+      quantity: 1, unit_price: val, total: val,
+    });
+    await loadData();
+    setAvulsaValue('');
+    setAvulsaDesc('Venda Avulsa / Diversos');
+  };
+
+  // Handler do botão "Recebi o pagamento" no modal PIX
+  const handlePixVendaConfirm = async () => {
+    setShowPixVendaModal(false);
+    try {
+      if (pixVendaSource === 'carrinho') {
+        await executeFinalizeSaleCore();
+      } else {
+        await executeFinalizeAvulsaCore(pixModalAmount);
+      }
+      Alert.alert(
+        '✅ Venda confirmada!',
+        `PIX de ${pixModalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} registrado com sucesso.`
+      );
+    } catch (e) {
+      console.error('Error confirming PIX sale:', e);
+      Alert.alert('❌ Erro', 'Não foi possível registrar a venda. Tente novamente.');
+    }
   };
 
   const clearSale = () => {
@@ -547,6 +619,23 @@ export default function Vendas() {
     );
   };
 
+
+  // Cancela edição de venda: volta pro histórico sem Alert, sem alterar nada
+  const handleCancelEdit = () => {
+    setSaleItems([]);
+    setSelectedCustomer('');
+    setSelectedCustomerId(null);
+    setCustomerSearch('');
+    setPaymentMethod('credit');
+    setObservation('');
+    setCustomerSuggestionsVisible(false);
+    setProductSearch('');
+    setSuggestionsVisible(false);
+    setEditingSaleId(null);
+    setEditingSaleDate(null);
+    setDiscountInput('');
+    setActiveTab('history');
+  };
 
   const handleProductSearchSelect = (product: Product) => {
     addItemToSale(product);
@@ -722,31 +811,44 @@ export default function Vendas() {
     <View style={styles.container}>
       <Header title="Vendas" showSettings />
 
-      <View style={[styles.tabSelector, { marginBottom: 16 }]}>
+      {/* Botão QR Fixo — pill compacto, canto esquerdo acima das abas */}
+      <View style={styles.pixFixoButtonWrapper}>
+        <TouchableOpacity style={styles.pixFixoButton} onPress={handleShowPixFixo}>
+          <QrCode size={14} color={premium ? colors.primary : colors.textSecondary} />
+          <Text style={[styles.pixFixoLabel, { marginTop: 0, color: premium ? colors.primary : colors.textSecondary }]}>
+            {premium ? 'Suas chaves PIX' : '🔒 Suas chaves PIX'}
+          </Text>
+        </TouchableOpacity>
+        <Text style={styles.pixFixoLabel}>QR Code estático • sem valor</Text>
+      </View>
+
+      {/* Abas de navegação */}
+      <View style={styles.tabSelector}>
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'avulsa' && styles.tabButtonActive, { flex: 1 }]}
+          style={[styles.tabButton, activeTab === 'avulsa' && styles.tabButtonActive]}
           onPress={() => setActiveTab('avulsa')}
         >
-          <Calculator size={16} color={activeTab === 'avulsa' ? colors.primary : colors.textSecondary} style={{ marginBottom: 4 }} />
-          <Text style={[styles.tabButtonText, activeTab === 'avulsa' && styles.tabButtonTextActive, { fontSize: 12 }]}>
+          <Calculator size={18} color={activeTab === 'avulsa' ? colors.tabActiveText : colors.textSecondary} />
+          <Text style={[styles.tabButtonText, activeTab === 'avulsa' && styles.tabButtonTextActive]}>
             Venda Avulsa
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'new' && styles.tabButtonActive, { flex: 1.2 }]}
+          style={[styles.tabButton, activeTab === 'new' && styles.tabButtonActive]}
           onPress={() => setActiveTab('new')}
         >
-          <Plus size={16} color={activeTab === 'new' ? colors.primary : colors.textSecondary} style={{ marginBottom: 4 }} />
-          <Text style={[styles.tabButtonText, activeTab === 'new' && styles.tabButtonTextActive, { fontSize: 12 }]}>
+          <ShoppingCart size={18} color={activeTab === 'new' ? colors.tabActiveText : colors.textSecondary} />
+          <Text style={[styles.tabButtonText, activeTab === 'new' && styles.tabButtonTextActive]}>
             Modo Carrinho
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive, { flex: 1 }]}
+          style={[styles.tabButton, activeTab === 'history' && styles.tabButtonActive]}
           onPress={() => setActiveTab('history')}
         >
-          <Text style={[styles.tabButtonText, activeTab === 'history' && styles.tabButtonTextActive, { fontSize: 12 }]}>
-            Histórico de hoje
+          <Clock size={18} color={activeTab === 'history' ? colors.tabActiveText : colors.textSecondary} />
+          <Text style={[styles.tabButtonText, activeTab === 'history' && styles.tabButtonTextActive]}>
+            Histórico
           </Text>
         </TouchableOpacity>
       </View>
@@ -819,7 +921,7 @@ export default function Vendas() {
                     return;
                   }
                   if (pixKeys.length === 1) {
-                    openPixVendaWithKey(pixKeys[0], val);
+                    openPixVendaWithKey(pixKeys[0], val, 'avulsa');
                   } else {
                     setPendingPixAmount(val);
                     setShowPixKeySelector(true);
@@ -857,8 +959,12 @@ export default function Vendas() {
               <Text style={{ fontSize: 18, fontFamily: 'Inter-SemiBold', color: colors.primary }}>
                 Editando Venda #{editingSaleId.slice(-6)}
               </Text>
-              <TouchableOpacity onPress={clearSale}>
-                <Text style={{ color: colors.error, fontFamily: 'Inter-Medium', fontSize: 16 }}>Cancelar</Text>
+              <TouchableOpacity
+                onPress={handleCancelEdit}
+                style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: colors.error, backgroundColor: 'transparent' }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: colors.error, fontFamily: 'Inter-SemiBold', fontSize: 14 }}>Cancelar edição</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -1022,6 +1128,7 @@ export default function Vendas() {
                 </Text>
               </TouchableOpacity>
             )}
+
           </View>
 
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -1156,7 +1263,7 @@ export default function Vendas() {
         onRequestClose={() => setShowPixKeySelector(false)}
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: styles.container.backgroundColor, borderRadius: 16, width: '100%', maxWidth: 400, overflow: 'hidden' }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: 16, width: '100%', maxWidth: 400, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.border }}>
               <Text style={{ fontSize: 18, fontFamily: 'Inter-Bold', color: colors.text }}>Selecionar Chave PIX</Text>
               <TouchableOpacity onPress={() => setShowPixKeySelector(false)} style={{ padding: 6 }}>
@@ -1167,8 +1274,9 @@ export default function Vendas() {
               <TouchableOpacity
                 key={i}
                 onPress={() => {
+                  const src = pendingPixAmount !== null ? 'avulsa' : 'carrinho';
                   setShowPixKeySelector(false);
-                  openPixVendaWithKey(key, pendingPixAmount ?? undefined);
+                  openPixVendaWithKey(key, pendingPixAmount ?? undefined, src);
                   setPendingPixAmount(null);
                 }}
                 style={{
@@ -1194,49 +1302,144 @@ export default function Vendas() {
         onRequestClose={() => setShowPixVendaModal(false)}
       >
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <View style={{ backgroundColor: colors.background, borderRadius: 20, width: '100%', maxWidth: 360, overflow: 'hidden', alignItems: 'center' }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: 20, width: '100%', maxWidth: 360, overflow: 'hidden', alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
             {/* Header */}
             <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <Text style={{ fontSize: 20, fontFamily: 'Inter-Bold', color: colors.text }}>PIX — Aguardando pagamento</Text>
+              <Text style={{ fontSize: 18, fontFamily: 'Inter-Bold', color: colors.text }}>PIX — Aguardando pagamento</Text>
               <TouchableOpacity onPress={() => setShowPixVendaModal(false)} style={{ padding: 6, borderRadius: 8, backgroundColor: colors.card }}>
                 <XCircle size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             {/* Valor */}
-            <Text style={{ fontSize: 28, fontFamily: 'Inter-Black', color: colors.text, marginTop: 24 }}>
+            <Text style={{ fontSize: 28, fontFamily: 'Inter-Black', color: colors.text, marginTop: 20 }}>
               {pixModalAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </Text>
             <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 4 }}>a receber</Text>
 
             {/* QR Code */}
             {pixVendaString ? (
-              <View style={{ backgroundColor: '#ffffff', borderRadius: 16, padding: 16, marginVertical: 20, alignItems: 'center', justifyContent: 'center' }}>
-                <QRCode value={pixVendaString} size={210} backgroundColor="#ffffff" color="#000000" />
+              <View style={{ backgroundColor: '#ffffff', borderRadius: 16, padding: 16, marginVertical: 16, alignItems: 'center', justifyContent: 'center' }}>
+                <QRCode value={pixVendaString} size={200} backgroundColor="#ffffff" color="#000000" />
               </View>
             ) : null}
 
             {/* Chave usada */}
             <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 4 }}>Chave PIX</Text>
-            <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: colors.text, textAlign: 'center', marginBottom: 16, paddingHorizontal: 16 }} numberOfLines={2}>
+            <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: colors.text, textAlign: 'center', marginBottom: 12, paddingHorizontal: 16 }} numberOfLines={2}>
               {activePixKey}
             </Text>
 
             {/* Copiar */}
             <TouchableOpacity
               onPress={() => { Clipboard.setString(pixVendaString); setPixCopied(true); setTimeout(() => setPixCopied(false), 3000); }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, marginBottom: 20, backgroundColor: pixCopied ? colors.success : colors.primary }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, marginBottom: 8, backgroundColor: pixCopied ? colors.success : colors.primary + '22', borderWidth: 1, borderColor: pixCopied ? colors.success : colors.primary }}
               activeOpacity={0.82}
             >
-              <Copy size={18} color="#fff" />
-              <Text style={{ fontSize: 15, fontFamily: 'Inter-SemiBold', color: '#fff' }}>
+              <Copy size={16} color={pixCopied ? colors.success : colors.primary} />
+              <Text style={{ fontSize: 14, fontFamily: 'Inter-SemiBold', color: pixCopied ? colors.success : colors.primary }}>
                 {pixCopied ? 'Código copiado! ✓' : 'Copiar Pix Copia e Cola'}
               </Text>
             </TouchableOpacity>
 
-            <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 24, paddingBottom: 20 }}>
-              O cliente escaneia o QR Code ou cola o código no app do banco para pagar.
+            <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 20, marginBottom: 16 }}>
+              O cliente escaneia o QR Code ou cola o código no app do banco.
             </Text>
+
+            {/* Botões de ação — Recebi / Cancelar */}
+            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 20, width: '100%' }}>
+              <TouchableOpacity
+                onPress={() => setShowPixVendaModal(false)}
+                style={{ flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 14, fontFamily: 'Inter-SemiBold', color: colors.textSecondary }}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handlePixVendaConfirm}
+                style={{ flex: 2, paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: colors.success }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ fontSize: 15, fontFamily: 'Inter-Bold', color: '#fff' }}>Recebi o pagamento ✓</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Seletor de chave PIX Fixo ──────────────────────────────────────── */}
+      <Modal visible={showPixFixoKeySelector} transparent animationType="fade" onRequestClose={() => setShowPixFixoKeySelector(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: 20, width: '100%', maxWidth: 360, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Inter-Bold', color: colors.text }}>Selecionar Chave PIX</Text>
+              <TouchableOpacity onPress={() => setShowPixFixoKeySelector(false)} style={{ padding: 6, borderRadius: 8, backgroundColor: colors.card }}>
+                <XCircle size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, fontFamily: 'Inter-Regular', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 }}>
+              Selecione a chave para exibir o QR Code estático (sem valor).
+            </Text>
+            <View style={{ padding: 12 }}>
+              {pixKeys.map((key, i) => (
+                <TouchableOpacity
+                  key={i}
+                  onPress={() => { setShowPixFixoKeySelector(false); openPixFixoWithKey(key); }}
+                  style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 12, marginBottom: 8, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}
+                >
+                  <Text style={{ fontSize: 15, fontFamily: 'Inter-Medium', color: colors.text, flex: 1 }} numberOfLines={1}>{key}</Text>
+                  <ChevronRight size={16} color={colors.textSecondary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Modal QR Fixo (sem valor) ──────────────────────────────────────── */}
+      <Modal visible={showPixFixoModal} transparent animationType="fade" onRequestClose={() => setShowPixFixoModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <View style={{ backgroundColor: colors.card, borderRadius: 20, width: '100%', maxWidth: 360, overflow: 'hidden', alignItems: 'center', borderWidth: 1, borderColor: colors.border }}>
+            {/* Header */}
+            <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ fontSize: 18, fontFamily: 'Inter-Bold', color: colors.text }}>Minha Chave PIX</Text>
+              <TouchableOpacity onPress={() => setShowPixFixoModal(false)} style={{ padding: 6, borderRadius: 8, backgroundColor: colors.card }}>
+                <XCircle size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {/* QR Code */}
+            {pixFixoLoading ? (
+              <View style={{ height: 242, justifyContent: 'center', alignItems: 'center', marginVertical: 20 }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            ) : pixFixoString ? (
+              <View style={{ backgroundColor: '#ffffff', borderRadius: 16, padding: 16, marginVertical: 20, alignItems: 'center', justifyContent: 'center' }}>
+                <QRCode value={pixFixoString} size={210} backgroundColor="#ffffff" color="#000000" />
+              </View>
+            ) : null}
+
+            {/* Chave */}
+            <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 4 }}>Chave PIX</Text>
+            <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: colors.text, textAlign: 'center', marginBottom: 8, paddingHorizontal: 16 }} numberOfLines={2}>
+              {pixFixoKey}
+            </Text>
+
+            <Text style={{ fontSize: 11, color: colors.warning, fontFamily: 'Inter-Regular', textAlign: 'center', paddingHorizontal: 20, marginBottom: 12 }}>
+              ⚠️ Este QR não tem valor — o cliente digita o valor no próprio app do banco.
+            </Text>
+
+            {/* Copiar */}
+            <TouchableOpacity
+              onPress={() => { Clipboard.setString(pixFixoString); setPixFixoCopied(true); setTimeout(() => setPixFixoCopied(false), 3000); }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, marginBottom: 20, backgroundColor: pixFixoCopied ? colors.success : colors.primary }}
+              activeOpacity={0.82}
+            >
+              <Copy size={18} color="#fff" />
+              <Text style={{ fontSize: 15, fontFamily: 'Inter-SemiBold', color: '#fff' }}>
+                {pixFixoCopied ? 'Chave copiada! ✓' : 'Copiar chave PIX'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { invalidatePixQRCache } from '@/lib/pix';
 import Constants from 'expo-constants';
 import {
   View,
@@ -18,7 +19,7 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { TextInput } from '@/components/ui/TextInput';
 import { LogOut, Save, Download, Upload, User as UserIcon, Crown, Settings as SettingsIcon, Bell, Shield, Database, Trash2, ArrowLeft, Store, Edit3, Smartphone, Wifi, RefreshCw, X, Copy, Plus, Palette, Moon, Sun, AlertTriangle } from 'lucide-react-native';
-import { useTheme } from '@/contexts/ThemeContext';
+import { useTheme, THEME_LABELS, THEME_PALETTES, LIGHT_THEMES, DARK_THEMES, type ThemeName } from '@/contexts/ThemeContext';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router, useFocusEffect } from 'expo-router';
@@ -28,8 +29,45 @@ import { createSettingsStyles } from './settings.styles';
 import { useAuth } from '@/contexts/AuthContext';
 import db from '@/lib/db';
 
+// ─── Componente de card de tema ───────────────────────────────────────────────
+
+function ThemeCard({ name, selected, onPress }: { name: ThemeName; selected: boolean; onPress: () => void }) {
+  const palette = THEME_PALETTES[name];
+  const label = THEME_LABELS[name];
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={{
+        flex: 1,
+        borderRadius: 12,
+        borderWidth: selected ? 2.5 : 1.5,
+        borderColor: selected ? palette.primary : palette.border,
+        backgroundColor: palette.background,
+        padding: 10,
+        alignItems: 'center',
+        gap: 8,
+      }}
+    >
+      {/* Preview de cores */}
+      <View style={{ flexDirection: 'row', gap: 5 }}>
+        {[palette.primary, palette.card, palette.surface].map((c, i) => (
+          <View key={i} style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: c, borderWidth: 0.5, borderColor: palette.border }} />
+        ))}
+      </View>
+      <Text style={{ fontSize: 11, fontFamily: selected ? 'Inter-SemiBold' : 'Inter-Medium', color: palette.text, textAlign: 'center' }}>
+        {label}
+      </Text>
+      {selected && (
+        <View style={{ backgroundColor: palette.primary, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 }}>
+          <Text style={{ fontSize: 9, fontFamily: 'Inter-SemiBold', color: palette.tabActiveText }}>✓ ATIVO</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
 export default function Settings() {
-  const { colors, theme, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
+  const { colors, theme, isDark, themeName, setThemeName, setTheme, setPrimaryColor, setSecondaryColor } = useTheme();
   const insets = useSafeAreaInsets();
 
   // Cor de contraste para textos informativos no card de plano
@@ -44,6 +82,8 @@ export default function Settings() {
     ownerName: '',
     pixKeys: [''],
   });
+  // Guarda snapshot das chaves salvas para detectar o que mudou ao salvar
+  const storeSettingsRef = useRef<{ pixKeys: string[] }>({ pixKeys: [''] });
 
   const [isEditing, setIsEditing] = useState(false);
 
@@ -109,9 +149,11 @@ export default function Settings() {
     if (Array.isArray((data as any).pixKeys) && typeof (data as any).pixKeys[0] === 'object') {
       const converted = (data as any).pixKeys.map((k: any) => (k?.value ?? ''));
       setStoreSettings({ ...(data as any), pixKeys: converted });
+      storeSettingsRef.current = { pixKeys: converted };
       return;
     }
     setStoreSettings(data as any);
+    storeSettingsRef.current = { pixKeys: (data as any).pixKeys ?? [''] };
   };
 
   const saveStoreSettings = async () => {
@@ -121,11 +163,23 @@ export default function Settings() {
       const pixKeyJson = JSON.stringify(validKeys.length > 0 ? validKeys : ['']);
       const timestamp = new Date().toISOString();
 
+      // Invalida o cache de QR apenas para as chaves que foram alteradas ou removidas
+      const previousKeys: string[] = (() => {
+        try {
+          const raw = storeSettingsRef.current?.pixKeys ?? [];
+          return raw.filter((k: string) => k.trim());
+        } catch { return []; }
+      })();
+      const changedOrRemoved = previousKeys.filter(k => !validKeys.includes(k));
+      if (changedOrRemoved.length > 0) {
+        await invalidatePixQRCache(changedOrRemoved);
+      }
+
       await db.query(
-        `INSERT INTO store_settings 
-          (id, store_name, owner_name, pix_key, created_at, updated_at) 
+        `INSERT INTO store_settings
+          (id, store_name, owner_name, pix_key, created_at, updated_at)
         VALUES ('1', ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET 
+        ON CONFLICT(id) DO UPDATE SET
           store_name = excluded.store_name,
           owner_name = excluded.owner_name,
           pix_key = excluded.pix_key,
@@ -641,10 +695,11 @@ export default function Settings() {
                         <Text style={[styles.readOnlyText, styles.pixKeyText]}>{pixKey}</Text>
                       </View>
                       <TouchableOpacity
-                        style={styles.copyButton}
-                        onPress={() => copyToClipboard(pixKey)}
+                        style={[styles.copyButton, pixKey.trim() === '' && { opacity: 0.3 }]}
+                        onPress={() => pixKey.trim() !== '' && copyToClipboard(pixKey)}
+                        disabled={pixKey.trim() === ''}
                       >
-                        <Copy size={16} color={colors.primary} />
+                        <Copy size={16} color={pixKey.trim() === '' ? colors.textSecondary : colors.primary} />
                       </TouchableOpacity>
                     </>
                   )}
@@ -681,25 +736,24 @@ export default function Settings() {
               Tema
             </Text>
 
-            <View style={styles.themeOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.themeOption,
-                  theme === 'dark' && styles.themeOptionActive,
-                ]}
-                onPress={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              >
-                <View style={styles.themeOptionLeft}>
-                  {theme === 'dark' ? <Moon size={20} color={colors.text} /> : <Sun size={20} color={colors.text} />}
-                  <Text style={styles.themeOptionText}>{theme === 'dark' ? 'Escuro' : 'Claro'}</Text>
-                </View>
-                <Switch
-                  value={theme === 'dark'}
-                  onValueChange={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                  trackColor={{ false: colors.border, true: colors.primary }}
-                  thumbColor={colors.white}
-                />
-              </TouchableOpacity>
+            {/* Temas Claros */}
+            <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              ☀️  Claros
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+              {LIGHT_THEMES.map((tn) => (
+                <ThemeCard key={tn} name={tn} selected={themeName === tn} onPress={() => setThemeName(tn)} />
+              ))}
+            </View>
+
+            {/* Temas Escuros */}
+            <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              🌙  Escuros
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {DARK_THEMES.map((tn) => (
+                <ThemeCard key={tn} name={tn} selected={themeName === tn} onPress={() => setThemeName(tn)} />
+              ))}
             </View>
           </Card>
         </View>

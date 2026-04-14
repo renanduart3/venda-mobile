@@ -603,8 +603,17 @@ export async function getPremiumStatus(): Promise<PremiumStatus> {
       const expiry = new Date(expiryDate);
       const now = new Date();
       if (expiry <= now) {
-        await disablePremium();
-        return { isPremium: false };
+        // Não desativa imediatamente — a assinatura pode ter renovado e o cache ainda não
+        // foi atualizado. Dispara uma verificação no banco em background e retorna
+        // o valor otimista enquanto isso. O próximo ciclo de loadData() vai corrigir.
+        checkSubscriptionFromDatabase().catch(() => {});
+        return {
+          isPremium: isPremiumFlag === '1',
+          hasLifetimeAccess,
+          expiryDate: expiryDate || undefined,
+          platform: (platform as 'android' | 'ios') || undefined,
+          productId: productId || undefined,
+        };
       }
     }
 

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,524 +7,527 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Calculator, Package, RefreshCw } from 'lucide-react-native';
+import { ArrowLeft, Package, Wrench, Save } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { TextInput } from '@/components/ui/TextInput';
 import { Card } from '@/components/ui/Card';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import db from '@/lib/db';
 
-// ─── Formatação ───────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function parseCurrency(text: string): number {
-  // Remove tudo que não é dígito ou vírgula/ponto
-  const cleaned = text.replace(/[^\d,\.]/g, '').replace(',', '.');
-  const val = parseFloat(cleaned);
-  return isNaN(val) ? 0 : val;
+function parseMoney(text: string): number {
+  const v = parseFloat((text ?? '').replace(/[^\d,\.]/g, '').replace(',', '.'));
+  return isNaN(v) || v < 0 ? 0 : v;
 }
 
-function formatBRL(value: number): string {
-  return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmtBRL(v: number): string {
+  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ─── Cálculos ─────────────────────────────────────────────────────────────────
+// ─── Constantes ───────────────────────────────────────────────────────────────
 
-interface CalcResult {
-  sellingPrice: number;    // Preço de venda
-  grossProfit: number;     // Lucro bruto por unidade
-  marginPct: number;       // Margem de lucro (%)
-  markupPct: number;       // Markup (%)
-  breakEvenUnits: number | null; // Unidades para cobrir custos fixos
+const CONFIG_KEY = 'markup_config_v2';
+
+interface MarkupConfig {
+  metaMensal:   string;
+  custoFixo:    string;
+  horasSemana:  string;
 }
 
-function calculate(
-  costPrice: number,
-  marginPct: number | null,
-  sellingPrice: number | null,
-  fixedCosts: number,
-): CalcResult | null {
-  if (costPrice <= 0) return null;
+const DEFAULT_CONFIG: MarkupConfig = { metaMensal: '', custoFixo: '', horasSemana: '' };
 
-  let price: number;
-  let margin: number;
+// ─── Gauge horizontal ─────────────────────────────────────────────────────────
+// Velocímetro em barra horizontal: 3 zonas coloridas + agulha
 
-  if (sellingPrice !== null && sellingPrice > costPrice) {
-    // Modo: preço de venda → back-calc margem
-    price = sellingPrice;
-    margin = ((sellingPrice - costPrice) / sellingPrice) * 100;
-  } else if (marginPct !== null && marginPct > 0 && marginPct < 100) {
-    // Modo: margem → calc preço de venda
-    price = costPrice / (1 - marginPct / 100);
-    margin = marginPct;
-  } else {
-    return null;
-  }
+const GaugeBar = ({ margin, colors }: { margin: number; colors: any }) => {
+  const MAX = 60;
+  const clamped   = Math.min(Math.max(margin, 0), MAX);
+  const pct       = clamped / MAX; // 0→1 posição da agulha
 
-  const grossProfit = price - costPrice;
-  const markup = ((price - costPrice) / costPrice) * 100;
-  const breakEven = fixedCosts > 0 ? Math.ceil(fixedCosts / grossProfit) : null;
+  const zoneColor = margin >= 30 ? '#22c55e' : margin >= 15 ? '#f59e0b' : '#ef4444';
+  const zoneLabel = margin >= 30 ? 'Prosperidade' : margin >= 15 ? 'Sobrevivência' : 'Risco';
 
-  return {
-    sellingPrice: price,
-    grossProfit,
-    marginPct: margin,
-    markupPct: markup,
-    breakEvenUnits: breakEven,
-  };
-}
+  return (
+    <View style={{ gap: 10 }}>
+      {/* Número grande */}
+      <View style={{ alignItems: 'center', marginBottom: 4 }}>
+        <Text style={{ fontSize: 46, fontFamily: 'Inter-Black', color: zoneColor, lineHeight: 52 }}>
+          {margin.toFixed(1)}%
+        </Text>
+        <Text style={{ fontSize: 14, fontFamily: 'Inter-SemiBold', color: zoneColor }}>
+          {zoneLabel}
+        </Text>
+      </View>
 
-// ─── Componente ───────────────────────────────────────────────────────────────
+      {/* Barra de zonas */}
+      <View style={{ position: 'relative' }}>
+        <View style={{ flexDirection: 'row', height: 18, borderRadius: 9, overflow: 'hidden' }}>
+          {/* Zona vermelha: 0–15% → 25% do range (15/60) */}
+          <View style={{ flex: 15, backgroundColor: '#ef4444' }} />
+          {/* Zona amarela: 15–30% → 25% */}
+          <View style={{ flex: 15, backgroundColor: '#f59e0b' }} />
+          {/* Zona verde: 30–60% → 50% */}
+          <View style={{ flex: 30, backgroundColor: '#22c55e' }} />
+        </View>
+
+        {/* Agulha */}
+        <View
+          style={{
+            position: 'absolute',
+            left: `${pct * 100}%` as any,
+            top: -5,
+            width: 4,
+            height: 28,
+            backgroundColor: colors.text,
+            borderRadius: 2,
+            transform: [{ translateX: -2 }],
+          }}
+        />
+      </View>
+
+      {/* Rótulos das zonas */}
+      <View style={{ flexDirection: 'row' }}>
+        <View style={{ flex: 15, alignItems: 'flex-start' }}>
+          <Text style={{ fontSize: 10, color: '#ef4444', fontFamily: 'Inter-SemiBold' }}>0% Risco</Text>
+        </View>
+        <View style={{ flex: 15, alignItems: 'center' }}>
+          <Text style={{ fontSize: 10, color: '#f59e0b', fontFamily: 'Inter-SemiBold' }}>15%</Text>
+        </View>
+        <View style={{ flex: 30, alignItems: 'flex-end' }}>
+          <Text style={{ fontSize: 10, color: '#22c55e', fontFamily: 'Inter-SemiBold' }}>30–60%+ Saudável</Text>
+        </View>
+      </View>
+    </View>
+  );
+};
+
+// ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function CalculadoraMarkup() {
   const { colors } = useTheme();
-  const router = useRouter();
-  const params = useLocalSearchParams();
+  const router     = useRouter();
+  const params     = useLocalSearchParams();
 
-  // Pre-fill de produto, se vier de produto
-  const prefillCost = params.cost_price as string | undefined;
-  const prefillPrice = params.price as string | undefined;
-  const prefillName = params.name as string | undefined;
+  const isReadonly    = params.mode === 'readonly';
+  const isService     = params.item_type === 'service';
+  const prefillName   = params.name           as string | undefined;
+  const prefillCost   = params.cost_price     as string | undefined;
+  const prefillPrice  = params.price          as string | undefined;
+  const prefillTime   = params.time_minutes   as string | undefined; // minutos (serviço)
+  const prefillMat    = params.material_cost  as string | undefined; // material (serviço)
 
-  // ── Estado dos campos ──────────────────────────────────────────────────────
-  const [costPrice, setCostPrice] = useState(prefillCost ? String(parseCurrency(prefillCost)) : '');
-  const [marginInput, setMarginInput] = useState('');
-  const [sellingInput, setSellingInput] = useState(prefillPrice ? String(parseCurrency(prefillPrice)) : '');
-  const [fixedCosts, setFixedCosts] = useState('');
+  // ── Block A — configuração do negócio ────────────────────────────────────
+  const [config, setConfig] = useState<MarkupConfig>(DEFAULT_CONFIG);
 
-  // Modo: 'margin' = digita margem e calcula preço; 'price' = digita preço e calcula margem
-  const [mode, setMode] = useState<'margin' | 'price'>(prefillPrice && !prefillCost ? 'price' : 'margin');
+  // ── Produtos para painel (Block B) ────────────────────────────────────────
+  const [items, setItems]  = useState<any[]>([]);
 
-  const result = useCallback((): CalcResult | null => {
-    const cost = parseCurrency(costPrice);
-    const fixed = parseCurrency(fixedCosts);
-    if (mode === 'margin') {
-      const margin = parseCurrency(marginInput);
-      return calculate(cost, margin, null, fixed);
-    } else {
-      const price = parseCurrency(sellingInput);
-      return calculate(cost, null, price, fixed);
+  // ── Carga inicial ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    AsyncStorage.getItem(CONFIG_KEY)
+      .then(raw => { if (raw) setConfig(JSON.parse(raw)); })
+      .catch(() => {});
+
+    if (!isReadonly) {
+      db.query(
+        'SELECT id, name, price, cost_price, type, time_minutes, material_cost FROM products WHERE price > 0 ORDER BY name'
+      )
+        .then(rows => setItems(rows || []))
+        .catch(() => {});
     }
-  }, [costPrice, marginInput, sellingInput, fixedCosts, mode])();
+  }, []);
 
-  const handleReset = () => {
-    setCostPrice('');
-    setMarginInput('');
-    setSellingInput('');
-    setFixedCosts('');
-    setMode('margin');
+  // ── Valor da hora (calculado) ─────────────────────────────────────────────
+  const meta    = parseMoney(config.metaMensal);
+  const fixo    = parseMoney(config.custoFixo);
+  const horas   = parseFloat(config.horasSemana) || 0;
+  const valorHora = horas > 0 ? (meta + fixo) / (horas * 4.33) : 0;
+
+  const saveConfig = async () => {
+    await AsyncStorage.setItem(CONFIG_KEY, JSON.stringify(config)).catch(() => {});
+    Alert.alert('✅ Salvo', 'Configuração salva com sucesso!');
   };
 
-  const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: colors.background },
-    header: {
-      backgroundColor: colors.topbar,
-      paddingHorizontal: 20,
-      paddingTop: 50,
-      paddingBottom: 16,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 16,
-    },
-    backButton: { padding: 10, borderRadius: 10, backgroundColor: colors.card },
-    headerTitle: { fontSize: 22, fontFamily: 'Inter-Bold', color: colors.onTopbar, flex: 1 },
-    resetButton: { padding: 10, borderRadius: 10, backgroundColor: colors.card },
-    content: { flex: 1, padding: 20 },
-    productBanner: {
-      backgroundColor: colors.primary + '15',
-      borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      marginBottom: 16,
-      borderWidth: 1,
-      borderColor: colors.primary + '40',
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-    },
-    productBannerText: {
-      fontSize: 13,
-      fontFamily: 'Inter-Medium',
-      color: colors.primary,
-      flex: 1,
-    },
-    sectionTitle: {
-      fontSize: 13,
-      fontFamily: 'Inter-SemiBold',
-      color: colors.textSecondary,
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
-      marginBottom: 12,
-      marginTop: 4,
-    },
-    label: {
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-      marginBottom: 6,
-    },
-    input: {
-      backgroundColor: colors.card,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      fontSize: 16,
-      fontFamily: 'Inter-Regular',
-      color: colors.text,
-      marginBottom: 14,
-    },
-    modeRow: {
-      flexDirection: 'row',
-      gap: 8,
-      marginBottom: 14,
-    },
-    modeBtn: {
-      flex: 1,
-      paddingVertical: 10,
-      borderRadius: 10,
-      alignItems: 'center',
-      borderWidth: 1,
-    },
-    modeBtnText: {
-      fontSize: 13,
-      fontFamily: 'Inter-SemiBold',
-    },
-    divider: { height: 1, backgroundColor: colors.border, marginVertical: 16 },
-    // Resultados
-    resultCard: { marginBottom: 14 },
-    resultRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 10,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    resultRowLast: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 10,
-    },
-    resultLabel: {
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      flex: 1,
-    },
-    resultValue: {
-      fontSize: 16,
-      fontFamily: 'Inter-Bold',
-      color: colors.text,
-    },
-    // Preço de venda em destaque
-    highlightCard: {
-      backgroundColor: colors.primary + '12',
-      borderRadius: 14,
-      padding: 20,
-      alignItems: 'center',
-      marginBottom: 14,
-      borderWidth: 1,
-      borderColor: colors.primary + '30',
-    },
-    highlightLabel: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: colors.primary,
-      textTransform: 'uppercase',
-      letterSpacing: 0.8,
-      marginBottom: 4,
-    },
-    highlightValue: {
-      fontSize: 36,
-      fontFamily: 'Inter-Black',
-      color: colors.primary,
-    },
-    highlightSub: {
-      fontSize: 13,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      marginTop: 4,
-    },
-    // Break-even
-    breakEvenCard: {
-      backgroundColor: colors.warning + '15',
-      borderRadius: 12,
-      padding: 16,
-      borderWidth: 1,
-      borderColor: colors.warning + '40',
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      marginBottom: 14,
-    },
-    breakEvenText: {
-      flex: 1,
-      fontSize: 14,
-      fontFamily: 'Inter-Medium',
-      color: colors.text,
-    },
-    breakEvenHighlight: {
-      fontFamily: 'Inter-Bold',
-      color: colors.warning,
-    },
-    // Empty state
-    emptyState: {
-      alignItems: 'center',
-      paddingVertical: 32,
-      gap: 8,
-    },
-    emptyText: {
-      fontSize: 14,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      textAlign: 'center',
-    },
-    // Tip
-    tipCard: {
-      backgroundColor: colors.surface,
-      borderRadius: 10,
-      padding: 14,
-      marginBottom: 20,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    tipText: {
-      fontSize: 12,
-      fontFamily: 'Inter-Regular',
-      color: colors.textSecondary,
-      lineHeight: 18,
-    },
-    tipBold: {
-      fontFamily: 'Inter-SemiBold',
-      color: colors.text,
-    },
+  // ── Painel da carteira ────────────────────────────────────────────────────
+  const panelData = useMemo(() => {
+    const withCost = items.filter(p => p.price > 0);
+    if (withCost.length === 0) return null;
+
+    const ranked = withCost
+      .map(p => {
+        let costBase = 0;
+        if (p.type === 'service') {
+          const timeH = (p.time_minutes || 0) / 60;
+          costBase = valorHora * timeH + (p.material_cost || 0);
+        } else {
+          costBase = p.cost_price || 0;
+        }
+        const margin = costBase > 0 && p.price > costBase
+          ? ((p.price - costBase) / p.price) * 100
+          : p.cost_price > 0
+            ? ((p.price - p.cost_price) / p.price) * 100
+            : -1;
+        return { ...p, margin };
+      })
+      .filter(p => p.margin >= 0)
+      .sort((a, b) => b.margin - a.margin);
+
+    if (ranked.length === 0) return null;
+
+    const totalPrice = ranked.reduce((s, p) => s + p.price, 0);
+    const weightedMargin = totalPrice > 0
+      ? ranked.reduce((s, p) => s + p.price * p.margin, 0) / totalPrice
+      : 0;
+
+    return { weightedMargin, ranked };
+  }, [items, valorHora]);
+
+  // ── Insight ───────────────────────────────────────────────────────────────
+  const insight = useMemo(() => {
+    if (!panelData) return null;
+    const { weightedMargin, ranked } = panelData;
+    const pior   = ranked[ranked.length - 1];
+    const melhor = ranked[0];
+    const allGreen  = ranked.every(p => p.margin >= 30);
+    const allRed    = ranked.every(p => p.margin < 15);
+    const hasMixed  = !allGreen && !allRed;
+
+    if (allGreen) {
+      return 'Carteira saudável. Você tem margem para crescer.';
+    }
+    if (allRed) {
+      return `Seus preços estão abaixo do necessário. Veja quais ajustar primeiro — "${pior?.name}" tem a menor margem.`;
+    }
+    if (hasMixed && weightedMargin >= 30 && pior) {
+      return `"${pior.name}" está no vermelho, mas "${melhor.name}" sustenta o resultado. Isso é estratégia, não erro.`;
+    }
+    if (weightedMargin >= 15 && pior) {
+      return `Margem média de ${weightedMargin.toFixed(1)}% — zona de atenção. Considere revisar "${pior.name}".`;
+    }
+    return `Atenção: margem média de ${weightedMargin.toFixed(1)}% está em zona de risco. Revise seus preços.`;
+  }, [panelData]);
+
+  // ── Modo readonly: Raio-X do item ─────────────────────────────────────────
+  const costPriceNum    = parseMoney(prefillCost  || '0');
+  const currentPrice    = parseMoney(prefillPrice || '0');
+  const timeMinutes     = parseInt(prefillTime || '0', 10) || 0;
+  const materialCost    = parseMoney(prefillMat || '0');
+
+  // Custo base para serviço: hora × tempo + material
+  const serviceCostBase = isService
+    ? valorHora * (timeMinutes / 60) + materialCost
+    : 0;
+
+  const costBase = isService ? serviceCostBase : costPriceNum;
+
+  // Rateio de custos fixos por item (apenas para produtos)
+  const numItems      = items.length || 1;
+  const rateio        = (!isService && fixo > 0) ? fixo / numItems : 0;
+
+  const precoMinimo   = costBase + rateio;
+  const targetMargin  = 35; // default — no futuro pode vir do config
+  const precoSugerido = precoMinimo > 0 ? precoMinimo / (1 - targetMargin / 100) : 0;
+
+  const currentMargin = currentPrice > 0 && costBase > 0
+    ? ((currentPrice - costBase) / currentPrice) * 100
+    : -1;
+  const abaixoSugerido = currentPrice > 0 && costBase > 0 && currentPrice < precoSugerido;
+
+  // ── Helpers visuais ───────────────────────────────────────────────────────
+  const marginColor = (m: number) => m >= 30 ? '#22c55e' : m >= 15 ? '#f59e0b' : '#ef4444';
+
+  // ── Estilos ───────────────────────────────────────────────────────────────
+  const S = StyleSheet.create({
+    container:   { flex: 1, backgroundColor: colors.background },
+    header:      { backgroundColor: colors.topbar, paddingHorizontal: 20, paddingTop: 50, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 16 },
+    back:        { padding: 10, borderRadius: 10, backgroundColor: colors.card },
+    title:       { fontSize: 22, fontFamily: 'Inter-Bold', color: colors.onTopbar, flex: 1 },
+    content:     { flex: 1, padding: 20 },
+    banner:      { backgroundColor: colors.primary + '15', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16, borderWidth: 1, borderColor: colors.primary + '40', flexDirection: 'row', alignItems: 'center', gap: 8 },
+    bannerText:  { fontSize: 13, fontFamily: 'Inter-Medium', color: colors.primary, flex: 1 },
+    secTitle:    { fontSize: 13, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 10, marginTop: 4 },
+    label:       { fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text, marginBottom: 6 },
+    labelSub:    { fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 4, marginTop: -2 },
+    input:       { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, fontFamily: 'Inter-Regular', color: colors.text, marginBottom: 14 },
+    divider:     { height: 1, backgroundColor: colors.border, marginVertical: 20 },
+    hourCard:    { backgroundColor: colors.primary + '10', borderRadius: 12, padding: 16, marginTop: 4, marginBottom: 14, borderWidth: 1, borderColor: colors.primary + '25' },
+    hourValue:   { fontSize: 28, fontFamily: 'Inter-Black', color: colors.primary },
+    hourLabel:   { fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginTop: 2 },
+    saveBtn:     { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8, marginBottom: 4 },
+    saveBtnText: { fontSize: 16, fontFamily: 'Inter-SemiBold', color: '#fff' },
+    gaugeCard:   { backgroundColor: colors.card, borderRadius: 14, padding: 20, borderWidth: 1, borderColor: colors.border, marginBottom: 14 },
+    insightCard: { backgroundColor: colors.primary + '10', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.primary + '25', marginBottom: 14 },
+    insightText: { fontSize: 13, fontFamily: 'Inter-Regular', color: colors.text, lineHeight: 20 },
+    row:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+    rowLast:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
+    rankBadge:   { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, minWidth: 54, alignItems: 'center' },
+    rankText:    { fontSize: 13, fontFamily: 'Inter-Bold', color: '#fff' },
+    // Readonly
+    priceRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
+    priceRowLast:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14 },
+    priceLbl:    { fontSize: 14, fontFamily: 'Inter-Medium', color: colors.text },
+    priceSub:    { fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary },
+    priceVal:    { fontSize: 18, fontFamily: 'Inter-Bold' },
+    alertCard:   { backgroundColor: colors.warning + '18', borderRadius: 12, padding: 14, borderWidth: 1, borderColor: colors.warning + '50', marginBottom: 14, flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+    alertText:   { flex: 1, fontSize: 13, fontFamily: 'Inter-Regular', color: colors.text, lineHeight: 20 },
+    tipCard:     { backgroundColor: colors.surface, borderRadius: 10, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: colors.border },
+    tipText:     { fontSize: 12, fontFamily: 'Inter-Regular', color: colors.textSecondary, lineHeight: 18 },
+    tipBold:     { fontFamily: 'Inter-SemiBold', color: colors.text },
+    emptyState:  { alignItems: 'center', paddingVertical: 32, gap: 8 },
+    emptyText:   { fontSize: 14, fontFamily: 'Inter-Regular', color: colors.textSecondary, textAlign: 'center' },
   });
 
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+    <KeyboardAvoidingView style={S.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={S.header}>
+        <TouchableOpacity style={S.back} onPress={() => router.back()}>
           <ArrowLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Calculadora de Markup</Text>
-        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
-          <RefreshCw size={20} color={colors.textSecondary} />
-        </TouchableOpacity>
+        <Text style={S.title}>
+          {isReadonly ? 'Análise de Margem' : 'Markup & Precificação'}
+        </Text>
+        <View style={{ width: 44 }} />
       </View>
 
-      <ScrollView
-        style={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Banner de produto pré-preenchido */}
+      <ScrollView style={S.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+        {/* Banner do item (modo readonly) */}
         {!!prefillName && (
-          <View style={styles.productBanner}>
-            <Package size={16} color={colors.primary} />
-            <Text style={styles.productBannerText} numberOfLines={1}>
-              Calculando para: <Text style={{ fontFamily: 'Inter-Bold' }}>{prefillName}</Text>
+          <View style={S.banner}>
+            {isService
+              ? <Wrench size={16} color={colors.primary} />
+              : <Package size={16} color={colors.primary} />
+            }
+            <Text style={S.bannerText} numberOfLines={1}>
+              <Text style={{ fontFamily: 'Inter-Bold' }}>{prefillName}</Text>
+              {isService ? '  •  Serviço' : '  •  Produto'}
             </Text>
           </View>
         )}
 
-        {/* ── Entradas ─────────────────────────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>Dados do produto</Text>
-
-        <Text style={styles.label}>Preço de custo (R$) *</Text>
-        <TextInput
-          style={styles.input}
-          value={costPrice}
-          onChangeText={setCostPrice}
-          placeholder="Ex: 12,50"
-          placeholderTextColor={colors.textSecondary}
-          keyboardType="decimal-pad"
-        />
-
-        {/* Seletor de modo */}
-        <Text style={styles.label}>Calcular por:</Text>
-        <View style={styles.modeRow}>
-          <TouchableOpacity
-            style={[
-              styles.modeBtn,
-              {
-                backgroundColor: mode === 'margin' ? colors.primary : colors.card,
-                borderColor: mode === 'margin' ? colors.primary : colors.border,
-              },
-            ]}
-            onPress={() => setMode('margin')}
-          >
-            <Text
-              style={[
-                styles.modeBtnText,
-                { color: mode === 'margin' ? '#fff' : colors.textSecondary },
-              ]}
-            >
-              % Margem desejada
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.modeBtn,
-              {
-                backgroundColor: mode === 'price' ? colors.primary : colors.card,
-                borderColor: mode === 'price' ? colors.primary : colors.border,
-              },
-            ]}
-            onPress={() => setMode('price')}
-          >
-            <Text
-              style={[
-                styles.modeBtnText,
-                { color: mode === 'price' ? '#fff' : colors.textSecondary },
-              ]}
-            >
-              Preço de venda
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {mode === 'margin' ? (
+        {/* ══ MODO READONLY ═══════════════════════════════════════════════════ */}
+        {isReadonly ? (
           <>
-            <Text style={styles.label}>Margem de lucro desejada (%)</Text>
+            {costBase <= 0 && !isService ? (
+              <Card>
+                <View style={S.emptyState}>
+                  <Package size={36} color={colors.textSecondary} />
+                  <Text style={S.emptyText}>
+                    Este produto não tem preço de custo cadastrado.{'\n'}
+                    Edite-o para ver a análise de margem.
+                  </Text>
+                </View>
+              </Card>
+            ) : isService && valorHora <= 0 ? (
+              <Card>
+                <View style={S.emptyState}>
+                  <Wrench size={36} color={colors.textSecondary} />
+                  <Text style={S.emptyText}>
+                    Configure sua meta mensal e horas trabalhadas{'\n'}
+                    na tela principal de Markup para ver a análise deste serviço.
+                  </Text>
+                </View>
+              </Card>
+            ) : (
+              <>
+                {abaixoSugerido && (
+                  <View style={S.alertCard}>
+                    <Text style={{ fontSize: 20 }}>⚠️</Text>
+                    <Text style={S.alertText}>
+                      Preço abaixo do sugerido.{'\n'}
+                      Você pode cobrar até{' '}
+                      <Text style={{ fontFamily: 'Inter-Bold' }}>R$ {fmtBRL(precoSugerido)}</Text>
+                      {' '}sem perder competitividade.
+                    </Text>
+                  </View>
+                )}
+
+                <Card style={{ marginBottom: 14 }}>
+                  <View style={S.priceRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={S.priceLbl}>🔴 Preço mínimo</Text>
+                      <Text style={S.priceSub}>
+                        {isService
+                          ? `${(timeMinutes / 60).toFixed(1)}h × R$${fmtBRL(valorHora)}/h + material`
+                          : 'custo + rateio do fixo mensal'}
+                      </Text>
+                    </View>
+                    <Text style={[S.priceVal, { color: '#ef4444' }]}>
+                      R$ {fmtBRL(precoMinimo)}
+                    </Text>
+                  </View>
+
+                  <View style={S.priceRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={S.priceLbl}>🟡 Preço sugerido</Text>
+                      <Text style={S.priceSub}>mínimo + {targetMargin}% de margem</Text>
+                    </View>
+                    <Text style={[S.priceVal, { color: '#f59e0b' }]}>
+                      R$ {fmtBRL(precoSugerido)}
+                    </Text>
+                  </View>
+
+                  <View style={S.priceRowLast}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={S.priceLbl}>🟢 Atual cobrado</Text>
+                      <Text style={S.priceSub}>
+                        {currentMargin >= 0 ? `${currentMargin.toFixed(1)}% de margem` : '—'}
+                      </Text>
+                    </View>
+                    <Text style={[S.priceVal, { color: marginColor(currentMargin) }]}>
+                      R$ {fmtBRL(currentPrice)}
+                    </Text>
+                  </View>
+                </Card>
+
+                {isService && (
+                  <View style={S.tipCard}>
+                    <Text style={S.tipText}>
+                      <Text style={S.tipBold}>Seu valor/hora: </Text>
+                      R$ {fmtBRL(valorHora)}{'\n'}
+                      <Text style={S.tipBold}>Tempo do serviço: </Text>
+                      {timeMinutes >= 60
+                        ? `${(timeMinutes / 60).toFixed(1)}h`
+                        : `${timeMinutes}min`}{'\n'}
+                      {materialCost > 0 && (
+                        <>
+                          <Text style={S.tipBold}>Material extra: </Text>
+                          R$ {fmtBRL(materialCost)}
+                        </>
+                      )}
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            {/* ══ MODO NORMAL ════════════════════════════════════════════════ */}
+
+            {/* ── BLOCO A: Configuração do negócio ──────────────────────────── */}
+            <Text style={S.secTitle}>Como está seu negócio?</Text>
+
+            <Text style={S.label}>Meta de ganho mensal (R$)</Text>
+            <Text style={S.labelSub}>O que você quer tirar para você</Text>
             <TextInput
-              style={styles.input}
-              value={marginInput}
-              onChangeText={setMarginInput}
+              style={S.input}
+              value={config.metaMensal}
+              onChangeText={v => setConfig(c => ({ ...c, metaMensal: v }))}
+              placeholder="Ex: 4.000"
+              placeholderTextColor={colors.textSecondary}
+              keyboardType="decimal-pad"
+            />
+
+            <Text style={S.label}>Custos fixos mensais (R$)</Text>
+            <Text style={S.labelSub}>Aluguel, luz, internet, MEI…</Text>
+            <TextInput
+              style={S.input}
+              value={config.custoFixo}
+              onChangeText={v => setConfig(c => ({ ...c, custoFixo: v }))}
+              placeholder="Ex: 1.500"
+              placeholderTextColor={colors.textSecondary}
+              keyboardType="decimal-pad"
+            />
+
+            <Text style={S.label}>Horas trabalhadas por semana</Text>
+            <TextInput
+              style={S.input}
+              value={config.horasSemana}
+              onChangeText={v => setConfig(c => ({ ...c, horasSemana: v }))}
               placeholder="Ex: 40"
               placeholderTextColor={colors.textSecondary}
               keyboardType="decimal-pad"
             />
-          </>
-        ) : (
-          <>
-            <Text style={styles.label}>Preço de venda praticado (R$)</Text>
-            <TextInput
-              style={styles.input}
-              value={sellingInput}
-              onChangeText={setSellingInput}
-              placeholder="Ex: 25,00"
-              placeholderTextColor={colors.textSecondary}
-              keyboardType="decimal-pad"
-            />
-          </>
-        )}
 
-        <Text style={styles.label}>Custos fixos mensais (R$) — opcional</Text>
-        <TextInput
-          style={styles.input}
-          value={fixedCosts}
-          onChangeText={setFixedCosts}
-          placeholder="Ex: 2.000 (aluguel, salários…)"
-          placeholderTextColor={colors.textSecondary}
-          keyboardType="decimal-pad"
-        />
-
-        <View style={styles.divider} />
-
-        {/* ── Resultados ───────────────────────────────────────────────────── */}
-        <Text style={styles.sectionTitle}>Resultado</Text>
-
-        {result ? (
-          <>
-            {/* Preço de venda em destaque */}
-            {mode === 'margin' && (
-              <View style={styles.highlightCard}>
-                <Text style={styles.highlightLabel}>Preço de venda sugerido</Text>
-                <Text style={styles.highlightValue}>R$ {formatBRL(result.sellingPrice)}</Text>
-                <Text style={styles.highlightSub}>para {formatBRL(result.marginPct)}% de margem</Text>
-              </View>
-            )}
-
-            <Card style={styles.resultCard}>
-              {mode === 'price' && (
-                <View style={styles.resultRow}>
-                  <Text style={styles.resultLabel}>Margem de lucro</Text>
-                  <Text style={[styles.resultValue, { color: result.marginPct >= 30 ? colors.success : result.marginPct >= 15 ? colors.warning : colors.error }]}>
-                    {formatBRL(result.marginPct)}%
+            {/* Resultado: valor por hora */}
+            <View style={S.hourCard}>
+              {valorHora > 0 ? (
+                <>
+                  <Text style={S.hourValue}>R$ {fmtBRL(valorHora)}/hora</Text>
+                  <Text style={S.hourLabel}>
+                    (R$ {fmtBRL(meta)} meta + R$ {fmtBRL(fixo)} fixos) ÷ {fmtBRL(horas * 4.33)} horas/mês
                   </Text>
-                </View>
+                </>
+              ) : (
+                <Text style={[S.hourLabel, { fontStyle: 'italic' }]}>
+                  Preencha os campos acima para ver seu valor por hora.
+                </Text>
               )}
+            </View>
 
-              <View style={styles.resultRow}>
-                <Text style={styles.resultLabel}>Markup</Text>
-                <Text style={styles.resultValue}>{formatBRL(result.markupPct)}%</Text>
-              </View>
+            <TouchableOpacity style={S.saveBtn} onPress={saveConfig} activeOpacity={0.85}>
+              <Save size={18} color="#fff" />
+              <Text style={S.saveBtnText}>Salvar configuração</Text>
+            </TouchableOpacity>
 
-              <View style={styles.resultRow}>
-                <Text style={styles.resultLabel}>Lucro por unidade</Text>
-                <Text style={[styles.resultValue, { color: colors.success }]}>
-                  R$ {formatBRL(result.grossProfit)}
-                </Text>
-              </View>
+            {/* ── BLOCO B: Painel da carteira ───────────────────────────────── */}
+            {panelData && panelData.ranked.length > 0 && (
+              <>
+                <View style={S.divider} />
+                <Text style={S.secTitle}>Painel da carteira</Text>
 
-              <View style={styles.resultRowLast}>
-                <Text style={styles.resultLabel}>Preço de custo</Text>
-                <Text style={styles.resultValue}>R$ {formatBRL(parseCurrency(costPrice))}</Text>
-              </View>
-            </Card>
+                {/* Gauge */}
+                <View style={S.gaugeCard}>
+                  <GaugeBar margin={panelData.weightedMargin} colors={colors} />
+                </View>
 
-            {/* Ponto de equilíbrio */}
-            {result.breakEvenUnits !== null && (
-              <View style={styles.breakEvenCard}>
-                <Package size={20} color={colors.warning} />
-                <Text style={styles.breakEvenText}>
-                  Você precisa vender{' '}
-                  <Text style={styles.breakEvenHighlight}>
-                    {result.breakEvenUnits} unidade{result.breakEvenUnits !== 1 ? 's' : ''}
+                {/* Insight */}
+                {insight && (
+                  <View style={S.insightCard}>
+                    <Text style={S.insightText}>
+                      <Text style={{ fontFamily: 'Inter-SemiBold' }}>💡 </Text>
+                      {insight}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Ranking */}
+                <Card style={{ marginBottom: 14 }}>
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Ranking — mais ao menos lucrativo
                   </Text>
-                  {' '}por mês para cobrir seus custos fixos de{' '}
-                  <Text style={styles.breakEvenHighlight}>
-                    R$ {formatBRL(parseCurrency(fixedCosts))}
-                  </Text>
-                  .
+                  {panelData.ranked.map((p, i) => (
+                    <View
+                      key={p.id}
+                      style={i === panelData.ranked.length - 1 ? S.rowLast : S.row}
+                    >
+                      <Text style={{ width: 24, fontSize: 12, color: colors.textSecondary, fontFamily: 'Inter-Regular' }}>
+                        {i + 1}°
+                      </Text>
+                      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        {p.type === 'service'
+                          ? <Wrench size={12} color={colors.textSecondary} />
+                          : <Package size={12} color={colors.textSecondary} />
+                        }
+                        <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Inter-Regular', color: colors.text }} numberOfLines={1}>
+                          {p.name}
+                        </Text>
+                      </View>
+                      <View style={[S.rankBadge, { backgroundColor: marginColor(p.margin) }]}>
+                        <Text style={S.rankText}>{p.margin.toFixed(1)}%</Text>
+                      </View>
+                    </View>
+                  ))}
+                </Card>
+              </>
+            )}
+
+            {!panelData && (
+              <View style={S.tipCard}>
+                <Text style={S.tipText}>
+                  <Text style={S.tipBold}>💡 Painel da carteira: </Text>
+                  aparece aqui assim que você tiver produtos ou serviços cadastrados.
                 </Text>
               </View>
             )}
-
-            {/* Dica de margem */}
-            <View style={styles.tipCard}>
-              <Text style={styles.tipText}>
-                <Text style={styles.tipBold}>💡 Referência rápida: </Text>
-                {result.marginPct < 15
-                  ? 'Margem abaixo de 15% — risco alto. Verifique seus custos fixos e variáveis antes de precificar.'
-                  : result.marginPct < 30
-                    ? 'Margem entre 15–30% — aceitável para produtos de alto giro. Atenção ao volume de vendas.'
-                    : result.marginPct < 50
-                      ? 'Margem entre 30–50% — boa margem para a maioria dos segmentos varejistas.'
-                      : 'Margem acima de 50% — excelente! Confirme se o preço ainda é competitivo no seu mercado.'}
-              </Text>
-            </View>
           </>
-        ) : (
-          <Card>
-            <View style={styles.emptyState}>
-              <Calculator size={40} color={colors.textSecondary} />
-              <Text style={styles.emptyText}>
-                Preencha o preço de custo e{'\n'}
-                {mode === 'margin' ? 'a margem desejada' : 'o preço de venda'} para ver o resultado.
-              </Text>
-            </View>
-          </Card>
         )}
-
-        {/* Explicação dos conceitos */}
-        <View style={styles.tipCard}>
-          <Text style={styles.tipText}>
-            <Text style={styles.tipBold}>Margem vs Markup:{'\n'}</Text>
-            <Text style={styles.tipBold}>Margem</Text>
-            {' = lucro ÷ preço de venda × 100\n'}
-            <Text style={styles.tipBold}>Markup</Text>
-            {' = lucro ÷ custo × 100\n\n'}
-            Ex: custo R$10, venda R$15 → Margem 33,3% / Markup 50%
-          </Text>
-        </View>
 
         <View style={{ height: 40 }} />
       </ScrollView>

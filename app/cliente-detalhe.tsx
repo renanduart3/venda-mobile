@@ -67,11 +67,16 @@ export default function ClienteDetalhe() {
   // Modal de seleção de chave PIX (quando há múltiplas)
   const [showKeySelector, setShowKeySelector] = useState(false);
 
-  // Modal PIX
+  // Modal PIX — usado tanto para "cobrar total" (top) quanto para pagamento de despesa
   const [showPixModal, setShowPixModal] = useState(false);
   const [pixString, setPixString] = useState<string>('');
   const [activePixKey, setActivePixKey] = useState<string>('');
   const [copied, setCopied] = useState(false);
+  // Estado do modo do seletor de chave: 'charge' = cobrar total, 'pay' = pagar despesa via PIX
+  const [keySelectorMode, setKeySelectorMode] = useState<'charge' | 'pay'>('charge');
+  // Despesa e valor pendentes para pagamento via PIX
+  const [pendingPixExpense, setPendingPixExpense] = useState<Expense | null>(null);
+  const [pendingPixAmount, setPendingPixAmount] = useState<number>(0);
 
   // Premium
   const [userIsPremium, setUserIsPremium] = useState(false);
@@ -86,10 +91,13 @@ export default function ClienteDetalhe() {
     try {
       const { loadStoreSettings } = await import('@/lib/data-loader');
       const settings = await loadStoreSettings() as any;
-      if (settings?.store_name) setStoreName(settings.store_name);
-      if (settings?.pix_key) {
-        setPixKeys(parsePixKeys(settings.pix_key));
-      }
+      // data-loader retorna camelCase: storeName, pixKeys (array já processado)
+      setStoreName(settings?.storeName || settings?.store_name || '');
+      const rawKeys = settings?.pixKeys ?? parsePixKeys(settings?.pix_key);
+      const validKeys = Array.isArray(rawKeys)
+        ? rawKeys.filter((k: string) => typeof k === 'string' && k.trim())
+        : [];
+      setPixKeys(validKeys);
     } catch {
       // Não crítico — só esconde os botões
     }
@@ -189,31 +197,124 @@ export default function ClienteDetalhe() {
 
   // ─── PIX QR Code ─────────────────────────────────────────────────────────
 
-  const openPixWithKey = (key: string) => {
-    const payload = generatePixPayload(key, totalDebt, storeName || 'Loja');
+  // Abre QR de cobrança geral (saldo total) — não marca como pago
+  const openPixChargeWithKey = (key: string) => {
+    const payload = generatePixPayload(key, storeName || 'Loja', totalDebt);
     setActivePixKey(key);
     setPixString(payload);
     setCopied(false);
+    setPendingPixExpense(null); // modo cobrança, sem confirmar pagamento
     setShowPixModal(true);
   };
 
-  const handlePix = () => {
+  // Abre QR de pagamento de despesa específica
+  const openPixPaymentWithKey = (key: string, expense: Expense, amount: number) => {
+    const payload = generatePixPayload(key, storeName || 'Loja', amount);
+    setActivePixKey(key);
+    setPixString(payload);
+    setCopied(false);
+    setPendingPixExpense(expense);
+    setPendingPixAmount(amount);
+    setShowPixModal(true);
+  };
+
+  const handleChargePix = () => {
     if (pixKeys.length === 0) {
-      Alert.alert(
-        'Chave PIX não configurada',
-        'Cadastre sua chave PIX nas Configurações do app para usar este recurso.',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Ir para Configurações', onPress: () => router.push('/settings' as any) },
-        ]
-      );
+      Alert.alert('Chave PIX não configurada', 'Cadastre sua chave PIX nas Configurações.', [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Configurações', onPress: () => router.push('/settings' as any) },
+      ]);
       return;
     }
+    setKeySelectorMode('charge');
     if (pixKeys.length === 1) {
-      openPixWithKey(pixKeys[0]);
+      openPixChargeWithKey(pixKeys[0]);
     } else {
-      // Múltiplas chaves: abre o seletor
       setShowKeySelector(true);
+    }
+  };
+
+  // Chamado quando usuário toca "Pagar com PIX QR" no modal de pagamento
+  const handlePixPaymentFromModal = () => {
+    if (!selectedExpense) return;
+    const val = parseFloat(paymentAmount.replace(',', '.'));
+    if (isNaN(val) || val <= 0) {
+      Alert.alert('Valor inválido', 'Insira um valor válido e maior que zero.');
+      return;
+    }
+    if (val > selectedExpense.amount + 0.05) {
+      Alert.alert('Valor excedido', `O valor não pode ser maior que R$ ${selectedExpense.amount.toFixed(2)}.`);
+      return;
+    }
+    if (pixKeys.length === 0) {
+      Alert.alert('Chave PIX não configurada', 'Cadastre sua chave PIX nas Configurações.', [
+        { text: 'OK' },
+        { text: 'Configurações', onPress: () => router.push('/settings' as any) },
+      ]);
+      return;
+    }
+    const expenseSnapshot = selectedExpense;
+    setShowExpenseModal(false);
+    setKeySelectorMode('pay');
+    setPendingPixAmount(val);
+    setPendingPixExpense(expenseSnapshot);
+    if (pixKeys.length === 1) {
+      openPixPaymentWithKey(pixKeys[0], expenseSnapshot, val);
+    } else {
+      setShowKeySelector(true);
+    }
+  };
+
+  // Core da gravação do pagamento (sem Alert) — chamado após PIX confirmado
+  const executePaymentCore = async (expense: Expense, value: number) => {
+    const isPartial = value < expense.amount - 0.01;
+    const remaining = expense.amount - value;
+    const currentOriginal = getOriginalAmount(expense);
+    const db = (await import('@/lib/db')).default;
+    const updated_at = new Date().toISOString();
+    const due = persistDueDateValue(editDueDate || formatDate(expense.due_date));
+    if (isPartial) {
+      await db.update('expenses', { amount: remaining, original_amount: currentOriginal, due_date: due, updated_at }, 'id = ?', [expense.id]);
+    } else {
+      await db.update('expenses', { paid: true, original_amount: currentOriginal, due_date: due, updated_at, paid_at: updated_at }, 'id = ?', [expense.id]);
+    }
+    await loadCustomerData();
+  };
+
+  // Confirma pagamento via PIX — chamado pelo botão "Recebi o pagamento"
+  const handlePixExpenseConfirm = async () => {
+    if (!pendingPixExpense) return;
+    setShowPixModal(false);
+    try {
+      await executePaymentCore(pendingPixExpense, pendingPixAmount);
+      const isPartial = pendingPixAmount < pendingPixExpense.amount - 0.01;
+      Alert.alert(
+        '✅ PIX confirmado!',
+        isPartial
+          ? `Pagamento parcial de R$ ${pendingPixAmount.toFixed(2)} registrado.`
+          : `Dívida quitada via PIX! R$ ${pendingPixAmount.toFixed(2)}`
+      );
+    } catch {
+      Alert.alert('❌ Erro', 'Não foi possível registrar o pagamento.');
+    }
+  };
+
+  // Confirma recebimento do saldo total — marca TODAS as dívidas pendentes como pagas
+  const handlePixChargeConfirm = async () => {
+    setShowPixModal(false);
+    try {
+      const db = (await import('@/lib/db')).default;
+      const updated_at = new Date().toISOString();
+      const unpaid = expenses.filter(e => !e.paid);
+      await Promise.all(
+        unpaid.map(e =>
+          db.update('expenses', { paid: true, original_amount: getOriginalAmount(e), updated_at, paid_at: updated_at }, 'id = ?', [e.id])
+        )
+      );
+      await loadCustomerData();
+      Alert.alert('✅ PIX confirmado!', `Saldo total de R$ ${totalDebt.toFixed(2)} quitado. Todas as dívidas foram marcadas como pagas.`);
+    } catch {
+      Alert.alert('❌ Erro', 'Não foi possível registrar o pagamento.');
     }
   };
 
@@ -225,10 +326,14 @@ export default function ClienteDetalhe() {
 
   // ─── Modal de despesa ─────────────────────────────────────────────────────
 
-  const openExpenseModal = (expense: Expense) => {
+  // prefillAmount: se informado, preenche o campo de valor (usado no botão "Pagar Total")
+  const openExpenseModal = (expense: Expense, prefillAmount?: number) => {
     setSelectedExpense(expense);
     setEditDueDate(formatDate(expense.due_date));
-    setPaymentAmount('');
+    setPaymentAmount(prefillAmount !== undefined
+      ? prefillAmount.toFixed(2).replace('.', ',')
+      : ''
+    );
     setShowExpenseModal(true);
   };
 
@@ -245,64 +350,30 @@ export default function ClienteDetalhe() {
     }
   };
 
-  const handlePayment = async () => {
+  // Pagamento manual com confirmação via Alert
+  const handleManualPayment = async () => {
     if (!selectedExpense) return;
     const value = parseFloat(paymentAmount.replace(',', '.'));
     if (isNaN(value) || value <= 0) { Alert.alert('Erro', 'Insira um valor válido e maior que zero.'); return; }
     if (value > selectedExpense.amount + 0.05) { Alert.alert('Erro', `O valor não pode ser maior que R$ ${selectedExpense.amount.toFixed(2)}.`); return; }
 
-    const isPartial = value < selectedExpense.amount;
+    const isPartial = value < selectedExpense.amount - 0.01;
     const remaining = selectedExpense.amount - value;
-    const currentOriginal = getOriginalAmount(selectedExpense);
 
     Alert.alert(
       isPartial ? 'Confirmar Pagamento Parcial' : 'Confirmar Pagamento Total',
       isPartial
-        ? `Deseja registrar um pagamento de R$ ${value.toFixed(2)}?\n\nSaldo pendente: R$ ${remaining.toFixed(2)}`
-        : `Deseja marcar esta dívida integralmente como paga?\n\nValor: R$ ${value.toFixed(2)}`,
+        ? `Registrar pagamento de R$ ${value.toFixed(2)}?\nSaldo pendente: R$ ${remaining.toFixed(2)}`
+        : `Marcar dívida de R$ ${value.toFixed(2)} como paga?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Confirmar',
           onPress: async () => {
             try {
-              const db = (await import('@/lib/db')).default;
-              const updated_at = new Date().toISOString();
-              const due = persistDueDateValue(editDueDate);
-              if (isPartial) {
-                await db.update('expenses', { amount: remaining, original_amount: currentOriginal, due_date: due, updated_at }, 'id = ?', [selectedExpense.id]);
-                Alert.alert('Sucesso', 'Pagamento parcial registrado!');
-              } else {
-                await db.update('expenses', { paid: true, original_amount: currentOriginal, due_date: due, updated_at, paid_at: updated_at }, 'id = ?', [selectedExpense.id]);
-                Alert.alert('Sucesso', 'Dívida marcada como paga!');
-              }
-              await loadCustomerData();
+              await executePaymentCore(selectedExpense!, value);
               setShowExpenseModal(false);
-            } catch {
-              Alert.alert('Erro', 'Não foi possível registrar o pagamento.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleTotalPayment = async (expense: Expense) => {
-    Alert.alert(
-      'Confirmar Pagamento Total',
-      `Deseja marcar esta dívida (Pendente: R$ ${expense.amount.toFixed(2)}) integralmente como paga?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Confirmar',
-          onPress: async () => {
-            try {
-              const db = (await import('@/lib/db')).default;
-              const updated_at = new Date().toISOString();
-              const currentOriginal = getOriginalAmount(expense);
-              await db.update('expenses', { paid: true, original_amount: currentOriginal, updated_at, paid_at: updated_at }, 'id = ?', [expense.id]);
-              Alert.alert('Sucesso', 'Dívida marcada como paga!');
-              await loadCustomerData();
+              Alert.alert('✅ Sucesso', isPartial ? 'Pagamento parcial registrado!' : 'Dívida marcada como paga!');
             } catch {
               Alert.alert('Erro', 'Não foi possível registrar o pagamento.');
             }
@@ -399,7 +470,7 @@ export default function ClienteDetalhe() {
       backgroundColor: 'rgba(0,0,0,0.55)',
       justifyContent: 'center', alignItems: 'center', padding: 20,
     },
-    modalContent: { backgroundColor: colors.background, borderRadius: 16, width: '100%', maxWidth: 400, overflow: 'hidden' },
+    modalContent: { backgroundColor: colors.card, borderRadius: 16, width: '100%', maxWidth: 400, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
     modalHeader: {
       flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
       padding: 20, backgroundColor: colors.surface,
@@ -422,8 +493,9 @@ export default function ClienteDetalhe() {
     modalButtonText: { fontSize: 16, fontFamily: 'Inter-SemiBold', textAlign: 'center' },
     // Modal PIX específico
     pixModalContent: {
-      backgroundColor: colors.background, borderRadius: 20, width: '100%',
+      backgroundColor: colors.card, borderRadius: 20, width: '100%',
       maxWidth: 360, overflow: 'hidden', alignItems: 'center',
+      borderWidth: 1, borderColor: colors.border,
     },
     pixModalHeader: {
       width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -520,18 +592,18 @@ export default function ClienteDetalhe() {
                 </TouchableOpacity>
               )}
 
-              {/* PIX — sempre aparece (avisa se não tiver chave ou premium) */}
+              {/* PIX — exibe QR do saldo total (referência, não marca como pago) */}
               <TouchableOpacity
                 style={[
                   styles.quickActionBtn,
                   { backgroundColor: userIsPremium ? colors.primary : colors.primary + '60' },
                 ]}
-                onPress={() => requirePremium(handlePix)}
+                onPress={() => requirePremium(handleChargePix)}
                 activeOpacity={0.82}
               >
                 <QrCode size={18} color="#fff" />
                 <Text style={[styles.quickActionText, { color: '#fff' }]}>
-                  {userIsPremium ? 'Cobrar via PIX' : '🔒 PIX'}
+                  {userIsPremium ? 'QR do saldo total' : '🔒 PIX'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -601,13 +673,13 @@ export default function ClienteDetalhe() {
                         style={[styles.actionButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border }]}
                         onPress={() => openExpenseModal(expense)}
                       >
-                        <Text style={[styles.actionButtonText, { color: colors.text }]}>Pagamento Parcial</Text>
+                        <Text style={[styles.actionButtonText, { color: colors.text }]}>Parcial</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={[styles.actionButton, { backgroundColor: colors.success }]}
-                        onPress={() => handleTotalPayment(expense)}
+                        onPress={() => openExpenseModal(expense, expense.amount)}
                       >
-                        <Text style={[styles.actionButtonText, { color: colors.white }]}>Pagamento Total</Text>
+                        <Text style={[styles.actionButtonText, { color: colors.white }]}>Pagar Total</Text>
                       </TouchableOpacity>
                     </>
                   )}
@@ -675,22 +747,70 @@ export default function ClienteDetalhe() {
               )}
             </View>
 
-            <View style={styles.modalActions}>
-              {!selectedExpense.paid && (
+            {/* Ações: Fechar / Pagar Manualmente / Pagar com PIX QR */}
+            {!selectedExpense.paid ? (
+              <View style={{ padding: 16, gap: 10, borderTopWidth: 1, borderTopColor: colors.border }}>
+                {/* Linha 1: Pagar Manualmente (grátis) */}
                 <TouchableOpacity
-                  style={[styles.modalButton, { backgroundColor: colors.success, flex: 1 }]}
-                  onPress={handlePayment}
+                  style={[styles.modalButton, { backgroundColor: colors.success, width: '100%' }]}
+                  onPress={handleManualPayment}
                 >
-                  <Text style={[styles.modalButtonText, { color: colors.white }]}>Pagar</Text>
+                  <Text style={[styles.modalButtonText, { color: colors.white }]}>✓ Pagar Manualmente</Text>
+                  <Text style={{ fontSize: 11, color: colors.white + 'cc', fontFamily: 'Inter-Regular', textAlign: 'center' }}>gratuito</Text>
                 </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, flex: 1 }]}
-                onPress={() => setShowExpenseModal(false)}
-              >
-                <Text style={[styles.modalButtonText, { color: colors.text }]}>Fechar</Text>
-              </TouchableOpacity>
-            </View>
+
+                {/* Linha 2: Pagar com PIX QR (premium) */}
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    {
+                      width: '100%',
+                      backgroundColor: userIsPremium ? colors.primary + '18' : colors.surface,
+                      borderWidth: 1,
+                      borderColor: userIsPremium ? colors.primary : colors.border,
+                      flexDirection: 'row', gap: 8,
+                    }
+                  ]}
+                  onPress={() => {
+                    if (!userIsPremium) {
+                      Alert.alert('🔒 Recurso Premium', 'Gerar QR Code PIX está disponível para assinantes.', [
+                        { text: 'Agora não', style: 'cancel' },
+                        { text: 'Ver planos', onPress: () => { setShowExpenseModal(false); router.push('/planos' as any); } },
+                      ]);
+                      return;
+                    }
+                    handlePixPaymentFromModal();
+                  }}
+                >
+                  <QrCode size={18} color={userIsPremium ? colors.primary : colors.textSecondary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.modalButtonText, { color: userIsPremium ? colors.primary : colors.textSecondary, fontSize: 14 }]}>
+                      {userIsPremium ? 'Cobrar com PIX QR Code' : '🔒 Cobrar com PIX QR Code'}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary, fontFamily: 'Inter-Regular' }}>
+                      {userIsPremium ? 'gera QR e confirma ao receber' : 'apenas para assinantes'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Linha 3: Cancelar */}
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: 'transparent', width: '100%' }]}
+                  onPress={() => setShowExpenseModal(false)}
+                >
+                  <Text style={[styles.modalButtonText, { color: colors.textSecondary, fontSize: 14 }]}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, flex: 1 }]}
+                  onPress={() => setShowExpenseModal(false)}
+                >
+                  <Text style={[styles.modalButtonText, { color: colors.text }]}>Fechar</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -716,7 +836,11 @@ export default function ClienteDetalhe() {
                   key={i}
                   onPress={() => {
                     setShowKeySelector(false);
-                    openPixWithKey(key);
+                    if (keySelectorMode === 'pay' && pendingPixExpense) {
+                      openPixPaymentWithKey(key, pendingPixExpense, pendingPixAmount);
+                    } else {
+                      openPixChargeWithKey(key);
+                    }
                   }}
                   style={{
                     flexDirection: 'row',
@@ -750,27 +874,27 @@ export default function ClienteDetalhe() {
           <View style={styles.pixModalContent}>
             {/* Header */}
             <View style={styles.pixModalHeader}>
-              <Text style={styles.modalTitle}>Cobrar via PIX</Text>
+              <Text style={styles.modalTitle}>
+                {pendingPixExpense ? 'PIX — Aguardando pagamento' : 'QR do saldo total'}
+              </Text>
               <TouchableOpacity style={styles.closeButton} onPress={() => setShowPixModal(false)}>
                 <XCircle size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             {/* Valor */}
-            <Text style={[styles.pixAmount, { marginTop: 24 }]}>
-              {totalDebt.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            <Text style={[styles.pixAmount, { marginTop: 20 }]}>
+              {(pendingPixExpense ? pendingPixAmount : totalDebt)
+                .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </Text>
-            <Text style={styles.pixAmountLabel}>a receber de {toTitleCase(customer.name)}</Text>
+            <Text style={styles.pixAmountLabel}>
+              {pendingPixExpense ? 'a receber' : `saldo total de ${toTitleCase(customer.name)}`}
+            </Text>
 
             {/* QR Code */}
             {pixString ? (
               <View style={styles.pixQrWrapper}>
-                <QRCode
-                  value={pixString}
-                  size={210}
-                  backgroundColor="#ffffff"
-                  color="#000000"
-                />
+                <QRCode value={pixString} size={200} backgroundColor="#ffffff" color="#000000" />
               </View>
             ) : null}
 
@@ -780,19 +904,65 @@ export default function ClienteDetalhe() {
 
             {/* Botão copiar código */}
             <TouchableOpacity
-              style={[styles.copyBtn, { backgroundColor: copied ? colors.success : colors.primary }]}
+              style={[
+                styles.copyBtn,
+                {
+                  backgroundColor: copied ? colors.success : colors.primary + '22',
+                  borderWidth: 1,
+                  borderColor: copied ? colors.success : colors.primary,
+                }
+              ]}
               onPress={copyPixCode}
               activeOpacity={0.82}
             >
-              <Copy size={18} color="#fff" />
-              <Text style={[styles.copyBtnText, { color: '#fff' }]}>
+              <Copy size={16} color={copied ? colors.success : colors.primary} />
+              <Text style={[styles.copyBtnText, { color: copied ? colors.success : colors.primary }]}>
                 {copied ? 'Código copiado! ✓' : 'Copiar Pix Copia e Cola'}
               </Text>
             </TouchableOpacity>
 
-            <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 24, paddingBottom: 20 }}>
-              O cliente escaneia o QR Code ou cola o código no app do banco para pagar.
+            <Text style={{ fontSize: 11, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: 24, marginBottom: 16 }}>
+              {pendingPixExpense
+                ? 'Após receber o PIX, toque em "Recebi" para registrar o pagamento.'
+                : 'Toque em "Recebi o total" para quitar todas as dívidas de uma vez.'}
             </Text>
+
+            {/* Botões: Recebi / Cancelar (só no modo pagamento) */}
+            {pendingPixExpense ? (
+              <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 20, width: '100%' }}>
+                <TouchableOpacity
+                  onPress={() => setShowPixModal(false)}
+                  style={{ flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ fontSize: 14, fontFamily: 'Inter-SemiBold', color: colors.textSecondary }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handlePixExpenseConfirm}
+                  style={{ flex: 2, paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: colors.success }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ fontSize: 15, fontFamily: 'Inter-Bold', color: '#fff' }}>Recebi o pagamento ✓</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 20, width: '100%' }}>
+                <TouchableOpacity
+                  onPress={() => setShowPixModal(false)}
+                  style={{ flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ fontSize: 14, fontFamily: 'Inter-SemiBold', color: colors.textSecondary }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handlePixChargeConfirm}
+                  style={{ flex: 2, paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: colors.success }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ fontSize: 15, fontFamily: 'Inter-Bold', color: '#fff' }}>Recebi o total ✓</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </Modal>

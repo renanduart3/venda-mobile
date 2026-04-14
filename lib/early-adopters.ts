@@ -41,6 +41,23 @@ export interface UserSubscriptionInfo {
 }
 
 /**
+ * Converte o count REAL do banco em status de exibição somando os 20 iniciais de social proof.
+ * O banco armazena apenas usuários reais (max = TOTAL_EARLY_ADOPTER_SLOTS - INITIAL_FAKE_COUNT = 980).
+ * A UI exibe sempre real + fake, limitado a TOTAL_EARLY_ADOPTER_SLOTS (1000).
+ * Quando o display chega em 1000/1000 → isAvailable = false, tudo fecha automaticamente.
+ */
+function buildDisplayStatus(realCount: number): EarlyAdopterStatus {
+  const displayed = Math.min(realCount + PRICING.INITIAL_FAKE_COUNT, PRICING.TOTAL_EARLY_ADOPTER_SLOTS);
+  const remaining = Math.max(0, PRICING.TOTAL_EARLY_ADOPTER_SLOTS - displayed);
+  return {
+    totalSlots: PRICING.TOTAL_EARLY_ADOPTER_SLOTS,
+    currentCount: displayed,
+    slotsRemaining: remaining,
+    isAvailable: displayed < PRICING.TOTAL_EARLY_ADOPTER_SLOTS,
+  };
+}
+
+/**
  * Verifica se ainda há vagas para early adopters.
  * Cache de memória de 5 minutos — o Realtime em planos.tsx mantém o contador
  * atualizado em tempo real sem precisar rebater no banco a cada foco de tela.
@@ -52,19 +69,22 @@ export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatu
   }
 
   try {
-    // Tenta via RPC primeiro
+    // Tenta via RPC primeiro (retorna snake_case — mapeia para camelCase)
     const { data, error } = await supabase
       .rpc('get_early_adopter_status');
 
     if (!error && data && data.length > 0) {
-      _earlyAdopterCache = { status: data[0], expiresAt: Date.now() + EARLY_ADOPTER_CACHE_TTL_MS };
-      return data[0];
+      const row = data[0];
+      const realCount = row.current_count ?? row.currentCount ?? 0;
+      const status = buildDisplayStatus(realCount);
+      _earlyAdopterCache = { status, expiresAt: Date.now() + EARLY_ADOPTER_CACHE_TTL_MS };
+      return status;
     }
 
     // Fallback: lê direto da tabela se a RPC falhar (ex: timeout no Free tier)
     const { data: configData, error: configError } = await supabase
       .from('early_adopter_config')
-      .select('total_slots, current_count')
+      .select('current_count')
       .eq('is_active', true)
       .limit(1)
       .single();
@@ -74,13 +94,7 @@ export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatu
       return null;
     }
 
-    const slotsRemaining = configData.total_slots - configData.current_count;
-    const status: EarlyAdopterStatus = {
-      totalSlots: configData.total_slots,
-      currentCount: configData.current_count,
-      slotsRemaining,
-      isAvailable: slotsRemaining > 0,
-    };
+    const status = buildDisplayStatus(configData.current_count);
     _earlyAdopterCache = { status, expiresAt: Date.now() + EARLY_ADOPTER_CACHE_TTL_MS };
     return status;
   } catch (error) {

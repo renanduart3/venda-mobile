@@ -7,8 +7,35 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# react-native-reanimated
--keep class com.swmansion.reanimated.** { *; }
+# React Native
+-keep class com.facebook.react.** { *; }
+-keep class com.facebook.hermes.** { *; }
+-keep class com.facebook.jni.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
-# Add any project specific keep options here:
+# Reanimated
+-keep class com.swmansion.reanimated.** { *; }
+-keep class com.swmansion.gesturehandler.** { *; }
+
+# Expo modules
+-keep class expo.modules.** { *; }
+
+# Google Play Billing (IAP)
+-keep class com.android.billingclient.** { *; }
+
+# Supabase / networking
+-keep class io.github.jan.supabase.** { *; }
+-dontwarn okhttp3.**
+-dontwarn okio.**
+
+# Keep JS interfaces / reflection
+-keepclassmembers class * {
+    @com.facebook.react.bridge.ReactMethod *;
+}
+-keepclassmembers class * {
+    @com.facebook.react.uimanager.annotations.ReactProp *;
+}
+
+# Prevent stripping Firebase (google-services)
+-keep class com.google.firebase.** { *; }
+-keep class com.google.android.gms.** { *; }

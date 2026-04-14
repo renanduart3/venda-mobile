@@ -187,6 +187,12 @@ export async function initDB() {
     try {
       await execSql(`ALTER TABLE products ADD COLUMN cost_price REAL DEFAULT 0;`, [], true);
     } catch (e) { /* ignore */ }
+    try {
+      await execSql(`ALTER TABLE products ADD COLUMN time_minutes INTEGER DEFAULT 0;`, [], true);
+    } catch (e) { /* ignore */ }
+    try {
+      await execSql(`ALTER TABLE products ADD COLUMN material_cost REAL DEFAULT 0;`, [], true);
+    } catch (e) { /* ignore */ }
 
     await execSql(`
       CREATE TABLE IF NOT EXISTS customers (

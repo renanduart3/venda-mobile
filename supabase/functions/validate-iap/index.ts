@@ -305,22 +305,30 @@ async function claimEarlyAdopterSlotIfAvailable(
     return false;
   }
 
-  // Usuário já tem registro: devolve o status atual sem reivindicar novo slot.
-  // Isso evita double-count em revalidações periódicas.
-  if (existing !== null) {
-    const alreadyEA = existing.is_early_adopter === true;
-    console.log(`[EarlyAdopter] Registro existente para userId=${userId} is_early_adopter=${alreadyEA}`);
-    return alreadyEA;
+  // ✅ Já é early adopter confirmado — retorna imediatamente sem bater no RPC.
+  // Cobre revalidações periódicas e evita double-count.
+  if (existing?.is_early_adopter === true) {
+    console.log(`[EarlyAdopter] Já é early adopter userId=${userId}`);
+    return true;
   }
 
-  // Novo usuário (sem registro): tenta reivindicar uma vaga de early adopter
+  // ⚠️  BUG ANTERIOR: a condição era `existing !== null`, o que bloqueava permanentemente
+  // qualquer usuário que tivesse um registro com is_early_adopter=false (ex: validação
+  // anterior que falhou antes de registrar a compra, tentativa com purchase token errado, etc.).
+  //
+  // CORREÇÃO: checamos o VALOR de is_early_adopter, não a existência da linha.
+  // Se o registro existe com false OU não existe nenhum registro → tenta reivindicar o slot.
+  const hadExistingRecord = existing !== null;
   const { data, error } = await supabase.rpc("claim_early_adopter_slot");
   if (error) {
     console.warn("[EarlyAdopter] Falha ao chamar claim_early_adopter_slot:", error.message);
     return false;
   }
   const claimed = data === true;
-  console.log(`[EarlyAdopter] Slot reivindicado para novo usuário userId=${userId} claimed=${claimed}`);
+  console.log(
+    `[EarlyAdopter] Tentativa de slot para userId=${userId}` +
+    ` claimed=${claimed} hadPreviousRecord=${hadExistingRecord}`
+  );
   return claimed;
 }
 

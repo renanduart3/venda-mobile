@@ -409,12 +409,52 @@ export default function Financas() {
   const togglePaidStatus = async (expense: any) => {
     try {
       const updatedAt = formatBrDate(new Date());
+      const markingAsPaid = !expense.paid;
       await db.update(
         'expenses',
-        { paid: !expense.paid, updated_at: updatedAt, paid_at: !expense.paid ? updatedAt : null },
+        { paid: markingAsPaid, updated_at: updatedAt, paid_at: markingAsPaid ? updatedAt : null },
         'id = ?',
         [expense.id]
       );
+
+      // Se é recorrente e está sendo marcada como paga, cria a próxima competência automaticamente
+      if (markingAsPaid && expense.recurring) {
+        // Calcula o due_date do próximo mês (mesmo dia, mês seguinte)
+        let nextDueDate = '';
+        if (expense.due_date && /^\d{2}\/\d{2}\/\d{4}$/.test(expense.due_date)) {
+          const [dd, mm, yyyy] = expense.due_date.split('/').map(Number);
+          const next = new Date(yyyy, mm, dd); // mm já é 0-based aqui pois passamos o mês+1
+          nextDueDate = `${String(next.getDate()).padStart(2, '0')}/${String(next.getMonth() + 1).padStart(2, '0')}/${next.getFullYear()}`;
+        } else {
+          // Sem due_date: próximo mês a partir de hoje
+          const next = new Date();
+          next.setMonth(next.getMonth() + 1);
+          nextDueDate = `${String(next.getDate()).padStart(2, '0')}/${String(next.getMonth() + 1).padStart(2, '0')}/${next.getFullYear()}`;
+        }
+
+        // Verifica se já existe recorrente com mesmo nome naquele mês (evita duplicata)
+        const nextMonthKey = toMonthKey(nextDueDate);
+        const alreadyExists = expenses.some(
+          e => e.recurring && e.name === expense.name && toMonthKey(e.due_date || e.created_at) === nextMonthKey
+        );
+
+        if (!alreadyExists) {
+          await db.insert('expenses', {
+            id: Date.now().toString(),
+            name: expense.name,
+            amount: expense.amount,
+            original_amount: expense.amount,
+            due_date: nextDueDate,
+            paid: false,
+            recurring: true,
+            customer_id: expense.customer_id || null,
+            created_at: updatedAt,
+            updated_at: updatedAt,
+            paid_at: null,
+          });
+        }
+      }
+
       await loadExpenses();
     } catch (error) {
       console.error('Error toggling expense status:', error);
