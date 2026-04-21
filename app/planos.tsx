@@ -49,7 +49,14 @@ export default function Planos() {
   const [selectedPlan, setSelectedPlan] = useState<string>('yearly');
   const [isLoading, setIsLoading] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
-  const [earlyAdopterStatus, setEarlyAdopterStatus] = useState<EarlyAdopterStatus | null>(null);
+  // Inicializa com o estado "fake" inicial (20/1000) para garantir que o banner apareça
+  // no primeiro render, antes da consulta ao Supabase retornar.
+  const [earlyAdopterStatus, setEarlyAdopterStatus] = useState<EarlyAdopterStatus | null>({
+    totalSlots: PRICING.TOTAL_EARLY_ADOPTER_SLOTS,
+    currentCount: PRICING.INITIAL_FAKE_COUNT,
+    slotsRemaining: PRICING.TOTAL_EARLY_ADOPTER_SLOTS - PRICING.INITIAL_FAKE_COUNT,
+    isAvailable: true,
+  });
   const [isFormerEarlyAdopter, setIsFormerEarlyAdopter] = useState(false);
   const [monthlyPricing, setMonthlyPricing] = useState<PricingDisplayInfo | null>(null);
   const [yearlyPricing, setYearlyPricing] = useState<PricingDisplayInfo | null>(null);
@@ -626,6 +633,12 @@ export default function Planos() {
   const isEarlyAdopter = !isFormerEarlyAdopter && (earlyAdopterStatus?.isAvailable ?? true);
   const pricing = selectedPlan === 'monthly' ? monthlyPricing : yearlyPricing;
 
+  // O banner de contador de vagas deve aparecer SEMPRE que existir disponibilidade,
+  // independente do usuário ser assinante ou não. É social proof permanente.
+  const hasSlotsAvailable = (earlyAdopterStatus?.slotsRemaining ?? 0) > 0
+    || (earlyAdopterStatus?.isAvailable ?? true);
+  const isActiveSubscriber = !!activeSubscription?.isActive;
+
   // Preço atual: vem do Play Console via IAP cache; fallback para PRICING se ainda não carregou
   const iapCurrentPrice = selectedPlan === 'monthly' ? iapMonthlyPrice : iapYearlyPrice;
   const currentPriceFormatted = iapCurrentPrice
@@ -657,18 +670,38 @@ export default function Planos() {
         contentContainerStyle={{ paddingBottom: bottomSpacer }}
       >
 
-        {/* Early Adopter Banner — vagas disponíveis */}
-        {isEarlyAdopter && earlyAdopterStatus !== null && (
+        {/* ══════════════════════════════════════════════════════════════════
+             Early Adopter — contador de vagas
+             Sempre aparece enquanto houver disponibilidade, INCLUSIVE para
+             assinantes (social proof permanente + confirmação do benefício).
+        ═══════════════════════════════════════════════════════════════════ */}
+        {hasSlotsAvailable && (
           <View style={[styles.earlyAdopterBanner, isUrgent && styles.earlyAdopterBannerUrgent]}>
             <Text style={[styles.earlyAdopterTitle, isUrgent && styles.earlyAdopterTitleUrgent]}>
-              {slotsRemaining <= 10 ? '⚡ Últimas vagas!' : '🎉 Preço fixo para sempre'}
+              {isActiveSubscriber
+                ? '✅ Você garantiu o preço de lançamento'
+                : slotsRemaining <= 10
+                  ? '⚡ Últimas vagas!'
+                  : '🎉 Preço fixo para sempre'}
             </Text>
             <Text style={styles.earlyAdopterDescription}>
-              Você está entre os primeiros {PRICING.TOTAL_EARLY_ADOPTER_SLOTS} clientes.{' '}
-              <Text style={{ fontFamily: 'Inter-Bold', color: isUrgent ? colors.warning : colors.primary }}>
-                Esse preço nunca vai subir para você
-              </Text>
-              {' '}— enquanto mantiver a assinatura ativa.
+              {isActiveSubscriber ? (
+                <>
+                  Você faz parte dos primeiros {PRICING.TOTAL_EARLY_ADOPTER_SLOTS} clientes.{' '}
+                  <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
+                    Seu preço nunca vai subir
+                  </Text>
+                  {' '}— enquanto mantiver a assinatura ativa.
+                </>
+              ) : (
+                <>
+                  Você está entre os primeiros {PRICING.TOTAL_EARLY_ADOPTER_SLOTS} clientes.{' '}
+                  <Text style={{ fontFamily: 'Inter-Bold', color: isUrgent ? colors.warning : colors.primary }}>
+                    Esse preço nunca vai subir para você
+                  </Text>
+                  {' '}— enquanto mantiver a assinatura ativa.
+                </>
+              )}
             </Text>
             <Text style={[styles.earlyAdopterCounter, isUrgent && styles.earlyAdopterCounterUrgent]}>
               {`${slotsUsed}/${totalSlots} vagas ocupadas — restam ${slotsRemaining}`}
@@ -676,8 +709,8 @@ export default function Planos() {
           </View>
         )}
 
-        {/* Banner — vagas esgotadas */}
-        {!isEarlyAdopter && earlyAdopterStatus !== null && (
+        {/* Banner — vagas esgotadas (só mostra quando REALMENTE acabou) */}
+        {!hasSlotsAvailable && earlyAdopterStatus !== null && (
           <View style={[styles.earlyAdopterBanner, { backgroundColor: colors.surface, borderLeftColor: colors.textSecondary }]}>
             <Text style={[styles.earlyAdopterTitle, { color: colors.text }]}>
               Plano Premium

@@ -24,6 +24,9 @@ export const PRICING = {
   },
   TOTAL_EARLY_ADOPTER_SLOTS: 1000,
   INITIAL_FAKE_COUNT: 20, // Contador mínimo exibido enquanto o banco carrega
+  // Usado por calculateRegularPrice() e getPricingDisplayInfo() para informar
+  // quanto o preço vai subir após os 1000 primeiros. Ex: 90 = +90% sobre early adopter.
+  INCREASE_PERCENTAGE: 90,
 };
 
 export interface EarlyAdopterStatus {
@@ -62,11 +65,15 @@ function buildDisplayStatus(realCount: number): EarlyAdopterStatus {
  * Cache de memória de 5 minutos — o Realtime em planos.tsx mantém o contador
  * atualizado em tempo real sem precisar rebater no banco a cada foco de tela.
  */
-export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatus | null> {
+export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatus> {
   // Retorna do cache se ainda válido
   if (_earlyAdopterCache && Date.now() < _earlyAdopterCache.expiresAt) {
     return _earlyAdopterCache.status;
   }
+
+  // Fallback garantido — usado se qualquer consulta falhar.
+  // Mostra o estado inicial (20/1000 vagas ocupadas, 980 disponíveis) em vez de esconder o banner.
+  const fallbackStatus = buildDisplayStatus(0);
 
   try {
     // Tenta via RPC primeiro (retorna snake_case — mapeia para camelCase)
@@ -91,7 +98,8 @@ export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatu
 
     if (configError || !configData) {
       console.error('Erro ao verificar vagas early adopter:', configError);
-      return null;
+      // Retorna fallback em vez de null — banner continua aparecendo
+      return fallbackStatus;
     }
 
     const status = buildDisplayStatus(configData.current_count);
@@ -99,7 +107,8 @@ export async function checkEarlyAdopterAvailability(): Promise<EarlyAdopterStatu
     return status;
   } catch (error) {
     console.error('Erro ao verificar early adopter:', error);
-    return null;
+    // Nunca deixa o banner sumir por falha de rede
+    return fallbackStatus;
   }
 }
 

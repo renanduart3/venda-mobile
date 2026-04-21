@@ -55,6 +55,7 @@ export default function Produtos() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [premium, setPremium] = useState<boolean | null>(null);
 
   // ── Product modal state ───────────────────────────────────────────────────
   const [showProductModal, setShowProductModal] = useState(false);
@@ -77,8 +78,8 @@ export default function Produtos() {
   const [serviceFormData, setServiceFormData] = useState({
     name: '',
     description: '',
-    time_value: '',
-    time_unit: 'minutes' as 'hours' | 'minutes',
+    // modelo de precificação: preço fechado / por hora / por área (m²) / por quantidade
+    pricing_model: 'fixed' as 'fixed' | 'hour' | 'area' | 'quantity',
     has_material: false,
     material_cost: '',
     price: '',
@@ -86,7 +87,30 @@ export default function Produtos() {
 
   useEffect(() => {
     loadProducts();
+    (async () => {
+      try {
+        const { isPremium } = await import('@/lib/premium');
+        setPremium(await isPremium());
+      } catch {
+        setPremium(false);
+      }
+    })();
   }, []);
+
+  const openMarkupCalculator = () => {
+    if (!premium) {
+      Alert.alert(
+        '🔒 Recurso Premium',
+        'A Calculadora de Markup é exclusiva para assinantes. Ela analisa sua carteira inteira de produtos e serviços e mostra se sua política de preços está saudável.',
+        [
+          { text: 'Agora não', style: 'cancel' },
+          { text: 'Ver planos', onPress: () => router.push('/planos' as any) },
+        ],
+      );
+      return;
+    }
+    router.push('/calculadora-markup' as any);
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -200,13 +224,13 @@ export default function Produtos() {
   const openServiceModal = (product?: Product) => {
     if (product) {
       const rawTime = product.time_minutes || 0;
-      const useHours = rawTime > 0 && rawTime % 60 === 0 && rawTime >= 60;
+      // Infere modelo: se tem tempo legado no banco → por hora; senão → fixo
+      const inferredModel: 'fixed' | 'hour' = rawTime > 0 ? 'hour' : 'fixed';
       setEditingService(product);
       setServiceFormData({
         name: product.name,
         description: product.description || '',
-        time_value: rawTime === 0 ? '' : useHours ? String(rawTime / 60) : String(rawTime),
-        time_unit: useHours ? 'hours' : 'minutes',
+        pricing_model: inferredModel,
         has_material: (product.material_cost || 0) > 0,
         material_cost: product.material_cost ? product.material_cost.toFixed(2) : '',
         price: product.price.toString(),
@@ -216,8 +240,7 @@ export default function Produtos() {
       setServiceFormData({
         name: '',
         description: '',
-        time_value: '',
-        time_unit: 'minutes',
+        pricing_model: 'fixed',
         has_material: false,
         material_cost: '',
         price: '',
@@ -232,8 +255,7 @@ export default function Produtos() {
     setServiceFormData({
       name: '',
       description: '',
-      time_value: '',
-      time_unit: 'minutes',
+      pricing_model: 'fixed',
       has_material: false,
       material_cost: '',
       price: '',
@@ -251,8 +273,9 @@ export default function Produtos() {
       const priceValue = parseFloat(serviceFormData.price.replace(',', '.'));
       if (Number.isNaN(priceValue)) { Alert.alert('Erro', 'Informe um preço válido.'); return; }
 
-      const timeRaw = parseInt(serviceFormData.time_value, 10) || 0;
-      const timeMinutes = serviceFormData.time_unit === 'hours' ? timeRaw * 60 : timeRaw;
+      // Todos os modelos tratam o preço como "por unidade de cobrança"
+      // (hora, m², unidade ou fechado). O time_minutes fica sempre 0.
+      const timeMinutes = 0;
 
       const materialCost = serviceFormData.has_material
         ? parseFloat(serviceFormData.material_cost.replace(',', '.')) || 0
@@ -399,22 +422,50 @@ export default function Produtos() {
           </TouchableOpacity>
         </View>
 
-        {/* Items per page */}
-        <View style={styles.itemsPerPageContainer}>
-          <Text style={styles.itemsPerPageText}>Itens por página:</Text>
-          <View style={styles.itemsPerPageButtons}>
-            {[10, 50, 100].map((count) => (
-              <TouchableOpacity
-                key={count}
-                style={[styles.itemsPerPageButton, itemsPerPage === count && styles.itemsPerPageButtonActive]}
-                onPress={() => handleItemsPerPageChange(count)}
-              >
-                <Text style={[styles.itemsPerPageButtonText, itemsPerPage === count && styles.itemsPerPageButtonTextActive]}>
-                  {count}
-                </Text>
-              </TouchableOpacity>
-            ))}
+        {/* Items per page + ícone da calculadora de markup (direita) */}
+        <View style={[styles.itemsPerPageContainer, { justifyContent: 'space-between' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+            <Text style={styles.itemsPerPageText}>Itens por página:</Text>
+            <View style={styles.itemsPerPageButtons}>
+              {[10, 50, 100].map((count) => (
+                <TouchableOpacity
+                  key={count}
+                  style={[styles.itemsPerPageButton, itemsPerPage === count && styles.itemsPerPageButtonActive]}
+                  onPress={() => handleItemsPerPageChange(count)}
+                >
+                  <Text style={[styles.itemsPerPageButtonText, itemsPerPage === count && styles.itemsPerPageButtonTextActive]}>
+                    {count}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
+
+          {/* Calculadora de markup geral — sempre visível; gate no clique */}
+          <TouchableOpacity
+            onPress={openMarkupCalculator}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: premium ? colors.primary + '55' : colors.border,
+              backgroundColor: premium ? colors.primary + '12' : colors.surface,
+            }}
+            activeOpacity={0.7}
+          >
+            <Calculator size={16} color={premium ? colors.primary : colors.textSecondary} />
+            <Text style={{
+              fontSize: 11,
+              fontFamily: 'Inter-SemiBold',
+              color: premium ? colors.primary : colors.textSecondary,
+            }}>
+              {premium ? 'Markup' : '🔒 Markup'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* List */}
@@ -628,11 +679,11 @@ export default function Produtos() {
                 {/* Batch cost calculator */}
                 <View style={{ marginBottom: 14, backgroundColor: colors.surface, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: colors.border }}>
                   <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    🧮 Calcular custo por lote
+                    🧮 Custo por lote
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 8 }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, { fontSize: 12 }]}>Pagou no lote (R$)</Text>
+                      <Text style={[styles.label, { fontSize: 12 }]}>Valor lote (R$)</Text>
                       <TextInput
                         style={[styles.input, { marginBottom: 0 }]}
                         value={lotCost}
@@ -649,7 +700,7 @@ export default function Produtos() {
                       />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, { fontSize: 12 }]}>Rende (usos)</Text>
+                      <Text style={[styles.label, { fontSize: 12 }]}>Unidades lote</Text>
                       <TextInput
                         style={[styles.input, { marginBottom: 0 }]}
                         value={lotYield}
@@ -672,7 +723,7 @@ export default function Produtos() {
                     if (lot > 0 && uses > 0)
                       return (
                         <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.primary, marginTop: 8 }}>
-                          = R$ {(lot / uses).toFixed(2).replace('.', ',')} por uso → preenchido automaticamente
+                          = R$ {(lot / uses).toFixed(2).replace('.', ',')} por unidade → preenchido automaticamente
                         </Text>
                       );
                     return (
@@ -768,54 +819,50 @@ export default function Produtos() {
                   />
                 </View>
 
-                {/* Tempo estimado */}
+                {/* Modelo de precificação */}
                 <View style={styles.formGroup}>
-                  <Text style={styles.label}>Tempo estimado</Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <TextInput
-                      style={[styles.input, { flex: 1 }]}
-                      value={serviceFormData.time_value}
-                      onChangeText={(text) => setServiceFormData({ ...serviceFormData, time_value: text })}
-                      placeholder={serviceFormData.time_unit === 'hours' ? 'Ex: 2' : 'Ex: 30'}
-                      placeholderTextColor={colors.textSecondary}
-                      keyboardType="number-pad"
-                    />
-                    {/* Unit toggle */}
-                    <View style={{ flexDirection: 'row', borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: colors.border }}>
-                      <TouchableOpacity
-                        style={{
-                          paddingHorizontal: 14,
-                          paddingVertical: 10,
-                          backgroundColor: serviceFormData.time_unit === 'minutes' ? colors.primary : colors.surface,
-                        }}
-                        onPress={() => setServiceFormData({ ...serviceFormData, time_unit: 'minutes' })}
-                      >
-                        <Text style={{
-                          fontFamily: 'Inter-SemiBold',
-                          fontSize: 13,
-                          color: serviceFormData.time_unit === 'minutes' ? colors.white : colors.textSecondary,
-                        }}>
-                          min
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={{
-                          paddingHorizontal: 14,
-                          paddingVertical: 10,
-                          backgroundColor: serviceFormData.time_unit === 'hours' ? colors.primary : colors.surface,
-                        }}
-                        onPress={() => setServiceFormData({ ...serviceFormData, time_unit: 'hours' })}
-                      >
-                        <Text style={{
-                          fontFamily: 'Inter-SemiBold',
-                          fontSize: 13,
-                          color: serviceFormData.time_unit === 'hours' ? colors.white : colors.textSecondary,
-                        }}>
-                          h
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
+                  <Text style={styles.label}>Como você cobra esse serviço?</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {[
+                      { key: 'fixed',    label: 'Preço fechado' },
+                      { key: 'hour',     label: 'Por hora' },
+                      { key: 'area',     label: 'Por m²' },
+                      { key: 'quantity', label: 'Por quantidade' },
+                    ].map((opt) => {
+                      const active = serviceFormData.pricing_model === opt.key;
+                      return (
+                        <TouchableOpacity
+                          key={opt.key}
+                          onPress={() => setServiceFormData({ ...serviceFormData, pricing_model: opt.key as any })}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            borderRadius: 8,
+                            borderWidth: 1,
+                            borderColor: active ? colors.primary : colors.border,
+                            backgroundColor: active ? colors.primary : colors.surface,
+                          }}
+                        >
+                          <Text style={{
+                            fontSize: 12,
+                            fontFamily: 'Inter-SemiBold',
+                            color: active ? colors.white : colors.text,
+                          }}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginTop: 6 }}>
+                    {serviceFormData.pricing_model === 'fixed'
+                      ? 'Preço único estimado, independente de tempo ou tamanho.'
+                      : serviceFormData.pricing_model === 'hour'
+                      ? 'Informe o valor da sua hora no campo de preço.'
+                      : serviceFormData.pricing_model === 'area'
+                      ? 'Informe o valor por metro quadrado no campo de preço.'
+                      : 'Informe o valor por unidade/peça no campo de preço.'}
+                  </Text>
                 </View>
 
                 {/* Material extra toggle */}
@@ -849,7 +896,12 @@ export default function Produtos() {
                 )}
 
                 <View style={styles.formGroup}>
-                  <Text style={styles.label}>Preço que você cobra (R$) *</Text>
+                  <Text style={styles.label}>
+                    {serviceFormData.pricing_model === 'area'     ? 'Preço por m² (R$) *'
+                    : serviceFormData.pricing_model === 'quantity' ? 'Preço por unidade (R$) *'
+                    : serviceFormData.pricing_model === 'hour'     ? 'Preço total do serviço (R$) *'
+                    : 'Preço que você cobra (R$) *'}
+                  </Text>
                   <TextInput
                     style={styles.input}
                     value={serviceFormData.price}

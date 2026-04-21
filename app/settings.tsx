@@ -24,6 +24,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { router, useFocusEffect } from 'expo-router';
 import { isPremium, getPremiumStatus, PremiumStatus } from '@/lib/premium';
+import { checkEarlyAdopterAvailability, PRICING, EarlyAdopterStatus } from '@/lib/early-adopters';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createSettingsStyles } from './settings.styles';
 import { useAuth } from '@/contexts/AuthContext';
@@ -95,6 +96,13 @@ export default function Settings() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [premium, setPremium] = useState(false);
   const [premiumDetails, setPremiumDetails] = useState<PremiumStatus | null>(null);
+  // Estado de early adopter — garantido com fallback inicial para aparecer de imediato
+  const [earlyAdopterStatus, setEarlyAdopterStatus] = useState<EarlyAdopterStatus>({
+    totalSlots: PRICING.TOTAL_EARLY_ADOPTER_SLOTS,
+    currentCount: PRICING.INITIAL_FAKE_COUNT,
+    slotsRemaining: PRICING.TOTAL_EARLY_ADOPTER_SLOTS - PRICING.INITIAL_FAKE_COUNT,
+    isAvailable: true,
+  });
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -119,6 +127,10 @@ export default function Settings() {
       const details = await getPremiumStatus();
       setPremium(isUserPremium);
       setPremiumDetails(details);
+      // Atualiza contador de early adopters em paralelo (não bloqueia o premium)
+      checkEarlyAdopterAvailability()
+        .then(status => { if (status) setEarlyAdopterStatus(status); })
+        .catch(() => {});
     } catch (e) {
       console.error('Erro carregando premium', e);
       setPremium(false);
@@ -573,6 +585,32 @@ export default function Settings() {
 
               {premium && premiumDetails && (
                 <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 12 }}>
+                  {/* Banner de early adopter — mesmo texto da página de planos */}
+                  {earlyAdopterStatus.isAvailable && !premiumDetails.hasLifetimeAccess && (
+                    <View style={{
+                      backgroundColor: colors.primary + '12',
+                      borderLeftWidth: 4,
+                      borderLeftColor: colors.primary,
+                      borderRadius: 8,
+                      padding: 12,
+                      marginBottom: 12,
+                    }}>
+                      <Text style={{ fontSize: 14, fontFamily: 'Inter-Bold', color: colors.primary, marginBottom: 6 }}>
+                        ✅ Você garantiu o preço de lançamento
+                      </Text>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter-Regular', color: colors.text, lineHeight: 18 }}>
+                        Você faz parte dos primeiros {PRICING.TOTAL_EARLY_ADOPTER_SLOTS} clientes.{' '}
+                        <Text style={{ fontFamily: 'Inter-Bold', color: colors.primary }}>
+                          Seu preço nunca vai subir
+                        </Text>
+                        {' '}— enquanto mantiver a assinatura ativa.
+                      </Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter-SemiBold', color: colors.primary, marginTop: 8 }}>
+                        {earlyAdopterStatus.currentCount}/{earlyAdopterStatus.totalSlots} vagas ocupadas — restam {earlyAdopterStatus.slotsRemaining}
+                      </Text>
+                    </View>
+                  )}
+
                   {!premiumDetails.hasLifetimeAccess && premiumDetails.productId && (
                     <Text style={{ fontSize: 13, fontFamily: 'Inter-Medium', color: colors.text, marginBottom: 4 }}>
                       Periodicidade: <Text style={{ color: colors.textSecondary }}>{premiumDetails.productId.includes('monthly') ? 'Mensal' : 'Anual'}</Text>

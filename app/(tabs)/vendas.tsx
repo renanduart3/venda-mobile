@@ -382,17 +382,7 @@ export default function Vendas() {
   };
 
   const handleShowPixFixo = () => {
-    if (!premium) {
-      Alert.alert(
-        '🔒 Recurso Premium',
-        'QR Code PIX está disponível apenas para assinantes.',
-        [
-          { text: 'Agora não', style: 'cancel' },
-          { text: 'Ver planos', onPress: () => router.push('/planos') },
-        ],
-      );
-      return;
-    }
+    // QR estático (sem valor) é liberado para todos — só o QR com valor é premium
     if (pixKeys.length === 0) {
       Alert.alert(
         'Chave PIX não configurada',
@@ -814,9 +804,9 @@ export default function Vendas() {
       {/* Botão QR Fixo — pill compacto, canto esquerdo acima das abas */}
       <View style={styles.pixFixoButtonWrapper}>
         <TouchableOpacity style={styles.pixFixoButton} onPress={handleShowPixFixo}>
-          <QrCode size={14} color={premium ? colors.primary : colors.textSecondary} />
-          <Text style={[styles.pixFixoLabel, { marginTop: 0, color: premium ? colors.primary : colors.textSecondary }]}>
-            {premium ? 'Suas chaves PIX' : '🔒 Suas chaves PIX'}
+          <QrCode size={14} color={colors.primary} />
+          <Text style={[styles.pixFixoLabel, { marginTop: 0, color: colors.primary }]}>
+            Suas chaves PIX
           </Text>
         </TouchableOpacity>
         <Text style={styles.pixFixoLabel}>QR Code estático • sem valor</Text>

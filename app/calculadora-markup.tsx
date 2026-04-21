@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Package, Wrench, Save } from 'lucide-react-native';
+import { ArrowLeft, Package, Wrench, Save, Edit3, Lock } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { TextInput } from '@/components/ui/TextInput';
 import { Card } from '@/components/ui/Card';
@@ -122,6 +122,9 @@ export default function CalculadoraMarkup() {
 
   // ── Block A — configuração do negócio ────────────────────────────────────
   const [config, setConfig] = useState<MarkupConfig>(DEFAULT_CONFIG);
+  // locked: true = campos em modo "somente leitura" (depois de salvar)
+  //         false = campos editáveis. Começa true se já houver config salva.
+  const [locked, setLocked] = useState(true);
 
   // ── Produtos para painel (Block B) ────────────────────────────────────────
   const [items, setItems]  = useState<any[]>([]);
@@ -129,8 +132,15 @@ export default function CalculadoraMarkup() {
   // ── Carga inicial ─────────────────────────────────────────────────────────
   useEffect(() => {
     AsyncStorage.getItem(CONFIG_KEY)
-      .then(raw => { if (raw) setConfig(JSON.parse(raw)); })
-      .catch(() => {});
+      .then(raw => {
+        if (raw) {
+          setConfig(JSON.parse(raw));
+          setLocked(true);  // já tem config salva → inicia travada
+        } else {
+          setLocked(false); // primeira vez → abre editável
+        }
+      })
+      .catch(() => { setLocked(false); });
 
     if (!isReadonly) {
       db.query(
@@ -149,7 +159,8 @@ export default function CalculadoraMarkup() {
 
   const saveConfig = async () => {
     await AsyncStorage.setItem(CONFIG_KEY, JSON.stringify(config)).catch(() => {});
-    Alert.alert('✅ Salvo', 'Configuração salva com sucesso!');
+    setLocked(true);
+    Alert.alert('✅ Salvo', 'Configuração salva. Toque em "Editar" para alterar.');
   };
 
   // ── Painel da carteira ────────────────────────────────────────────────────
@@ -411,38 +422,51 @@ export default function CalculadoraMarkup() {
             {/* ══ MODO NORMAL ════════════════════════════════════════════════ */}
 
             {/* ── BLOCO A: Configuração do negócio ──────────────────────────── */}
-            <Text style={S.secTitle}>Como está seu negócio?</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, marginTop: 4 }}>
+              <Text style={[S.secTitle, { marginBottom: 0, marginTop: 0 }]}>Como está seu negócio?</Text>
+              {locked && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: colors.surface, borderRadius: 6, borderWidth: 1, borderColor: colors.border }}>
+                  <Lock size={11} color={colors.textSecondary} />
+                  <Text style={{ fontSize: 10, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Travado
+                  </Text>
+                </View>
+              )}
+            </View>
 
             <Text style={S.label}>Meta de ganho mensal (R$)</Text>
             <Text style={S.labelSub}>O que você quer tirar para você</Text>
             <TextInput
-              style={S.input}
+              style={[S.input, locked && { backgroundColor: colors.surface, color: colors.textSecondary }]}
               value={config.metaMensal}
               onChangeText={v => setConfig(c => ({ ...c, metaMensal: v }))}
               placeholder="Ex: 4.000"
               placeholderTextColor={colors.textSecondary}
               keyboardType="decimal-pad"
+              editable={!locked}
             />
 
             <Text style={S.label}>Custos fixos mensais (R$)</Text>
             <Text style={S.labelSub}>Aluguel, luz, internet, MEI…</Text>
             <TextInput
-              style={S.input}
+              style={[S.input, locked && { backgroundColor: colors.surface, color: colors.textSecondary }]}
               value={config.custoFixo}
               onChangeText={v => setConfig(c => ({ ...c, custoFixo: v }))}
               placeholder="Ex: 1.500"
               placeholderTextColor={colors.textSecondary}
               keyboardType="decimal-pad"
+              editable={!locked}
             />
 
             <Text style={S.label}>Horas trabalhadas por semana</Text>
             <TextInput
-              style={S.input}
+              style={[S.input, locked && { backgroundColor: colors.surface, color: colors.textSecondary }]}
               value={config.horasSemana}
               onChangeText={v => setConfig(c => ({ ...c, horasSemana: v }))}
               placeholder="Ex: 40"
               placeholderTextColor={colors.textSecondary}
               keyboardType="decimal-pad"
+              editable={!locked}
             />
 
             {/* Resultado: valor por hora */}
@@ -461,10 +485,21 @@ export default function CalculadoraMarkup() {
               )}
             </View>
 
-            <TouchableOpacity style={S.saveBtn} onPress={saveConfig} activeOpacity={0.85}>
-              <Save size={18} color="#fff" />
-              <Text style={S.saveBtnText}>Salvar configuração</Text>
-            </TouchableOpacity>
+            {locked ? (
+              <TouchableOpacity
+                style={[S.saveBtn, { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.primary }]}
+                onPress={() => setLocked(false)}
+                activeOpacity={0.85}
+              >
+                <Edit3 size={18} color={colors.primary} />
+                <Text style={[S.saveBtnText, { color: colors.primary }]}>Editar configuração</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={S.saveBtn} onPress={saveConfig} activeOpacity={0.85}>
+                <Save size={18} color="#fff" />
+                <Text style={S.saveBtnText}>Salvar configuração</Text>
+              </TouchableOpacity>
+            )}
 
             {/* ── BLOCO B: Painel da carteira ───────────────────────────────── */}
             {panelData && panelData.ranked.length > 0 && (
@@ -487,15 +522,15 @@ export default function CalculadoraMarkup() {
                   </View>
                 )}
 
-                {/* Ranking */}
+                {/* Ranking — mais lucrativos (top 5) */}
                 <Card style={{ marginBottom: 14 }}>
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    Ranking — mais ao menos lucrativo
+                  <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: '#22c55e', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    🟢 Mais lucrativos
                   </Text>
-                  {panelData.ranked.map((p, i) => (
+                  {panelData.ranked.slice(0, 5).map((p, i, arr) => (
                     <View
                       key={p.id}
-                      style={i === panelData.ranked.length - 1 ? S.rowLast : S.row}
+                      style={i === arr.length - 1 ? S.rowLast : S.row}
                     >
                       <Text style={{ width: 24, fontSize: 12, color: colors.textSecondary, fontFamily: 'Inter-Regular' }}>
                         {i + 1}°
@@ -515,6 +550,46 @@ export default function CalculadoraMarkup() {
                     </View>
                   ))}
                 </Card>
+
+                {/* Ranking — menor margem / em risco (bottom 5) */}
+                {panelData.ranked.length > 1 && (() => {
+                  const worst = [...panelData.ranked].reverse().slice(0, 5);
+                  // só mostra se houver itens com margem < 30% OU se quiser "só pra saber"
+                  const hasRisk = worst.some(p => p.margin < 30);
+                  if (!hasRisk && panelData.ranked.length < 6) return null;
+                  return (
+                    <Card style={{ marginBottom: 14 }}>
+                      <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: '#ef4444', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        🔴 Menor margem
+                      </Text>
+                      <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginBottom: 10 }}>
+                        Nem sempre é erro — pode ser estratégia. Só pra você saber quais sustentam menos o caixa.
+                      </Text>
+                      {worst.map((p, i, arr) => (
+                        <View
+                          key={p.id}
+                          style={i === arr.length - 1 ? S.rowLast : S.row}
+                        >
+                          <Text style={{ width: 24, fontSize: 12, color: colors.textSecondary, fontFamily: 'Inter-Regular' }}>
+                            {i + 1}°
+                          </Text>
+                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            {p.type === 'service'
+                              ? <Wrench size={12} color={colors.textSecondary} />
+                              : <Package size={12} color={colors.textSecondary} />
+                            }
+                            <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Inter-Regular', color: colors.text }} numberOfLines={1}>
+                              {p.name}
+                            </Text>
+                          </View>
+                          <View style={[S.rankBadge, { backgroundColor: marginColor(p.margin) }]}>
+                            <Text style={S.rankText}>{p.margin.toFixed(1)}%</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </Card>
+                  );
+                })()}
               </>
             )}
 
