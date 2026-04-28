@@ -7,6 +7,12 @@ dist/
 web-build/
 expo-env.d.ts
 
+#ai-agents
+.agent/
+.claude/
+.gemini/
+.github/
+
 # native
 *.orig.*
 *.jks

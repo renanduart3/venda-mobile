@@ -629,8 +629,9 @@ export default function Planos() {
     return <Icon size={16} color={colors.success} />;
   };
 
-  // Early adopter que cancelou perde o direito ao preço promocional para sempre
-  const isEarlyAdopter = !isFormerEarlyAdopter && (earlyAdopterStatus?.isAvailable ?? true);
+  // O chip aparece sempre que a fase early adopter estiver ativa (slots disponíveis),
+  // independente do histórico do usuário. O preço real vem do Play Console via IAP cache.
+  const isEarlyAdopter = earlyAdopterStatus?.isAvailable ?? true;
   const pricing = selectedPlan === 'monthly' ? monthlyPricing : yearlyPricing;
 
   // O banner de contador de vagas deve aparecer SEMPRE que existir disponibilidade,

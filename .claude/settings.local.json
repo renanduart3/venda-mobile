@@ -14,7 +14,8 @@
       "Bash(grep -E \"\\\\.tsx?$\")",
       "Bash(ls -la \"C:\\\\Users\\\\renan\\\\Desktop\\\\projetos-git\\\\venda-mobile\\\\android\\\\app\\\\\"*.jks \"C:\\\\Users\\\\renan\\\\Desktop\\\\projetos-git\\\\venda-mobile\\\\android\\\\app\\\\\"*.keystore)",
       "Bash(keytool -list -v -keystore \"C:\\\\Users\\\\renan\\\\Desktop\\\\projetos-git\\\\venda-mobile\\\\android\\\\app\\\\upload-keystore.jks\" -alias upload -storepass PubliqueiOApp@21)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:github.com)"
     ]
   }
 }
