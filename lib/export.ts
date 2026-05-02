@@ -24,33 +24,36 @@ export async function reportToPDF(html: string, fileName?: string) {
 }
 
 const LABEL_PT: Record<string, string> = {
-  productId: 'ID',
-  productName: 'Nome',
-  totalSold: 'Total',
-  totalRevenue: 'Lucro',
-  averagePrice: 'Média',
-  percentage: 'Percentual',
-  cumulativePercentage: 'Percentual Acumulado',
-  category: 'Categoria',
-  date: 'Data',
-  transactions: 'Transações',
-  total_sales: 'Receita',
-  average_ticket: 'Ticket Médio',
-  method: 'Método',
-  totalAmount: 'Valor Total',
-  transactionCount: 'Transações',
-  hour: 'Hora',
-  sales: 'Vendas',
-  customerId: 'Cliente ID',
-  customerName: 'Cliente',
-  totalPurchases: 'Compras',
-  totalSpent: 'Total Gasto',
-  lastPurchase: 'Última Compra',
-  purchaseFrequency: 'Frequência',
-  costPrice: 'Custo',
-  sellingPrice: 'Preço Venda',
-  profitPerUnit: 'Lucro/Un',
-  profitMarginPercentage: 'Margem %',
+  productId:               'ID Produto',
+  productName:             'Produto',
+  totalSold:               'Qtd. Vendida',
+  totalRevenue:            'Receita (R$)',
+  totalCost:               'Custo (R$)',
+  totalProfit:             'Lucro (R$)',
+  averagePrice:            'Preço Médio (R$)',
+  percentage:              '% Receita',
+  cumulativePercentage:    '% Acumulado',
+  category:                'Curva ABC',
+  date:                    'Data',
+  transactions:            'Transações',
+  total_sales:             'Receita (R$)',
+  average_ticket:          'Ticket Médio (R$)',
+  method:                  'Pagamento',
+  payment_method:          'Pagamento',
+  totalAmount:             'Valor Total (R$)',
+  transactionCount:        'Transações',
+  hour:                    'Hora',
+  sales:                   'Vendas (R$)',
+  customerId:              'ID Cliente',
+  customerName:            'Cliente',
+  totalPurchases:          'Compras',
+  totalSpent:              'Total Gasto (R$)',
+  lastPurchase:            'Última Compra',
+  purchaseFrequency:       'Freq./Mês',
+  costPrice:               'Custo Unit. (R$)',
+  sellingPrice:            'Preço Venda (R$)',
+  profitPerUnit:           'Lucro/Un (R$)',
+  profitMarginPercentage:  'Margem (%)',
 };
 
 export function generateReportHTML(reportTitle: string, reportData: any[], period: string, extraHtml?: string): string {
@@ -60,9 +63,17 @@ export function generateReportHTML(reportTitle: string, reportData: any[], perio
   // Format known enums for tables
   const formattedData = (reportData || []).map(r => {
     const copy = { ...r };
-    if (copy.method) {
-      const m = String(copy.method).toLowerCase();
-      copy.method = m === 'credit' ? 'Crédito' : m === 'debit' ? 'Débito' : m === 'pix' ? 'PIX' : 'Dinheiro';
+    // Normaliza método de pagamento para português
+    const rawMethod = copy.method ?? copy.payment_method;
+    if (rawMethod !== undefined) {
+      const m = String(rawMethod).toLowerCase().trim();
+      const ptMethod = m === 'credit' ? 'Cartão Crédito'
+        : m === 'debit'  ? 'Cartão Débito'
+        : m === 'pix'    ? 'PIX'
+        : m === 'cash'   ? 'Dinheiro'
+        : String(rawMethod);
+      copy.method = ptMethod;
+      if (copy.payment_method !== undefined) copy.payment_method = ptMethod;
     }
     return copy;
   });

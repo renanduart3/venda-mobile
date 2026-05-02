@@ -5,27 +5,27 @@
     
     
       
-      <testcase classname="fastlane.lanes" name="0: default_platform" time="0.0023815">
+      <testcase classname="fastlane.lanes" name="0: default_platform" time="0.0009549">
         
       </testcase>
     
       
-      <testcase classname="fastlane.lanes" name="1: Switch to android bump_version lane" time="0.0015361">
+      <testcase classname="fastlane.lanes" name="1: Switch to android bump_version lane" time="0.0006693">
         
       </testcase>
     
       
-      <testcase classname="fastlane.lanes" name="2: Switch to android clean_cmake_cache lane" time="0.0033379">
+      <testcase classname="fastlane.lanes" name="2: Switch to android clean_cmake_cache lane" time="0.0005401">
         
       </testcase>
     
       
-      <testcase classname="fastlane.lanes" name="3: bundleRelease" time="255.9011199">
+      <testcase classname="fastlane.lanes" name="3: bundleRelease" time="164.4189538">
         
       </testcase>
     
       
-      <testcase classname="fastlane.lanes" name="4: upload_to_play_store" time="49.4690976">
+      <testcase classname="fastlane.lanes" name="4: upload_to_play_store" time="48.40876">
         
       </testcase>
     

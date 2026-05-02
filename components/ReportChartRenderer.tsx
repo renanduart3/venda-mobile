@@ -61,8 +61,8 @@ function mapData(reportId: string, data: any[]): ChartData {
       return { title: 'Participação por Metodo de Pagamento (%)', items, orientation: 'horizontal' };
     }
     case '5': {
-      const items = data.map((r: any) => ({ label: `:${pad2(Number(r.hour) || 0)}:00`, value: Number(r.transactions || 0) }));
-      return { title: 'Transações por Hora', items, orientation: 'vertical' };
+      const items = data.map((r: any) => ({ label: `${pad2(Number(r.hour) || 0)}:00`, value: Number(r.transactions || 0) }));
+      return { title: 'Transações por Hora do Dia', items, orientation: 'vertical', hint: 'Quantidade de transações por hora' };
     }
     case '6': {
       const items = data

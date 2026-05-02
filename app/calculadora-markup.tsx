@@ -117,8 +117,13 @@ export default function CalculadoraMarkup() {
   const prefillName   = params.name           as string | undefined;
   const prefillCost   = params.cost_price     as string | undefined;
   const prefillPrice  = params.price          as string | undefined;
-  const prefillTime   = params.time_minutes   as string | undefined; // minutos (serviço)
-  const prefillMat    = params.material_cost  as string | undefined; // material (serviço)
+  const prefillTime   = params.time_minutes   as string | undefined;
+  const prefillMat    = params.material_cost  as string | undefined;
+  const prefillProdId = params.product_id     as string | undefined;
+  const prefillStock  = params.stock          as string | undefined;
+
+  // Giro: unidades vendidas nos últimos 30 dias
+  const [soldLast30, setSoldLast30] = React.useState<number>(0);
 
   // ── Block A — configuração do negócio ────────────────────────────────────
   const [config, setConfig] = useState<MarkupConfig>(DEFAULT_CONFIG);
@@ -135,9 +140,9 @@ export default function CalculadoraMarkup() {
       .then(raw => {
         if (raw) {
           setConfig(JSON.parse(raw));
-          setLocked(true);  // já tem config salva → inicia travada
+          setLocked(true);
         } else {
-          setLocked(false); // primeira vez → abre editável
+          setLocked(false);
         }
       })
       .catch(() => { setLocked(false); });
@@ -147,6 +152,25 @@ export default function CalculadoraMarkup() {
         'SELECT id, name, price, cost_price, type, time_minutes, material_cost FROM products WHERE price > 0 ORDER BY name'
       )
         .then(rows => setItems(rows || []))
+        .catch(() => {});
+    }
+
+    // Busca vendas dos últimos 30 dias para calcular giro
+    if (isReadonly && prefillProdId) {
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+      const sinceIso = since.toISOString();
+      db.query(
+        `SELECT COALESCE(SUM(si.quantity), 0) as total
+         FROM sale_items si
+         JOIN sales s ON s.id = si.sale_id
+         WHERE si.product_id = ? AND s.created_at >= ?`,
+        [prefillProdId, sinceIso]
+      )
+        .then(rows => {
+          const total = rows?.[0]?.total ?? 0;
+          setSoldLast30(Number(total));
+        })
         .catch(() => {});
     }
   }, []);
@@ -223,30 +247,52 @@ export default function CalculadoraMarkup() {
   }, [panelData]);
 
   // ── Modo readonly: Raio-X do item ─────────────────────────────────────────
-  const costPriceNum    = parseMoney(prefillCost  || '0');
-  const currentPrice    = parseMoney(prefillPrice || '0');
-  const timeMinutes     = parseInt(prefillTime || '0', 10) || 0;
-  const materialCost    = parseMoney(prefillMat || '0');
+  const costPriceNum = parseMoney(prefillCost  || '0');
+  const currentPrice = parseMoney(prefillPrice || '0');
+  const timeMinutes  = parseInt(prefillTime || '0', 10) || 0;
+  const materialCost = parseMoney(prefillMat || '0');
+  const stockAtual   = parseInt(prefillStock || '0', 10) || 0;
 
-  // Custo base para serviço: hora × tempo + material
+  // Custo base: para serviço usa hora×tempo+material; para produto usa custo unitário
   const serviceCostBase = isService
     ? valorHora * (timeMinutes / 60) + materialCost
     : 0;
-
   const costBase = isService ? serviceCostBase : costPriceNum;
 
-  // Rateio de custos fixos por item (apenas para produtos)
-  const numItems      = items.length || 1;
-  const rateio        = (!isService && fixo > 0) ? fixo / numItems : 0;
+  // Preço mínimo = custo unitário puro (sem rateio — seria distorção para produto individual)
+  const precoMinimo = costBase;
 
-  const precoMinimo   = costBase + rateio;
-  const targetMargin  = 35; // default — no futuro pode vir do config
-  const precoSugerido = precoMinimo > 0 ? precoMinimo / (1 - targetMargin / 100) : 0;
+  // Sugestões de preço baseadas em lucro sobre custo (markup)
+  // 50% de lucro  → preço = custo × 1,5
+  // 100% de lucro → preço = custo × 2,0
+  const precoSugerido50  = costBase > 0 ? costBase * 1.5  : 0; // 33% de margem
+  const precoSugerido100 = costBase > 0 ? costBase * 2.0  : 0; // 50% de margem
 
+  // Margem atual: (preço - custo) / preço × 100
   const currentMargin = currentPrice > 0 && costBase > 0
     ? ((currentPrice - costBase) / currentPrice) * 100
     : -1;
-  const abaixoSugerido = currentPrice > 0 && costBase > 0 && currentPrice < precoSugerido;
+
+  // Lucro absoluto por unidade
+  const lucroUnitario = currentPrice - costBase;
+
+  // ── Giro ─────────────────────────────────────────────────────────────────
+  const giro = stockAtual > 0 ? soldLast30 / stockAtual : soldLast30 > 0 ? 99 : 0;
+  const giroLabel = giro > 1 ? 'ALTO 🔥' : giro < 0.3 ? 'BAIXO 🧊' : 'NORMAL ⚖️';
+  const giroColor = giro > 1 ? '#22c55e' : giro < 0.3 ? '#60a5fa' : '#f59e0b';
+
+  // Sugestão automática baseada em giro + margem
+  const giroSugestao = (() => {
+    if (giro > 1 && currentMargin >= 0 && currentMargin < 50)
+      return '📈 Produto vendendo rápido com margem baixa. Você pode aumentar o preço gradualmente sem perder clientes.';
+    if (giro < 0.3 && soldLast30 === 0)
+      return '📦 Sem vendas nos últimos 30 dias. Considere promoção ou reveja o preço.';
+    if (giro < 0.3)
+      return '🏷️ Giro baixo. Reduzir o preço ou criar uma promoção pode acelerar as saídas.';
+    return '✅ Preço e giro equilibrados. Mantenha e acompanhe.';
+  })();
+
+  const abaixoSugerido = currentPrice > 0 && costBase > 0 && currentPrice < precoSugerido50;
 
   // ── Helpers visuais ───────────────────────────────────────────────────────
   const marginColor = (m: number) => m >= 30 ? '#22c55e' : m >= 15 ? '#f59e0b' : '#ef4444';
@@ -329,7 +375,7 @@ export default function CalculadoraMarkup() {
                 <View style={S.emptyState}>
                   <Package size={36} color={colors.textSecondary} />
                   <Text style={S.emptyText}>
-                    Este produto não tem preço de custo cadastrado.{'\n'}
+                    Este produto não tem custo cadastrado.{'\n'}
                     Edite-o para ver a análise de margem.
                   </Text>
                 </View>
@@ -340,7 +386,7 @@ export default function CalculadoraMarkup() {
                   <Wrench size={36} color={colors.textSecondary} />
                   <Text style={S.emptyText}>
                     Configure sua meta mensal e horas trabalhadas{'\n'}
-                    na tela principal de Markup para ver a análise deste serviço.
+                    na tela de Markup para analisar este serviço.
                   </Text>
                 </View>
               </Card>
@@ -350,22 +396,25 @@ export default function CalculadoraMarkup() {
                   <View style={S.alertCard}>
                     <Text style={{ fontSize: 20 }}>⚠️</Text>
                     <Text style={S.alertText}>
-                      Preço abaixo do sugerido.{'\n'}
-                      Você pode cobrar até{' '}
-                      <Text style={{ fontFamily: 'Inter-Bold' }}>R$ {fmtBRL(precoSugerido)}</Text>
-                      {' '}sem perder competitividade.
+                      Preço abaixo do sugerido mínimo.{'\n'}
+                      Com 50% de lucro você cobraria{' '}
+                      <Text style={{ fontFamily: 'Inter-Bold' }}>R$ {fmtBRL(precoSugerido50)}</Text>.
                     </Text>
                   </View>
                 )}
 
+                {/* ── Custo unitário ────────────────────────────────────── */}
                 <Card style={{ marginBottom: 14 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12 }}>
+                    📦 Custo &amp; Preços
+                  </Text>
+
+                  {/* Custo por unidade */}
                   <View style={S.priceRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={S.priceLbl}>🔴 Preço mínimo</Text>
+                      <Text style={S.priceLbl}>🔴 Custo unitário</Text>
                       <Text style={S.priceSub}>
-                        {isService
-                          ? `${(timeMinutes / 60).toFixed(1)}h × R$${fmtBRL(valorHora)}/h + material`
-                          : 'custo + rateio do fixo mensal'}
+                        {isService ? 'custo do serviço' : 'quanto você gastou por unidade'}
                       </Text>
                     </View>
                     <Text style={[S.priceVal, { color: '#ef4444' }]}>
@@ -373,21 +422,36 @@ export default function CalculadoraMarkup() {
                     </Text>
                   </View>
 
+                  {/* Sugerido 50% lucro */}
                   <View style={S.priceRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={S.priceLbl}>🟡 Preço sugerido</Text>
-                      <Text style={S.priceSub}>mínimo + {targetMargin}% de margem</Text>
+                      <Text style={S.priceLbl}>🟡 Sugerido — 50% lucro</Text>
+                      <Text style={S.priceSub}>custo × 1,5  →  33% de margem</Text>
                     </View>
                     <Text style={[S.priceVal, { color: '#f59e0b' }]}>
-                      R$ {fmtBRL(precoSugerido)}
+                      R$ {fmtBRL(precoSugerido50)}
                     </Text>
                   </View>
 
+                  {/* Sugerido 100% lucro */}
+                  <View style={S.priceRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={S.priceLbl}>🟠 Sugerido — 100% lucro</Text>
+                      <Text style={S.priceSub}>custo × 2,0  →  50% de margem</Text>
+                    </View>
+                    <Text style={[S.priceVal, { color: '#f97316' }]}>
+                      R$ {fmtBRL(precoSugerido100)}
+                    </Text>
+                  </View>
+
+                  {/* Atual cobrado */}
                   <View style={S.priceRowLast}>
                     <View style={{ flex: 1 }}>
                       <Text style={S.priceLbl}>🟢 Atual cobrado</Text>
                       <Text style={S.priceSub}>
-                        {currentMargin >= 0 ? `${currentMargin.toFixed(1)}% de margem` : '—'}
+                        {currentMargin >= 0
+                          ? `${currentMargin.toFixed(1)}% de margem • lucro R$ ${fmtBRL(lucroUnitario)} / un.`
+                          : costBase <= 0 ? 'Sem custo cadastrado' : 'Abaixo do custo!'}
                       </Text>
                     </View>
                     <Text style={[S.priceVal, { color: marginColor(currentMargin) }]}>
@@ -396,21 +460,76 @@ export default function CalculadoraMarkup() {
                   </View>
                 </Card>
 
+                {/* ── Termômetro de giro ───────────────────────────────── */}
+                {!isService && (
+                  <Card style={{ marginBottom: 14 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12 }}>
+                      🌡️ Giro do Produto
+                    </Text>
+
+                    {/* Números do giro */}
+                    <View style={{ flexDirection: 'row', gap: 12, marginBottom: 14 }}>
+                      <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 10, padding: 12, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 26, fontFamily: 'Inter-Black', color: giroColor }}>
+                          {soldLast30}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, textAlign: 'center', marginTop: 2 }}>
+                          Unidades{'
+'}vendidas (30d)
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 10, padding: 12, alignItems: 'center' }}>
+                        <Text style={{ fontSize: 26, fontFamily: 'Inter-Black', color: colors.text }}>
+                          {stockAtual}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, textAlign: 'center', marginTop: 2 }}>
+                          Em estoque{'
+'}agora
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1, backgroundColor: giroColor + '22', borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: giroColor + '55' }}>
+                        <Text style={{ fontSize: 26, fontFamily: 'Inter-Black', color: giroColor }}>
+                          {giro > 0 ? giro.toFixed(1) : '—'}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter-SemiBold', color: giroColor, textAlign: 'center', marginTop: 2 }}>
+                          {giroLabel}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Barra de termômetro */}
+                    <View style={{ gap: 4, marginBottom: 12 }}>
+                      <View style={{ flexDirection: 'row', height: 12, borderRadius: 6, overflow: 'hidden' }}>
+                        <View style={{ flex: 3, backgroundColor: '#60a5fa' }} />
+                        <View style={{ flex: 7, backgroundColor: '#f59e0b' }} />
+                        <View style={{ flex: 10, backgroundColor: '#22c55e' }} />
+                      </View>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter-SemiBold', color: '#60a5fa' }}>🧊 &lt;0.3 Baixo</Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter-SemiBold', color: '#f59e0b' }}>⚖️ Normal</Text>
+                        <Text style={{ fontSize: 9, fontFamily: 'Inter-SemiBold', color: '#22c55e' }}>🔥 &gt;1 Alto</Text>
+                      </View>
+                    </View>
+
+                    {/* Sugestão */}
+                    <View style={{ backgroundColor: colors.surface, borderRadius: 8, padding: 12, borderWidth: 1, borderColor: colors.border }}>
+                      <Text style={{ fontSize: 13, fontFamily: 'Inter-Regular', color: colors.text, lineHeight: 20 }}>
+                        {giroSugestao}
+                      </Text>
+                    </View>
+                  </Card>
+                )}
+
                 {isService && (
                   <View style={S.tipCard}>
                     <Text style={S.tipText}>
-                      <Text style={S.tipBold}>Seu valor/hora: </Text>
-                      R$ {fmtBRL(valorHora)}{'\n'}
-                      <Text style={S.tipBold}>Tempo do serviço: </Text>
-                      {timeMinutes >= 60
-                        ? `${(timeMinutes / 60).toFixed(1)}h`
-                        : `${timeMinutes}min`}{'\n'}
+                      <Text style={S.tipBold}>Custo do serviço: </Text>
+                      R$ {fmtBRL(costBase)}{'\n'}
                       {materialCost > 0 && (
-                        <>
-                          <Text style={S.tipBold}>Material extra: </Text>
-                          R$ {fmtBRL(materialCost)}
-                        </>
+                        <><Text style={S.tipBold}>Material extra: </Text>R$ {fmtBRL(materialCost)}{'\n'}</>
                       )}
+                      <Text style={S.tipBold}>Lucro por atendimento: </Text>
+                      R$ {fmtBRL(lucroUnitario)}
                     </Text>
                   </View>
                 )}

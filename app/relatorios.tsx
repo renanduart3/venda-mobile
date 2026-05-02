@@ -33,7 +33,6 @@ const PRESETS: { key: Preset; label: string; periodLabel: string }[] = [
 
 export default function Relatorios() {
   const { colors, theme } = useTheme();
-  const isDark = theme === 'dark';
   const modalBg = colors.card;
   const modalText = colors.text;
   const modalTextSec = colors.textSecondary;

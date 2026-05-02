@@ -554,6 +554,8 @@ export default function Produtos() {
                               price: String(product.price || 0),
                               time_minutes: String(product.time_minutes || 0),
                               material_cost: String(product.material_cost || 0),
+                              product_id: String(product.id),
+                              stock: String(product.stock || 0),
                             },
                           } as any)
                         }

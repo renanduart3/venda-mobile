@@ -61,24 +61,42 @@ export function renderTable(data: any[], labelMap: Record<string, string>) {
 }
 
 function formatCell(header: string, value: any) {
-  if (typeof value === 'number') return value.toLocaleString('pt-BR');
-  const s = String(value ?? '');
+  if (value === null || value === undefined || value === '') return '—';
   const lower = header.toLowerCase();
-  // ID-like columns: keep only digits
-  if (lower.includes('id')) {
-    const digits = s.replace(/\D+/g, '');
-    if (digits) return digits;
+
+  // Campos monetários → R$ X.XXX,XX
+  const isMonetary = [
+    'revenue', 'amount', 'spent', 'price', 'cost', 'profit', 'sales', 'ticket',
+  ].some(k => lower.includes(k));
+
+  if (typeof value === 'number') {
+    if (isMonetary) {
+      return 'R$\u00a0' + value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    // Percentuais
+    if (lower.includes('percentage') || lower.includes('percent') || lower.includes('%')) {
+      return value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+    }
+    // Frequência (ex: 1.3x/mês)
+    if (lower.includes('frequency')) {
+      return value.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '/mês';
+    }
+    return value.toLocaleString('pt-BR');
   }
-  // ISO Date formatting => DD/MM/YYYY HH:mm (if time) or DD/MM/YYYY
+
+  const s = String(value);
+
+  // Datas ISO → DD/MM/YYYY ou DD/MM/YYYY HH:mm
   const d = new Date(s);
-  if (!isNaN(d.getTime())) {
+  if (!isNaN(d.getTime()) && (s.includes('-') || s.includes('T'))) {
     const dd = String(d.getDate()).padStart(2, '0');
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const yyyy = String(d.getFullYear());
     const hh = String(d.getHours()).padStart(2, '0');
     const mi = String(d.getMinutes()).padStart(2, '0');
-    return s.includes('T') || s.includes(':') ? `${dd}/${mm}/${yyyy} ${hh}:${mi}` : `${dd}/${mm}/${yyyy}`;
+    return s.includes('T') || s.match(/\d{2}:\d{2}/) ? `${dd}/${mm}/${yyyy} ${hh}:${mi}` : `${dd}/${mm}/${yyyy}`;
   }
+
   return s;
 }
 

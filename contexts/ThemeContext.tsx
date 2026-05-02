@@ -4,9 +4,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // ─── Nomes dos temas disponíveis ─────────────────────────────────────────────
 export type ThemeName =
   | 'brisa-do-oceano'   // claro — tons de azul/verde
-  | 'coat-vibe'         // claro — tons de índigo/vermelho
-  | 'golden'            // escuro — azul marinho + amarelo
-  | 'deep-sea';         // escuro — azul profundo + dourado suave
+  | 'sunset-bliss'      // claro — coral quente + dourado + teal
+  | 'crimson-coast'     // escuro — índigo suave + vermelho
+  | 'harmony';          // escuro — carvão + areia + dourado suave
 
 // Mantemos 'theme' como 'light' | 'dark' para compatibilidade interna
 type ThemeMode = 'light' | 'dark';
@@ -67,100 +67,100 @@ const brisaDoOceano: Colors = {
   tabActiveText: '#f1faee',
 };
 
-/** Coat Vibe — claro, mais suave/elegante */
-const coatVibe: Colors = {
-  primary: '#2b2d42',        // space-indigo
-  primaryLight: '#8d99ae',   // lavender-grey
-  secondary: '#ef233c',      // punch-red
-  secondaryLight: '#edf2f4', // platinum
-  background: '#edf2f4',     // platinum
-  surface: '#dde3ea',        // platinum mais escuro
-  topbar: '#2b2d42',
-  bottombar: '#2b2d42',
-  onTopbar: '#edf2f4',
-  onBottombar: '#edf2f4',
-  card: '#ffffff',
-  text: '#2b2d42',
-  textSecondary: '#8d99ae',
-  border: '#c4ccd6',
-  inputBorder: '#c4ccd6',
-  success: '#10b981',
-  warning: '#f59e0b',
-  error: '#d90429',
+/** Sunset Bliss — claro, tons quentes de coral + dourado + teal */
+const sunsetBliss: Colors = {
+  primary: '#247ba0',        // cerulean — ação principal, não muito saturado
+  primaryLight: '#70c1b3',   // tropical-teal — suave
+  secondary: '#c4553f',      // coral escurecido para melhor contraste no claro
+  secondaryLight: '#f0d080', // royal-gold clareado
+  background: '#f5f0eb',     // areia quente (não branco puro, mais suave aos olhos)
+  surface: '#ede6de',        // superfície levemente mais escura que o fundo
+  topbar: '#3d6a82',         // cerulean escurecido para contraste na barra
+  bottombar: '#3d6a82',
+  onTopbar: '#f5f0eb',
+  onBottombar: '#f5f0eb',
+  card: '#faf7f3',           // quase branco com toque quente
+  text: '#50514f',           // charcoal — leitura confortável sem ser preto puro
+  textSecondary: '#7a7b79',  // charcoal suavizado
+  border: '#d4c9bc',         // borda discreta e quente
+  inputBorder: '#b8aa9c',    // borda de input um pouco mais visível
+  success: '#2a9d6f',        // verde teal escuro
+  warning: '#c8902a',        // âmbar escurecido para contraste
+  error: '#c0392b',          // vermelho menos saturado
   white: '#ffffff',
   black: '#000000',
-  tabActiveBg: '#2b2d42',
-  tabActiveText: '#edf2f4',
+  tabActiveBg: '#247ba0',
+  tabActiveText: '#f5f0eb',
 };
 
-/** Golden — escuro, azul marinho + amarelo */
-const golden: Colors = {
-  primary: '#ffc300',        // school-bus-yellow
-  primaryLight: '#ffd60a',
-  secondary: '#003566',      // regal-navy
-  secondaryLight: '#001d3d',
-  background: '#000814',     // ink-black
-  surface: '#001d3d',        // prussian-blue
-  topbar: '#000814',
-  bottombar: '#000814',
-  onTopbar: '#ffc300',
-  onBottombar: '#ffc300',
-  card: '#001d3d',           // prussian-blue
-  text: '#f0e6cc',           // branco quente
-  textSecondary: '#8899aa',
-  border: '#003566',
-  inputBorder: '#003566',
-  success: '#10b981',
-  warning: '#f59e0b',
-  error: '#ef4444',
+/** Crimson Coast — escuro confortável, índigo suave + vermelho discreto */
+const crimsonCoast: Colors = {
+  primary: '#7fa8c0',        // azul acinzentado claro — contraste suave no escuro
+  primaryLight: '#a8c4d4',   // azul ainda mais suave
+  secondary: '#c05060',      // vermelho rosado, menos agressivo que punch-red
+  secondaryLight: '#d4808c',
+  background: '#2b2d42',     // space-indigo — escuro mas não preto, confortável
+  surface: '#363855',        // um tom acima do fundo
+  topbar: '#22243a',         // levemente mais escuro que o fundo
+  bottombar: '#22243a',
+  onTopbar: '#c8cfe0',       // platinum acinzentado suave
+  onBottombar: '#c8cfe0',
+  card: '#363855',
+  text: '#dde3ed',           // platinum levemente azulado
+  textSecondary: '#8d99ae',  // lavender-grey original
+  border: '#4a4d68',         // borda sutil, pouco contraste
+  inputBorder: '#5a5d7a',    // borda de input um pouco mais visível
+  success: '#5cb88a',        // verde suave para fundo escuro
+  warning: '#d4a940',        // âmbar discreto
+  error: '#c06070',          // classic-crimson suavizado
   white: '#ffffff',
   black: '#000000',
-  tabActiveBg: '#003566',
-  tabActiveText: '#ffc300',
+  tabActiveBg: '#4a4d68',
+  tabActiveText: '#dde3ed',
 };
 
-/** Deep Sea — escuro, azul profundo + dourado suave */
-const deepSea: Colors = {
-  primary: '#ffd60a',        // gold
-  primaryLight: '#778da9',   // dusty-denim
-  secondary: '#415a77',      // dusk-blue
-  secondaryLight: '#1b263b',
-  background: '#0d1b2a',     // ink-black profundo
-  surface: '#1b263b',        // prussian-blue
-  topbar: '#0d1b2a',
-  bottombar: '#0d1b2a',
-  onTopbar: '#e0e1dd',
-  onBottombar: '#e0e1dd',
-  card: '#1d3557',           // oxford-navy
-  text: '#e0e1dd',           // alabaster-grey
-  textSecondary: '#778da9',  // dusty-denim
-  border: '#415a77',
-  inputBorder: '#415a77',
-  success: '#10b981',
-  warning: '#f59e0b',
-  error: '#ef4444',
+/** Harmony — escuro aconchegante, carvão + areia + toque dourado */
+const harmony: Colors = {
+  primary: '#c8b86a',        // tuscan-sun escurecido — dourado discreto
+  primaryLight: '#d9cca0',   // dourado ainda mais suave
+  secondary: '#8aaa96',      // alabaster-grey com toque verde
+  secondaryLight: '#aac4b2',
+  background: '#2e2e2c',     // carvão médio — não é preto, é aconchegante
+  surface: '#3a3a38',        // graphite ligeiramente mais claro
+  topbar: '#242423',         // carbon-black original como barra
+  bottombar: '#242423',
+  onTopbar: '#cfdbd5',       // alabaster-grey
+  onBottombar: '#cfdbd5',
+  card: '#3a3a38',
+  text: '#e8ede8',           // soft-linen levemente esverdeado — suave
+  textSecondary: '#a8b4ae',  // alabaster-grey escurecido
+  border: '#4a4a48',         // borda muito sutil
+  inputBorder: '#5c5c5a',    // borda de input visível mas discreta
+  success: '#7ab898',        // verde cinzento suave
+  warning: '#c8b86a',        // tuscan-sun
+  error: '#c07878',          // vermelho rosado suave
   white: '#ffffff',
   black: '#000000',
-  tabActiveBg: '#415a77',
-  tabActiveText: '#e0e1dd',
+  tabActiveBg: '#4a4a48',
+  tabActiveText: '#e8ede8',
 };
 
 // ─── Mapa de temas ────────────────────────────────────────────────────────────
 export const THEME_PALETTES: Record<ThemeName, Colors> = {
   'brisa-do-oceano': brisaDoOceano,
-  'coat-vibe': coatVibe,
-  'golden': golden,
-  'deep-sea': deepSea,
+  'sunset-bliss': sunsetBliss,
+  'crimson-coast': crimsonCoast,
+  'harmony': harmony,
 };
 
-export const DARK_THEMES: ThemeName[] = ['golden', 'deep-sea'];
-export const LIGHT_THEMES: ThemeName[] = ['brisa-do-oceano', 'coat-vibe'];
+export const DARK_THEMES: ThemeName[] = ['crimson-coast', 'harmony'];
+export const LIGHT_THEMES: ThemeName[] = ['brisa-do-oceano', 'sunset-bliss'];
 
 export const THEME_LABELS: Record<ThemeName, string> = {
   'brisa-do-oceano': 'Brisa do Oceano',
-  'coat-vibe': 'Coat Vibe',
-  'golden': 'Golden',
-  'deep-sea': 'Deep Sea',
+  'sunset-bliss': 'Sunset Bliss',
+  'crimson-coast': 'Crimson Coast',
+  'harmony': 'Harmony',
 };
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -182,11 +182,12 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const STORAGE_KEY = '@theme_name';
 
-// Migração de valores antigos ('light'/'dark'/'system') para ThemeName
+// Migração de valores antigos ('light'/'dark'/'system'/'coat-vibe'/'golden'/'deep-sea') para ThemeName
 function migrateThemeName(raw: string | null): ThemeName {
   if (!raw) return 'brisa-do-oceano';
   if (raw === 'light' || raw === 'system') return 'brisa-do-oceano';
-  if (raw === 'dark') return 'golden';
+  if (raw === 'dark' || raw === 'golden' || raw === 'deep-sea') return 'crimson-coast';
+  if (raw === 'coat-vibe') return 'sunset-bliss';
   if (raw in THEME_PALETTES) return raw as ThemeName;
   return 'brisa-do-oceano';
 }
@@ -209,9 +210,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(STORAGE_KEY, name);
   }, []);
 
-  /** Compat: mapeia 'light'→'brisa-do-oceano', 'dark'→'golden' */
+  /** Compat: mapeia 'light'→'brisa-do-oceano', 'dark'→'crimson-coast' */
   const setTheme = React.useCallback((mode: 'light' | 'dark') => {
-    const target: ThemeName = mode === 'dark' ? 'golden' : 'brisa-do-oceano';
+    const target: ThemeName = mode === 'dark' ? 'crimson-coast' : 'brisa-do-oceano';
     setThemeName(target);
   }, [setThemeName]);
 
