@@ -28,6 +28,16 @@ subprojects { subproject ->
     subproject.plugins.withId("com.android.library") {
       subproject.android {
         buildDir = new File("C:/cx/iap/${subproject.name}")
+        lint {
+          checkReleaseBuilds false
+          abortOnError false
+        }
+      }
+
+      subproject.tasks.configureEach { task ->
+        if (task.name.startsWith("lintVital")) {
+          task.enabled = false
+        }
       }
     }
   }

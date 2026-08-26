@@ -71,6 +71,8 @@ Certifique-se de ter o arquivo `fastlane/Appfile` configurado com:
 - `package_name` — ID do pacote (`com.renanduart3.vendamobile`)
 - `json_key_file` — caminho para a service account do Google Play
 
+Para evitar o aviso de locale do Fastlane no Windows e em CI, o projeto já define `LANG` e `LC_ALL` como `en_US.UTF-8` em `fastlane/.env.default`.
+
 ---
 
 ### Lanes disponíveis

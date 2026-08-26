@@ -12,6 +12,7 @@ export interface ReportOptions {
 interface ProductSalesData {
   productId: string;
   productName: string;
+  itemType: 'product' | 'service' | 'unknown';
   totalSold: number;
   totalRevenue: number;
   averagePrice: number;
@@ -79,6 +80,23 @@ function calculatePeriod(opts: ReportOptions): { start: Date; end: Date } {
   return { start, end };
 }
 
+function saleDateExpression(alias = 's'): string {
+  const column = `${alias}.created_at`;
+  return `
+    CASE
+      WHEN ${column} GLOB '[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]*'
+        THEN substr(${column}, 7, 4) || '-' || substr(${column}, 4, 2) || '-' || substr(${column}, 1, 2) || substr(${column}, 11)
+      WHEN ${column} GLOB '[0-9][0-9]-[0-9][0-9]-[0-9][0-9][0-9][0-9]*'
+        THEN substr(${column}, 7, 4) || '-' || substr(${column}, 4, 2) || '-' || substr(${column}, 1, 2) || substr(${column}, 11)
+      ELSE replace(substr(${column}, 1, 19), 'T', ' ')
+    END
+  `;
+}
+
+function saleDateBetweenSql(alias = 's'): string {
+  return `datetime(${saleDateExpression(alias)}) BETWEEN datetime(?) AND datetime(?)`;
+}
+
 // 1. Produtos Mais Vendidos
 export async function getTopSellingProducts(opts: ReportOptions): Promise<ProductSalesData[]> {
   await checkPremiumAccess();
@@ -103,18 +121,22 @@ export async function getTopSellingProducts(opts: ReportOptions): Promise<Produc
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
       LEFT JOIN sale_totals st ON st.sale_id = si.sale_id
-      WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+      WHERE ${saleDateBetweenSql('s')}
     )
     SELECT
-      ln.product_id,
-      p.name as product_name,
+      COALESCE(ln.product_id, 'sem-id') as product_id,
+      COALESCE(
+        p.name,
+        CASE WHEN ln.product_id = 'avulso' THEN 'Venda avulsa' ELSE 'Item removido' END
+      ) as product_name,
+      COALESCE(p.type, 'unknown') as item_type,
       SUM(ln.quantity) as total_sold,
       SUM(ln.net_line_total) as total_revenue,
       COALESCE(SUM(ln.net_line_total) / NULLIF(SUM(ln.quantity), 0), 0) as average_price
     FROM line_net ln
-    JOIN products p ON ln.product_id = p.id
-    GROUP BY ln.product_id, p.name
-    ORDER BY total_sold DESC
+    LEFT JOIN products p ON ln.product_id = p.id
+    GROUP BY ln.product_id, product_name, item_type
+    ORDER BY total_sold DESC, total_revenue DESC
     LIMIT 20
   `;
 
@@ -122,6 +144,7 @@ export async function getTopSellingProducts(opts: ReportOptions): Promise<Produc
   return results.map((row: any) => ({
     productId: row.product_id,
     productName: row.product_name,
+    itemType: row.item_type === 'service' ? 'service' : row.item_type === 'product' ? 'product' : 'unknown',
     totalSold: Number(row.total_sold),
     totalRevenue: Number(row.total_revenue),
     averagePrice: Number(row.average_price),
@@ -131,16 +154,18 @@ export async function getTopSellingProducts(opts: ReportOptions): Promise<Produc
 // 2. Curva ABC de Produtos
 export async function getProductABCAnalysis(opts: ReportOptions): Promise<any[]> {
   await checkPremiumAccess();
-  const products = await getTopSellingProducts(opts);
+  const products = (await getTopSellingProducts(opts))
+    .sort((a, b) => b.totalRevenue - a.totalRevenue);
   const totalRevenue = products.reduce((sum: number, p) => sum + p.totalRevenue, 0) || 1;
 
   let cumulative = 0;
   return products.map((product) => {
     const percentage = (product.totalRevenue / totalRevenue) * 100;
+    const previousCumulative = cumulative;
     cumulative += percentage;
     let category: 'A' | 'B' | 'C' = 'C';
-    if (cumulative <= 80) category = 'A';
-    else if (cumulative <= 95) category = 'B';
+    if (previousCumulative < 80) category = 'A';
+    else if (previousCumulative < 95) category = 'B';
     return {
       ...product,
       percentage: Number(percentage.toFixed(2)),
@@ -157,13 +182,13 @@ export async function getSalesTrendAnalysis(opts: ReportOptions): Promise<any[]>
 
   const query = `
     SELECT
-      DATE(s.created_at) as date,
+      DATE(${saleDateExpression('s')}) as date,
       COUNT(*) as transactions,
       SUM(s.total) as total_sales,
       AVG(s.total) as average_ticket
     FROM sales s
-    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
-    GROUP BY DATE(s.created_at)
+    WHERE ${saleDateBetweenSql('s')}
+    GROUP BY DATE(${saleDateExpression('s')})
     ORDER BY date
   `;
 
@@ -181,8 +206,8 @@ export async function getPaymentMethodAnalysis(opts: ReportOptions): Promise<Pay
       payment_method,
       COUNT(*) as transaction_count,
       SUM(total) as total_amount
-    FROM sales
-    WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?)
+    FROM sales s
+    WHERE ${saleDateBetweenSql('s')}
     GROUP BY payment_method
     ORDER BY total_amount DESC
   `;
@@ -205,12 +230,12 @@ export async function getPeakSalesHours(opts: ReportOptions): Promise<HourlySale
 
   const query = `
     SELECT
-      CAST(strftime('%H', created_at) AS INTEGER) as hour,
+      CAST(strftime('%H', ${saleDateExpression('s')}) AS INTEGER) as hour,
       COUNT(*) as transactions,
       SUM(total) as sales
-    FROM sales
-    WHERE datetime(created_at) BETWEEN datetime(?) AND datetime(?)
-    GROUP BY CAST(strftime('%H', created_at) AS INTEGER)
+    FROM sales s
+    WHERE ${saleDateBetweenSql('s')}
+    GROUP BY CAST(strftime('%H', ${saleDateExpression('s')}) AS INTEGER)
     ORDER BY hour
   `;
 
@@ -233,10 +258,10 @@ export async function getCustomerRFVAnalysis(opts: ReportOptions): Promise<Custo
       c.name as customer_name,
       COUNT(*) as total_purchases,
       SUM(s.total) as total_spent,
-      MAX(s.created_at) as last_purchase
+      MAX(${saleDateExpression('s')}) as last_purchase
     FROM sales s
     JOIN customers c ON s.customer_id = c.id
-    WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+    WHERE ${saleDateBetweenSql('s')}
     GROUP BY s.customer_id, c.name
     ORDER BY total_spent DESC
   `;
@@ -266,7 +291,7 @@ export async function getInactiveCustomers(opts: ReportOptions): Promise<Custome
       c.name as customer_name,
       COUNT(s.id) as total_purchases,
       COALESCE(SUM(s.total), 0) as total_spent,
-      MAX(s.created_at) as last_purchase
+      MAX(${saleDateExpression('s')}) as last_purchase
     FROM customers c
     LEFT JOIN sales s ON c.id = s.customer_id
     GROUP BY c.id, c.name
@@ -302,6 +327,7 @@ export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[
       SELECT
         si.product_id,
         si.quantity,
+        si.unit_cost,
         si.total * (
           CASE
             WHEN COALESCE(st.sale_gross_total, 0) > 0 THEN COALESCE(s.total, 0) / st.sale_gross_total
@@ -311,36 +337,58 @@ export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
       LEFT JOIN sale_totals st ON st.sale_id = si.sale_id
-      WHERE datetime(s.created_at) BETWEEN datetime(?) AND datetime(?)
+      WHERE ${saleDateBetweenSql('s')}
     ),
     product_net AS (
       SELECT
         product_id,
         SUM(quantity) AS total_sold,
-        SUM(net_line_total) AS total_revenue
+        SUM(net_line_total) AS total_revenue,
+        SUM(COALESCE(unit_cost, 0) * quantity) AS total_recorded_cost
       FROM line_net
       GROUP BY product_id
     )
     SELECT
-      p.id as product_id,
-      p.name as product_name,
-      COALESCE(p.cost_price, 0) as cost_price,
+      COALESCE(pn.product_id, 'sem-id') as product_id,
+      COALESCE(
+        p.name,
+        CASE WHEN pn.product_id = 'avulso' THEN 'Venda avulsa' ELSE 'Item removido' END
+      ) as product_name,
+      COALESCE(p.type, 'unknown') as item_type,
+      CASE
+        WHEN COALESCE(pn.total_recorded_cost, 0) > 0 AND COALESCE(pn.total_sold, 0) > 0
+          THEN pn.total_recorded_cost / pn.total_sold
+        ELSE COALESCE(NULLIF(p.cost_price, 0), NULLIF(p.material_cost, 0), 0)
+      END as cost_price,
       COALESCE(pn.total_revenue / NULLIF(pn.total_sold, 0), 0) as selling_price,
       COALESCE(pn.total_sold, 0) as total_sold,
       COALESCE(pn.total_revenue, 0) as total_revenue,
-      COALESCE((pn.total_revenue / NULLIF(pn.total_sold, 0)) - COALESCE(p.cost_price, 0), 0) as profit_per_unit,
+      COALESCE(
+        (pn.total_revenue / NULLIF(pn.total_sold, 0)) -
+        CASE
+          WHEN COALESCE(pn.total_recorded_cost, 0) > 0 AND COALESCE(pn.total_sold, 0) > 0
+            THEN pn.total_recorded_cost / pn.total_sold
+          ELSE COALESCE(NULLIF(p.cost_price, 0), NULLIF(p.material_cost, 0), 0)
+        END,
+        0
+      ) as profit_per_unit,
       CASE
         WHEN COALESCE(pn.total_revenue / NULLIF(pn.total_sold, 0), 0) > 0
         THEN (
           (
-            (pn.total_revenue / NULLIF(pn.total_sold, 0)) - COALESCE(p.cost_price, 0)
+            (pn.total_revenue / NULLIF(pn.total_sold, 0)) -
+            CASE
+              WHEN COALESCE(pn.total_recorded_cost, 0) > 0 AND COALESCE(pn.total_sold, 0) > 0
+                THEN pn.total_recorded_cost / pn.total_sold
+              ELSE COALESCE(NULLIF(p.cost_price, 0), NULLIF(p.material_cost, 0), 0)
+            END
           ) /
           (pn.total_revenue / NULLIF(pn.total_sold, 0))
         ) * 100
         ELSE 0
       END as profit_margin_percentage
-    FROM products p
-    JOIN product_net pn ON p.id = pn.product_id
+    FROM product_net pn
+    LEFT JOIN products p ON p.id = pn.product_id
     ORDER BY profit_margin_percentage DESC
     LIMIT 200
   `;
@@ -349,6 +397,7 @@ export async function getProfitMarginAnalysis(opts: ReportOptions): Promise<any[
   return results.map((row: any) => ({
     productId: row.product_id,
     productName: row.product_name,
+    itemType: row.item_type === 'service' ? 'service' : row.item_type === 'product' ? 'product' : 'unknown',
     costPrice: Number(row.cost_price),
     sellingPrice: Number(row.selling_price),
     totalSold: Number(row.total_sold),

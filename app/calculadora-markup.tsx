@@ -474,8 +474,7 @@ export default function CalculadoraMarkup() {
                           {soldLast30}
                         </Text>
                         <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, textAlign: 'center', marginTop: 2 }}>
-                          Unidades{'
-'}vendidas (30d)
+                          Unidades{'\n'}vendidas (30d)
                         </Text>
                       </View>
                       <View style={{ flex: 1, backgroundColor: colors.surface, borderRadius: 10, padding: 12, alignItems: 'center' }}>
@@ -483,8 +482,7 @@ export default function CalculadoraMarkup() {
                           {stockAtual}
                         </Text>
                         <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, textAlign: 'center', marginTop: 2 }}>
-                          Em estoque{'
-'}agora
+                          Em estoque{'\n'}agora
                         </Text>
                       </View>
                       <View style={{ flex: 1, backgroundColor: giroColor + '22', borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: giroColor + '55' }}>

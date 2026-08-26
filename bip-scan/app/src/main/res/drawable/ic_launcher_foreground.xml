@@ -1,0 +1,72 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background subtle scanner bounding frame / focus brackets -->
+    <path
+        android:pathData="M30,38 L30,30 L38,30"
+        android:strokeColor="#F59E0B"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:pathData="M78,38 L78,30 L70,30"
+        android:strokeColor="#F59E0B"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:pathData="M30,70 L30,78 L38,78"
+        android:strokeColor="#F59E0B"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:pathData="M78,70 L78,78 L70,78"
+        android:strokeColor="#F59E0B"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!-- Barcode Vertical Stripes -->
+    <path
+        android:pathData="M40,36 L40,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="square"/>
+    <path
+        android:pathData="M46,36 L46,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1"
+        android:strokeLineCap="square"/>
+    <path
+        android:pathData="M51,36 L51,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="square"/>
+    <path
+        android:pathData="M59,36 L59,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="square"/>
+    <path
+        android:pathData="M65,36 L65,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3"
+        android:strokeLineCap="square"/>
+    <path
+        android:pathData="M71,36 L71,72"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1"
+        android:strokeLineCap="square"/>
+
+    <!-- Red Laser Beam Overlay -->
+    <path
+        android:pathData="M26,54 L82,54"
+        android:strokeColor="#EF4444"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"/>
+        
+</vector>

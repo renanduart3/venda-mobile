@@ -12,14 +12,14 @@ import { generateReportHTML, generateReportChartHTML, reportToPDF } from '@/lib/
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const premiumReports = [
-  { id: '1', title: 'Relatórios de Produtos Mais Vendidos', description: 'Descubra quais produtos seus clientes mais amam.', icon: Trophy },
-  { id: '2', title: 'Curva ABC de Produtos', description: 'Classifique seus produtos pela importância nas vendas.', icon: ChartPie },
+  { id: '1', title: 'Produtos e Serviços Mais Vendidos', description: 'Descubra quais itens seus clientes mais compram.', icon: Trophy },
+  { id: '2', title: 'Curva ABC de Produtos e Serviços', description: 'Classifique seus itens pela importância nas vendas.', icon: ChartPie },
   { id: '3', title: 'Análise de Vendas por Período', description: 'Compare o desempenho de vendas ao longo do tempo.', icon: ChartLine },
   { id: '4', title: 'Performance de Meios de Pagamento', description: 'Entenda como seus clientes preferem pagar.', icon: CreditCard },
   { id: '5', title: 'Horários de Pico de Vendas', description: 'Saiba os horários de maior movimento na sua loja.', icon: Clock },
   { id: '6', title: 'Ranking de Clientes (RFV)', description: 'Identifique seus clientes mais valiosos.', icon: Users },
   { id: '7', title: 'Clientes Inativos', description: 'Crie campanhas para reativar clientes que não compram há algum tempo.', icon: UserX },
-  { id: '8', title: 'Análise de Margem de Lucro', description: 'Descubra quais produtos são mais lucrativos.', icon: DollarSign },
+  { id: '8', title: 'Análise de Margem de Lucro', description: 'Descubra quais produtos e serviços são mais lucrativos.', icon: DollarSign },
 ];
 
 type Preset = Extract<Period, '7days' | '30days' | '6months' | 'yearly'>;
@@ -32,7 +32,7 @@ const PRESETS: { key: Preset; label: string; periodLabel: string }[] = [
 ];
 
 export default function Relatorios() {
-  const { colors, theme } = useTheme();
+  const { colors } = useTheme();
   const modalBg = colors.card;
   const modalText = colors.text;
   const modalTextSec = colors.textSecondary;

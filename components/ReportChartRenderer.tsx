@@ -39,7 +39,7 @@ function mapData(reportId: string, data: any[]): ChartData {
       const items = data
         .map((r: any) => ({ label: String(r.productName || 'Produto'), value: Number(r.totalSold || 0) }))
         .slice(0, 10);
-      return { title: 'Top Produtos (Quantidade)', items, orientation: 'horizontal', hint: 'Top 10 por quantidade vendida' };
+      return { title: 'Top Produtos e Serviços (Quantidade)', items, orientation: 'horizontal', hint: 'Top 10 por quantidade vendida' };
     }
     case '2': {
       let cumulative = 0;
@@ -50,7 +50,7 @@ function mapData(reportId: string, data: any[]): ChartData {
         const color = cat === 'A' ? '#16a34a' : cat === 'B' ? '#f59e0b' : '#6b7280';
         return { label: String(r.productName || 'Produto'), value: perc, color };
       });
-      return { title: 'Curva ABC - % Receita por Produto', items, orientation: 'horizontal', hint: 'A (≤80%), B (≤95%), C (>95%)' };
+      return { title: 'Curva ABC - % Receita por Item', items, orientation: 'horizontal', hint: 'A (<=80%), B (<=95%), C (>95%)' };
     }
     case '3': {
       const items = data.map((r: any) => ({ label: formatDateLabel(r.date), value: Number(r.total_sales || 0) }));
@@ -88,7 +88,7 @@ function mapData(reportId: string, data: any[]): ChartData {
         .map((r: any) => ({ label: String(r.productName || 'Produto'), value: Number(r.profitMarginPercentage || 0) }))
         .sort((a: any, b: any) => b.value - a.value)
         .slice(0, 10);
-      return { title: 'Margem de Lucro por Produto (%)', items, orientation: 'horizontal', hint: 'Top 10 por % de margem' };
+      return { title: 'Margem de Lucro por Produto/Serviço (%)', items, orientation: 'horizontal', hint: 'Top 10 por % de margem' };
     }
     default:
       return { title: 'Gráfico', items: [], orientation: 'vertical' };

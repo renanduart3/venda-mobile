@@ -9,6 +9,8 @@ Bem-vindo à documentação oficial do projeto. Para manter a sanidade da arquit
     * A fonte da verdade para variáveis, IDs de aplicativos (Application ID), URLs de repositórios, chaves do Supabase e infraestrutura de build.
 * **[01_ESPECIFICACAO_TECNICA.md](./01_ESPECIFICACAO_TECNICA.md)**
     * **O Cerne do Sistema.** Contém a estrutura do banco de dados (SQLite local + Supabase), fluxos do In-App Purchases (IAP), scripts de concessão de Premium via SQL, mapeamento de todas as abas/telas e regras de negócio de relatórios e notificações.
+* **[ARQUITETURA_PAGAMENTOS_IAP.md](./ARQUITETURA_PAGAMENTOS_IAP.md)**
+    * **Especificação portável de pagamentos.** Arquitetura completa IAP + Supabase + Google Play (contratos, schema, Edge Function, fluxos, cache, segurança e checklist para reimplementar em outro projeto).
 
 ### 📢 2. Produto e Marketing
 * **[02_VISAO_COMERCIAL.md](./02_VISAO_COMERCIAL.md)**

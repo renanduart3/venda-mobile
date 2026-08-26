@@ -9,9 +9,11 @@ expo-env.d.ts
 
 #ai-agents
 .agent/
+.agents/
 .claude/
 .gemini/
 .github/
+.codex/
 
 # native
 *.orig.*

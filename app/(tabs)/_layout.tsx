@@ -12,10 +12,8 @@ import { useSafeArea } from '@/hooks/useSafeArea';
 
 export default function TabLayout() {
   const { colors } = useTheme();
-  const { bottom, hasBottomBar } = useSafeArea();
-
-  console.log('TabLayout colors:', colors);
-  console.log('Safe area bottom:', bottom, 'hasBottomBar:', hasBottomBar);
+  const { bottom } = useSafeArea();
+  const bottomSpace = Math.max(bottom, 12);
 
   return (
     <Tabs
@@ -27,11 +25,9 @@ export default function TabLayout() {
           backgroundColor: colors.bottombar,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          // Revert global extra height; we'll handle screen-specific bottom spacing where needed
-          paddingBottom: hasBottomBar ? bottom + 8 : 8,
-          paddingTop: 8,
-          height: hasBottomBar ? 65 + bottom : 65,
-          // subtle elevation/shadow for separation from system nav area
+          paddingBottom: bottomSpace,
+          paddingTop: 6,
+          height: 62 + bottomSpace,
           shadowColor: '#000',
           shadowOpacity: 0.05,
           shadowOffset: { width: 0, height: -2 },
@@ -39,12 +35,14 @@ export default function TabLayout() {
           elevation: 8,
         },
         tabBarItemStyle: {
-          paddingVertical: 4,
+          paddingTop: 2,
+          paddingBottom: 0,
         },
         tabBarLabelStyle: {
           fontSize: 12,
           fontFamily: 'Inter-Medium',
-          marginTop: 4,
+          marginTop: 2,
+          marginBottom: 0,
           color: colors.onBottombar,
         },
       }}>

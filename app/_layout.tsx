@@ -36,6 +36,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { useRouter, useSegments } from 'expo-router';
 import { NotificationProvider } from '@/contexts/NotificationContext';
 import { OfflineProvider } from '@/contexts/OfflineContext';
+import { AppAlertProvider } from '@/components/ui/AppAlert';
 import db from '@/lib/db';
 import { initializeIAP } from '@/lib/iap';
 import { checkSubscriptionFromDatabase, isPremium } from '@/lib/premium';
@@ -150,21 +151,23 @@ export default function RootLayout() {
           <SubscriptionBootstrapper />
           <OfflineProvider>
             <NotificationProvider>
-              <AuthGate>
-                <Stack screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="login" />
-                  <Stack.Screen name="loading" />
-                  <Stack.Screen name="(tabs)" />
-                  <Stack.Screen name="settings" />
-                  <Stack.Screen name="relatorios" />
-                  <Stack.Screen name="premium" />
-                  <Stack.Screen name="planos" />
-                  <Stack.Screen name="notifications" />
-                  <Stack.Screen name="cliente-detalhe" />
-                  <Stack.Screen name="+not-found" />
-                </Stack>
-              </AuthGate>
-              <ThemedStatusBar />
+              <AppAlertProvider>
+                <AuthGate>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="login" />
+                    <Stack.Screen name="loading" />
+                    <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="settings" />
+                    <Stack.Screen name="relatorios" />
+                    <Stack.Screen name="premium" />
+                    <Stack.Screen name="planos" />
+                    <Stack.Screen name="notifications" />
+                    <Stack.Screen name="cliente-detalhe" />
+                    <Stack.Screen name="+not-found" />
+                  </Stack>
+                </AuthGate>
+                <ThemedStatusBar />
+              </AppAlertProvider>
             </NotificationProvider>
           </OfflineProvider>
         </AuthProvider>
