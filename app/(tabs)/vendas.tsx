@@ -21,6 +21,7 @@ import {
   Calculator,
   QrCode,
   Copy,
+  Camera,
   XCircle,
   ChevronRight,
   ShoppingCart,
@@ -36,6 +37,7 @@ import { getTodaySales as getTodaySalesUtil, filterCustomers, formatTimestamp, t
 import db from '@/lib/db';
 import { createVendasStyles } from './Vendas.styles';
 import { generatePixPayload, getOrGeneratePixQR, parsePixKeys } from '@/lib/pix';
+import { scanBarcode } from '@/lib/barcode-scanner';
 
 interface Product {
   id: string;
@@ -94,6 +96,7 @@ export default function Vendas() {
   const [premium, setPremium] = useState<boolean | null>(null);
   const [productSearch, setProductSearch] = useState('');
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
+  const [scannedProduct, setScannedProduct] = useState<Product | null>(null);
 
   // Mock data
   const [products, setProducts] = useState<Product[]>([]);
@@ -671,6 +674,42 @@ export default function Vendas() {
     setSuggestionsVisible(true);
   };
 
+  const handleProductBarcodeScan = async () => {
+    if (premium === false) {
+      Alert.alert('Premium necessário', 'Escanear produtos por código de barras é premium.');
+      return;
+    }
+
+    try {
+      setScannedProduct(null);
+      const code = await scanBarcode();
+      if (!code) return;
+
+      const product = products.find(p => (p.barcode || '').trim() === code.trim());
+      if (!product) {
+        setProductSearch(code);
+        setSuggestionsVisible(true);
+        Alert.alert(
+          'Produto não encontrado',
+          `Nenhum produto cadastrado com o código ${code}.`,
+          [
+            { text: 'Agora não', style: 'cancel' },
+            { text: 'Cadastrar produto', onPress: () => router.push(`/produtos?barcode=${encodeURIComponent(code)}` as any) },
+          ],
+        );
+        return;
+      }
+
+      setScannedProduct(product);
+      addItemToSale(product);
+      setProductSearch('');
+      setSuggestionsVisible(false);
+    } catch (error) {
+      console.error('Barcode scanner error:', error);
+      Alert.alert('Scanner indisponível', 'Não foi possível abrir o scanner de código de barras.');
+    }
+  };
+
   const handleShareReceipt = async (sale: Sale) => {
     if (!premium) {
       Alert.alert(
@@ -794,6 +833,12 @@ export default function Vendas() {
   };
 
   const styles = createVendasStyles(colors);
+
+  useEffect(() => {
+    if (!scannedProduct) return;
+    const timeout = setTimeout(() => setScannedProduct(null), 3000);
+    return () => clearTimeout(timeout);
+  }, [scannedProduct]);
 
   // NOTE: Avoid inline component definitions that remount on each render.
 
@@ -972,14 +1017,50 @@ export default function Vendas() {
             <Text style={{ fontSize: 16, fontFamily: 'Inter-SemiBold', color: colors.text, marginBottom: 8 }}>
               Buscar Produtos ou Serviços
             </Text>
-            <TextInput
-              style={[styles.input, { marginBottom: 8 }]}
-              placeholder="Digite o nome do produto"
-              placeholderTextColor={colors.textSecondary}
-              value={productSearch}
-              onChangeText={(t) => { setProductSearch(t); setSuggestionsVisible(true); }}
-              onSubmitEditing={handleProductSearchSubmit}
-            />
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+              <TextInput
+                style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                placeholder="Digite o nome ou bipe o código"
+                placeholderTextColor={colors.textSecondary}
+                value={productSearch}
+                onChangeText={(t) => { setProductSearch(t); setSuggestionsVisible(true); }}
+                onSubmitEditing={handleProductSearchSubmit}
+              />
+              <TouchableOpacity
+                onPress={handleProductBarcodeScan}
+                activeOpacity={0.8}
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.primary,
+                }}
+              >
+                <Camera size={20} color={colors.white} />
+              </TouchableOpacity>
+            </View>
+            {scannedProduct && (
+              <View style={{
+                marginBottom: 8,
+                padding: 12,
+                borderRadius: 10,
+                backgroundColor: colors.success + '18',
+                borderWidth: 1,
+                borderColor: colors.success + '55',
+              }}>
+                <Text style={{ color: colors.success, fontFamily: 'Inter-SemiBold', fontSize: 12 }}>
+                  PRODUTO LIDO
+                </Text>
+                <Text style={{ color: colors.text, fontFamily: 'Inter-SemiBold', fontSize: 16 }}>
+                  {scannedProduct.name}
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+                  Código: {scannedProduct.barcode || 'não informado'} • R$ {scannedProduct.price.toFixed(2)}
+                </Text>
+              </View>
+            )}
             {suggestionsVisible && (
               <View>
                 {filteredProducts.map(p => (

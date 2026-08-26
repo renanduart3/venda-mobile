@@ -8,7 +8,7 @@ import {
   Alert,
   Switch,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import { TextInput } from '@/components/ui/TextInput';
 import {
@@ -21,6 +21,7 @@ import {
   Wrench,
   Calculator,
   Clock,
+  Camera,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
@@ -29,6 +30,7 @@ import { Button } from '@/components/ui/Button';
 import { SkeletonCard, EmptyState } from '@/components/ui/Skeleton';
 import db from '@/lib/db';
 import { createProdutosStyles } from './Produtos.styles';
+import { scanBarcode } from '@/lib/barcode-scanner';
 
 interface Product {
   id: string;
@@ -49,6 +51,7 @@ interface Product {
 
 export default function Produtos() {
   const { colors } = useTheme();
+  const { barcode } = useLocalSearchParams<{ barcode?: string }>();
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -96,6 +99,13 @@ export default function Produtos() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (typeof barcode !== 'string' || !barcode.trim()) return;
+    setEditingProduct(null);
+    setFormData(prev => ({ ...prev, barcode: barcode.trim() }));
+    setShowProductModal(true);
+  }, [barcode]);
 
   const openMarkupCalculator = () => {
     if (!premium) {
@@ -171,6 +181,17 @@ export default function Produtos() {
     setLotCost('');
     setLotYield('');
     setFormData({ name: '', price: '', cost_price: '', stock: '', min_stock: '', barcode: '', description: '' });
+  };
+
+  const handleProductBarcodeScan = async () => {
+    try {
+      const code = await scanBarcode();
+      if (!code) return;
+      setFormData(prev => ({ ...prev, barcode: code }));
+    } catch (error) {
+      console.error('Barcode scanner error:', error);
+      Alert.alert('Scanner indisponível', 'Não foi possível abrir o scanner de código de barras.');
+    }
   };
 
   const saveProduct = async () => {
@@ -488,7 +509,6 @@ export default function Produtos() {
             data={paginatedProducts}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
-            estimatedItemSize={90}
             renderItem={({ item: product }) => {
               const stockStatus = getStockStatus(product);
               const isService = product.type === 'service';
@@ -764,13 +784,30 @@ export default function Produtos() {
 
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Código de Barras</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={formData.barcode}
-                    onChangeText={(text) => setFormData({ ...formData, barcode: text })}
-                    placeholder="Código de barras"
-                    placeholderTextColor={colors.textSecondary}
-                  />
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                      value={formData.barcode}
+                      onChangeText={(text) => setFormData({ ...formData, barcode: text })}
+                      placeholder="Código de barras"
+                      placeholderTextColor={colors.textSecondary}
+                      keyboardType="number-pad"
+                    />
+                    <TouchableOpacity
+                      onPress={handleProductBarcodeScan}
+                      activeOpacity={0.8}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 10,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: colors.primary,
+                      }}
+                    >
+                      <Camera size={20} color={colors.white} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
               </ScrollView>
