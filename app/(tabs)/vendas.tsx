@@ -313,13 +313,15 @@ export default function Vendas() {
     setCustomerSuggestionsVisible(text.length > 0);
   };
 
-  const addItemToSale = (product: Product) => {
+  const addItemToSale = (product: Product, qty: number = 1) => {
+    const quantity = Math.max(1, qty);
     const existingItem = saleItems.find(item => item.product.id === product.id);
     const isService = product.type === 'service';
 
     if (existingItem) {
-      if (isService || existingItem.quantity < product.stock) {
-        updateItemQuantity(product.id, existingItem.quantity + 1);
+      const newQty = existingItem.quantity + quantity;
+      if (isService || newQty <= product.stock) {
+        updateItemQuantity(product.id, newQty);
       } else {
         Alert.alert('Estoque Insuficiente', 'Não há estoque suficiente para este produto.');
       }
@@ -327,8 +329,8 @@ export default function Vendas() {
       if (isService || product.stock > 0) {
         const newItem: SaleItem = {
           product,
-          quantity: 1,
-          total: product.price,
+          quantity,
+          total: product.price * quantity,
         };
         setSaleItems([...saleItems, newItem]);
       } else {
@@ -682,26 +684,41 @@ export default function Vendas() {
 
     try {
       setScannedProduct(null);
-      const code = await scanBarcode();
-      if (!code) return;
+      const results = await scanBarcode(products);
+      if (!results || results.length === 0) return;
 
-      const product = products.find(p => (p.barcode || '').trim() === code.trim());
-      if (!product) {
-        setProductSearch(code);
-        setSuggestionsVisible(true);
-        Alert.alert(
-          'Produto não encontrado',
-          `Nenhum produto cadastrado com o código ${code}.`,
-          [
-            { text: 'Agora não', style: 'cancel' },
-            { text: 'Cadastrar produto', onPress: () => router.push(`/produtos?barcode=${encodeURIComponent(code)}` as any) },
-          ],
-        );
-        return;
+      let lastAddedProduct: Product | null = null;
+
+      for (const scanItem of results) {
+        const { barcode: code, quantity, notFound } = scanItem;
+
+        if (notFound) {
+          // Redirect to product registration for unrecognised barcodes
+          router.push(`/produtos?barcode=${encodeURIComponent(code)}` as any);
+          continue;
+        }
+
+        const product = products.find(p => (p.barcode || '').trim() === code.trim());
+        if (!product) {
+          // Product not found in local list after scanning
+          Alert.alert(
+            'Produto não encontrado',
+            `Nenhum produto cadastrado com o código ${code}.`,
+            [
+              { text: 'Agora não', style: 'cancel' },
+              { text: 'Cadastrar produto', onPress: () => router.push(`/produtos?barcode=${encodeURIComponent(code)}` as any) },
+            ],
+          );
+          continue;
+        }
+
+        addItemToSale(product, quantity);
+        lastAddedProduct = product;
       }
 
-      setScannedProduct(product);
-      addItemToSale(product);
+      if (lastAddedProduct) {
+        setScannedProduct(lastAddedProduct);
+      }
       setProductSearch('');
       setSuggestionsVisible(false);
     } catch (error) {

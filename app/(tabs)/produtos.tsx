@@ -22,6 +22,7 @@ import {
   Calculator,
   Clock,
   Camera,
+  Crown,
 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Header } from '@/components/ui/Header';
@@ -74,6 +75,7 @@ export default function Produtos() {
   });
   const [lotCost, setLotCost] = useState('');
   const [lotYield, setLotYield] = useState('');
+  const [showLotCalculator, setShowLotCalculator] = useState(false);
 
   // ── Service modal state ───────────────────────────────────────────────────
   const [showServiceModal, setShowServiceModal] = useState(false);
@@ -172,6 +174,7 @@ export default function Produtos() {
     }
     setLotCost('');
     setLotYield('');
+    setShowLotCalculator(false);
     setShowProductModal(true);
   };
 
@@ -180,14 +183,30 @@ export default function Produtos() {
     setEditingProduct(null);
     setLotCost('');
     setLotYield('');
+    setShowLotCalculator(false);
     setFormData({ name: '', price: '', cost_price: '', stock: '', min_stock: '', barcode: '', description: '' });
   };
 
   const handleProductBarcodeScan = async () => {
+    if (!premium) {
+      Alert.alert(
+        '🔒 Recurso Premium',
+        'O scanner de código de barras é exclusivo para assinantes premium. Você ainda pode digitar o código manualmente.',
+        [
+          { text: 'Agora não', style: 'cancel' },
+          { text: 'Ver planos', onPress: () => router.push('/planos' as any) },
+        ],
+      );
+      return;
+    }
     try {
-      const code = await scanBarcode();
-      if (!code) return;
-      setFormData(prev => ({ ...prev, barcode: code }));
+      const results = await scanBarcode();
+      if (!results || results.length === 0) return;
+      // In single-scan mode (no products passed), we always get a single item
+      const first = results[0];
+      if (first?.barcode) {
+        setFormData(prev => ({ ...prev, barcode: first.barcode }));
+      }
     } catch (error) {
       console.error('Barcode scanner error:', error);
       Alert.alert('Scanner indisponível', 'Não foi possível abrir o scanner de código de barras.');
@@ -698,63 +717,97 @@ export default function Produtos() {
                   return null;
                 })()}
 
-                {/* Batch cost calculator */}
-                <View style={{ marginBottom: 14, backgroundColor: colors.surface, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: colors.border }}>
-                  <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    🧮 Custo por lote
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, { fontSize: 12 }]}>Valor lote (R$)</Text>
-                      <TextInput
-                        style={[styles.input, { marginBottom: 0 }]}
-                        value={lotCost}
-                        onChangeText={(v) => {
-                          setLotCost(v);
-                          const lot = parseFloat(v.replace(',', '.'));
-                          const uses = parseInt(lotYield, 10);
-                          if (lot > 0 && uses > 0)
-                            setFormData(prev => ({ ...prev, cost_price: (lot / uses).toFixed(2) }));
-                        }}
-                        placeholder="Ex: 50,00"
-                        placeholderTextColor={colors.textSecondary}
-                        keyboardType="decimal-pad"
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.label, { fontSize: 12 }]}>Unidades lote</Text>
-                      <TextInput
-                        style={[styles.input, { marginBottom: 0 }]}
-                        value={lotYield}
-                        onChangeText={(v) => {
-                          setLotYield(v);
-                          const lot = parseFloat(lotCost.replace(',', '.'));
-                          const uses = parseInt(v, 10);
-                          if (lot > 0 && uses > 0)
-                            setFormData(prev => ({ ...prev, cost_price: (lot / uses).toFixed(2) }));
-                        }}
-                        placeholder="Ex: 10"
-                        placeholderTextColor={colors.textSecondary}
-                        keyboardType="number-pad"
-                      />
-                    </View>
+                {/* Batch cost calculator — toggled by checkbox */}
+                <TouchableOpacity
+                  onPress={() => setShowLotCalculator(v => !v)}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    marginBottom: showLotCalculator ? 8 : 14,
+                    padding: 12,
+                    backgroundColor: colors.surface,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: showLotCalculator ? colors.primary + '66' : colors.border,
+                  }}
+                >
+                  {/* Checkbox visual */}
+                  <View style={{
+                    width: 20, height: 20, borderRadius: 4,
+                    borderWidth: 2,
+                    borderColor: showLotCalculator ? colors.primary : colors.textSecondary,
+                    backgroundColor: showLotCalculator ? colors.primary : 'transparent',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {showLotCalculator && (
+                      <Text style={{ color: '#fff', fontSize: 12, fontFamily: 'Inter-Bold', lineHeight: 14 }}>✓</Text>
+                    )}
                   </View>
-                  {(() => {
-                    const lot = parseFloat(lotCost.replace(',', '.'));
-                    const uses = parseInt(lotYield, 10);
-                    if (lot > 0 && uses > 0)
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'Inter-SemiBold', color: colors.text }}>🧮 Calcular custo por lote</Text>
+                    <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginTop: 2 }}>
+                      Divida o valor de um lote pelo número de unidades
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                {showLotCalculator && (
+                  <View style={{ marginBottom: 14, backgroundColor: colors.surface, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: colors.primary + '33' }}>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.label, { fontSize: 12 }]}>Valor lote (R$)</Text>
+                        <TextInput
+                          style={[styles.input, { marginBottom: 0 }]}
+                          value={lotCost}
+                          onChangeText={(v) => {
+                            setLotCost(v);
+                            const lot = parseFloat(v.replace(',', '.'));
+                            const uses = parseInt(lotYield, 10);
+                            if (lot > 0 && uses > 0)
+                              setFormData(prev => ({ ...prev, cost_price: (lot / uses).toFixed(2) }));
+                          }}
+                          placeholder="Ex: 50,00"
+                          placeholderTextColor={colors.textSecondary}
+                          keyboardType="decimal-pad"
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.label, { fontSize: 12 }]}>Unidades lote</Text>
+                        <TextInput
+                          style={[styles.input, { marginBottom: 0 }]}
+                          value={lotYield}
+                          onChangeText={(v) => {
+                            setLotYield(v);
+                            const lot = parseFloat(lotCost.replace(',', '.'));
+                            const uses = parseInt(v, 10);
+                            if (lot > 0 && uses > 0)
+                              setFormData(prev => ({ ...prev, cost_price: (lot / uses).toFixed(2) }));
+                          }}
+                          placeholder="Ex: 10"
+                          placeholderTextColor={colors.textSecondary}
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                    </View>
+                    {(() => {
+                      const lot = parseFloat(lotCost.replace(',', '.'));
+                      const uses = parseInt(lotYield, 10);
+                      if (lot > 0 && uses > 0)
+                        return (
+                          <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.primary, marginTop: 8 }}>
+                            = R$ {(lot / uses).toFixed(2).replace('.', ',')} por unidade → preenchido automaticamente
+                          </Text>
+                        );
                       return (
-                        <Text style={{ fontSize: 12, fontFamily: 'Inter-SemiBold', color: colors.primary, marginTop: 8 }}>
-                          = R$ {(lot / uses).toFixed(2).replace('.', ',')} por unidade → preenchido automaticamente
+                        <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginTop: 6 }}>
+                          Preencha os dois campos para calcular o custo unitário.
                         </Text>
                       );
-                    return (
-                      <Text style={{ fontSize: 11, fontFamily: 'Inter-Regular', color: colors.textSecondary, marginTop: 6 }}>
-                        Preencha os dois campos para calcular o custo unitário.
-                      </Text>
-                    );
-                  })()}
-                </View>
+                    })()}
+                  </View>
+                )}
 
                 {/* Stock fields */}
                 <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -802,10 +855,17 @@ export default function Produtos() {
                         borderRadius: 10,
                         alignItems: 'center',
                         justifyContent: 'center',
-                        backgroundColor: colors.primary,
+                        backgroundColor: premium ? colors.primary : colors.surface,
+                        borderWidth: premium ? 0 : 1,
+                        borderColor: colors.border,
                       }}
                     >
-                      <Camera size={20} color={colors.white} />
+                      <Camera size={20} color={premium ? colors.white : colors.textSecondary} />
+                      {!premium && (
+                        <View style={{ position: 'absolute', top: -4, right: -4 }}>
+                          <Crown size={12} color={colors.warning} />
+                        </View>
+                      )}
                     </TouchableOpacity>
                   </View>
                 </View>
